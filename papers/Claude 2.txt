@@ -1,0 +1,133 @@
+Hai detto: 
+ok. Before going on with the writing, i need to work a bit also on the implementation. As we said, the idea is to compare 1. fully-symbolic, traditional monitoring system, 2. rulerunner-based system and 3. dfa-based system. What is the state of the art for 1? Something that is off-the-shelf and can play the role of the baseline. note that i need a tool. something that i can run, possibly through a wrapper that i can write in python (since point 2 and 3 will be implemented in python). Search for that one SOTA tool, or at most two or three alternatives.
+
+Claude ha risposto: 
+Here's the situation for your symbolic baseline. There are essentially three options, and my recommendation is clear.
+
+Option 1 (Recommended): ltlf2dfa + custom crisp DFA tracker
+
+This is the most natural choice and the one you should use. ltlf2dfa is a Python library (pip install ltlf2dfa) developed by the WhiteMech group at Sapienza — literally Giuseppe's group. It takes an LTLf formula string, compiles it to a minimal DFA via MONA, and gives you the DFA as a dictionary of states and transitions. For the symbolic baseline, you would use ltlf2dfa to compile the formula, then write a trivial Python wrapper (maybe 20 lines) that takes a trace and runs the DFA step by step: start at q0, for each trace symbol look up δ(q, σ), advance, and at the end check if the final state is in F.
+
+This is the right baseline because it's exactly the standard pipeline that the LTLf community uses. It's also what your DeepDFA approach uses as its first step — the difference is that the symbolic baseline stops at the crisp DFA, while DeepDFA wraps it in a differentiable matrix representation. So the comparison is perfectly controlled: both approaches start from the same DFA, but one executes it symbolically and the other neurally.
+
+You already know this tool from your work with Elena. The compilation step (formula → DFA) is shared across the symbolic and DeepDFA approaches, so you only need to time the monitoring step differently.
+
+Option 2 (Alternative): SPOT (spot.lre.epita.fr)
+
+SPOT is the gold standard for automata-based LTL tooling in the formal verification community. It has excellent Python bindings (pip install spot, or build from source). The command ltl2tgba -MD produces minimal deterministic monitors. SPOT is more powerful than ltlf2dfa — it handles LTL over infinite traces, various automaton types (Büchi, parity, monitors), and has been heavily optimized over many years.
+
+However, SPOT's monitor construction is designed for the infinite-trace prefix monitoring setting (it builds monitors in the sense of Bauer/Leucker/Schallhart), not for LTLf on complete finite traces. You can use it for your purposes, but you'd need to be careful about the semantics: SPOT monitors accept all finite executions that could be extended to satisfy the formula, which is not the same as LTLf acceptance. For LTLf, you want a DFA that accepts exactly the finite traces that satisfy the formula — and that's what ltlf2dfa gives you directly.
+
+So SPOT would work but introduces a semantic mismatch that you'd need to handle, and it doesn't add anything over ltlf2dfa for your specific use case.
+
+Option 3 (Also valid): Lydia
+
+Lydia is another WhiteMech tool (also from Giuseppe's group) that compiles LTLf/LDLf to DFAs. It's implemented in C++ and is generally faster than ltlf2dfa for the compilation step. It's used as a backend in logaut (a Python wrapper: pip install logaut). If you find that ltlf2dfa's compilation time is a bottleneck for complex formulas, you could switch to Lydia as the compilation backend. But for the monitoring step (which is what you're timing), the DFA is the same regardless of which tool compiled it.
+
+My recommendation:
+
+Use ltlf2dfa for the symbolic baseline. It gives you a clean, minimal DFA in Python. Write a simple SymbolicMonitor class that wraps it: initialize with the DFA, expose a step(observation) method that advances the state, and a verdict() method that checks acceptance. This becomes your baseline against which both RuleRunner and DeepDFA are compared.
+
+The beauty of this setup is that all three approaches share the same formula → DFA compilation step (via ltlf2dfa). The comparison is purely about what happens after the DFA is constructed: symbolic tracking (dictionary lookup), rule-based neural tracking (RuleRunner/CILP), or matrix-based neural tracking (DeepDFA). This makes the comparison clean and fair.
+
+For citing, you can reference ltlf2dfa as the tool and cite both ltlf2dfa and MONA. If a reviewer asks "why not SPOT?", you can note that SPOT is designed for infinite-trace monitoring semantics, while ltlf2dfa directly implements LTLf semantics, making it the appropriate choice for your setting.
+
+Shall I sketch the SymbolicMonitor wrapper class, or do you want to move on to the RuleRunner reimplementation question?
+
+Hai detto:
+The question is: how the symbolic community handle the problem of runtime monitoring? it is just i read one symbol at the time while the traces is produced, follow the transition of the produced monitor/DFA and wait until i'm certain that the trace is accepted or not?
+
+Claude ha risposto:
+Yes, essentially. But there's an important nuance about the "wait until I'm certain" part that's worth unpacking, because it's exactly what makes runtime monitoring distinct from offline trace checking.
+
+The basic mechanism
+
+You're right about the core idea. You compile the specification φ into a DFA A_φ once, offline. Then at runtime, as the trace is produced symbol by symbol, you maintain the current DFA state q. When a new symbol σ arrives, you advance: q' = δ(q, σ). This is constant time per step — just a table lookup. The DFA does all the heavy lifting that the formula's temporal structure requires; the monitor itself is essentially a one-state-pointer that walks the automaton.
+
+The verdict question
+
+This is where it gets interesting. The naive approach is: process the entire trace, then at the end check if the final state is in F. This works perfectly for offline trace checking, where you have the complete trace.
+
+But in online runtime monitoring, traces are produced incrementally and may be very long (or even unbounded in the "finite but expanding" sense that RuleRunner emphasized). Waiting until the end is wasteful if you can already tell the verdict earlier. So the symbolic RV community developed the notion of good and bad prefixes:
+
+A bad prefix is a finite prefix u such that no extension uv can satisfy φ. Once the monitor reaches a state from which no accepting state is reachable (a "trap" or "rejecting sink"), the verdict is definitively false — you can stop monitoring and report violation.
+A good prefix is a finite prefix u such that every extension uv satisfies φ. Once the monitor reaches a state from which only accepting states are reachable (an "accepting sink"), the verdict is definitively true — you can stop monitoring and report success.
+Otherwise the verdict is inconclusive (often denoted ?), meaning the trace could still go either way.
+This is the three-valued semantics of LTL3 (Bauer, Leucker, Schallhart 2007). The four-valued RV-LTL refines this further by distinguishing "presumably true" (currently in an accepting state but could leave it) from "presumably false" (currently in a non-accepting state but could reach one). Both are built on top of the same DFA mechanism — they just classify states by their reachability properties.
+
+Precomputing the verdict structure
+
+The classical move in symbolic RV is to precompute, offline, a labeling of DFA states:
+
+States from which no accepting state is reachable → label "definitely violates"
+States from which all reachable states are accepting → label "definitely satisfies"
+All other states → label "inconclusive"
+This is done by standard graph reachability analysis on the DFA, done once after compilation. At runtime, advancing the state is still a single table lookup, and checking the verdict is also a single lookup of the precomputed label. So the per-step cost remains O(1), and you get early termination for free.
+
+The LTLf-specific case
+
+Here's where LTLf differs from classical LTL monitoring. In LTLf, the trace is complete when it ends — you're not monitoring a prefix of a potentially infinite execution, you're monitoring a finite, self-contained sequence. This means:
+
+At the end of the trace, the verdict is always binary (true or false), determined by whether the final DFA state is in F.
+During the trace, you can still apply the LTL3-style precomputation for early termination, but the "inconclusive" verdict means "we need to see more of this trace," not "we need to see what extends beyond it."
+This is actually one of the cleaner aspects of working with LTLf: you don't have the philosophical complications of "what would happen if the trace continued forever" that plague classical LTL monitoring. Either the trace satisfies the formula at its end, or it doesn't.
+
+What this means for your baseline
+
+For your symbolic baseline using ltlf2dfa, the standard implementation pattern is:
+
+Compile φ to DFA A_φ (offline, one-time cost).
+Precompute trap states and accepting sinks (offline, one-time cost, done via two reachability checks on the DFA).
+At runtime, for each trace symbol: advance the state, check if you've hit a sink, return early if so.
+At trace end (if no early termination): check if final state ∈ F.
+This is what tools like SPOT and the symbolic monitors built on ltlf2dfa do. It's also what the RuleRunner papers were comparing against, though they called the inconclusive verdict "undecided" and built their machinery around it.
+
+The interesting comparison point
+
+This early-termination capability is something you should track in your experiments. The three approaches handle it differently:
+
+Symbolic DFA: early termination is essentially free (precomputed labels, one extra lookup per step).
+RuleRunner: built-in via the three-valued semantics (the extended truth tables explicitly produce true/false/undecided verdicts per step).
+DeepDFA: in its basic form gives a soft distribution over states; early termination requires either thresholding the distribution or maintaining the crisp DFA in parallel.
+This is one place where DeepDFA, despite its advantages in differentiability and parallelism, might lose to the symbolic baseline on single-trace monitoring with frequent early termination. It's a fair point to make in the paper, and it sharpens the contribution: DeepDFA's advantage shows up in batched/learning settings, not in single-trace exact monitoring with early termination.
+
+For the actual implementation, your SymbolicMonitor class would look roughly like this in concept:
+
+class SymbolicMonitor:
+    def __init__(self, formula):
+        self.dfa = ltlf2dfa(formula)        # compile
+        self.trap_states = compute_traps()  # precompute
+        self.accept_sinks = compute_sinks() # precompute
+        self.state = self.dfa.initial
+    
+    def step(self, observation):
+        self.state = self.dfa.transition(self.state, observation)
+        if self.state in self.trap_states:
+            return FALSE  # early termination
+        if self.state in self.accept_sinks:
+            return TRUE   # early termination
+        return INCONCLUSIVE
+    
+    def final_verdict(self):
+        return TRUE if self.state in self.dfa.accepting else FALSE
+Does this clarify the symbolic RV picture? And does the early-termination distinction give you a useful angle for the experimental comparison?
+
+[...]
+
+Yes, I agree with avoiding both, and ChatGPT's reasoning is sound. Let me add my own perspective on why, and one caveat.
+
+On Declare4Py: I agree it's the wrong fit, but let me sharpen why. Declare4Py is built for the BPM/process mining workflow — it operates on event logs, Declare templates, and conformance checking pipelines. If you used it as your symbolic baseline, you'd be importing an entire BPM abstraction layer (event log structures, Declare constraint templates, trace alignment machinery) just to do what is fundamentally a simple DFA walk. This pollutes the comparison: when you measure timing, you'd be measuring Declare4Py's overhead, not the intrinsic cost of symbolic monitoring. And it delegates the actual LTLf-to-DFA work to Lydia via Docker anyway, so you'd be adding a layer rather than removing one. The whole point of a clean baseline is that it isolates exactly the symbolic monitoring step and nothing else. There's a subtle irony worth noting: Ivan Donadello, who maintains Declare4Py, is a coauthor on your NeSy PPM paper — so you know this tool well, which is precisely why you can confidently say it's the wrong abstraction level for this experiment, even though it's excellent for its intended BPM purpose.
+
+On RV-Monitor: I agree even more strongly here. RV-Monitor (from the RV/JavaMOP lineage) is a Java-based instrumentation framework designed to monitor running programs by weaving monitors into bytecode. It's built for a completely different use case — checking properties of executing software via aspect-oriented instrumentation — and its specification languages are not LTLf-native. Bringing it into a Python experimental pipeline comparing LTLf monitoring paradigms would create both a language barrier (JVM interop) and a semantic mismatch (it's not doing finite-trace LTLf acceptance). It would weaken comparability for no gain.
+
+One caveat I'd add to ChatGPT's framing. ChatGPT frames ltlf2dfa's weakness as "it's not a complete online monitor with three/four-valued prefix semantics — it's a compilation toolchain that needs a wrapper." That's accurate, but I'd reframe it as a strength for your purposes rather than a weakness. You want to write the wrapper yourself, because:
+
+First, all three of your approaches (symbolic, RuleRunner, DeepDFA) share the formula→DFA compilation step. By using ltlf2dfa as the shared compiler and writing your own thin runners on top, you guarantee that the comparison isolates exactly the monitoring mechanism and nothing else. If you used a heavyweight off-the-shelf monitor for the symbolic baseline, it would have its own compilation pipeline, its own optimizations, its own overhead — and then you'd be comparing apples to oranges.
+
+Second, writing the wrapper means you control the verdict semantics. You can implement the three-valued early-termination logic (trap states, accepting sinks) yourself, in a way that's directly comparable to how RuleRunner produces its true/false/undecided verdicts and how DeepDFA's soft states would be thresholded. This consistency across the three implementations is exactly what makes the timing comparison credible.
+
+So the "tool + minimal runner" architecture isn't a compromise forced by ltlf2dfa's limitations — it's the methodologically correct design for a controlled comparison. ChatGPT got to the right conclusion but undersold why the wrapper is desirable rather than merely necessary.
+
+The one thing I'd flag for later. ltlf2dfa relies on MONA, which can be slow or blow up on certain formula classes (deeply nested temporal operators, large alphabets). If your scalability experiments push into formulas where MONA struggles, you may want Lydia as an alternative compilation backend (via logaut, which gives a clean Python interface to both ltlf2dfa and Lydia). This isn't a reason to change your baseline — it's just a fallback for the compilation step if you hit MONA's limits during the scalability experiments. The monitoring runner you write stays identical regardless of which backend produced the DFA.
+
+So: agree on avoiding both Declare4Py and RV-Monitor, agree on ltlf2dfa + custom runner as the baseline, with logaut/Lydia kept in your back pocket as a compilation fallback for the harder scalability cases. This gives you a clean three-way comparison where the only thing that varies is the monitoring mechanism itself.
