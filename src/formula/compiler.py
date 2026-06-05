@@ -1,4 +1,4 @@
-"""LTLf -> minimal DFA compilation via ltlf2dfa + MONA.
+"""LTLf -> minimal DFA compilation via ltlf2dfa.
 
 Produces a `DFA` dataclass shared by all three monitoring paradigms:
 the symbolic monitor steps through it directly, and the differentiable
@@ -73,7 +73,16 @@ def compile_ltlf(formula: str) -> DFA:
     return _parse_mona_dot(dot)
 
 
-_DOUBLECIRCLE_RE = re.compile(r"node\s*\[\s*shape\s*=\s*doublecircle\s*\]\s*;\s*([^;]+);")
+# MONA's DOT lists accepting states as `node [shape = doublecircle]; 1; 2; 4;`
+# — the shape attribute applies to every subsequent bare-id declaration
+# until the next `node [...]` or `init [...]` directive. The block regex
+# captures everything between the shape directive and the next directive;
+# then we extract the digit ids.
+_DOUBLECIRCLE_BLOCK_RE = re.compile(
+    r"node\s*\[\s*shape\s*=\s*doublecircle\s*\]\s*;([^\[]*?)(?=node\s*\[|init\s*\[)",
+    re.DOTALL,
+)
+_DIGIT_RE = re.compile(r"\d+")
 _INIT_RE = re.compile(r"init\s*->\s*(\d+)\s*;")
 _EDGE_RE = re.compile(r"(\d+)\s*->\s*(\d+)\s*\[\s*label\s*=\s*\"([^\"]*)\"\s*\]\s*;")
 _IDENT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
@@ -81,8 +90,11 @@ _RESERVED = {"true", "false"}
 
 
 def _parse_mona_dot(dot: str) -> DFA:
-    m = _DOUBLECIRCLE_RE.search(dot)
-    accepting = frozenset(int(s) for s in m.group(1).split()) if m else frozenset()
+    block = _DOUBLECIRCLE_BLOCK_RE.search(dot)
+    accepting = (
+        frozenset(int(s) for s in _DIGIT_RE.findall(block.group(1)))
+        if block else frozenset()
+    )
 
     m = _INIT_RE.search(dot)
     if m is None:
@@ -139,15 +151,15 @@ def _compile_guard(label: str) -> Guard:
     return guard
 
 def _reachable_from(q0: int, succ: dict[int, set[int]]) -> set[int]:
-        seen = {q0}
-        stack = [q0]
-        while stack:
-            q = stack.pop()
-            for q2 in succ[q]:
-                if q2 not in seen:
-                    seen.add(q2)
-                    stack.append(q2)
-        return seen
+    seen = {q0}
+    stack = [q0]
+    while stack:
+        q = stack.pop()
+        for q2 in succ[q]:
+            if q2 not in seen:
+                seen.add(q2)
+                stack.append(q2)
+    return seen
 
 def _compute_sink_labels(
     states: frozenset[int],
