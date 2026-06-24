@@ -24,10 +24,18 @@ sys.path.insert(0, str(ROOT))
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import torch
 from tqdm import tqdm
 
 from src.benchmarks.formulas import IJCNN_SUITE
-from src.benchmarks.runner import results_to_df, time_monitor
+from src.benchmarks.runner import (
+    append_result,
+    load_completed,
+    reset_if_stale,
+    result_key,
+    time_monitor,
+)
 from src.monitors.deep_dfa import DeepDFAMonitor
 from src.monitors.rulerunner import RuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
@@ -37,8 +45,11 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # ---------------------------------------------------------------------------
 
 # ijcnn_n8 -> 8 atoms -> dense alphabet 2^8 = 256 symbols. This is the
-# DeepDFA batching showcase: batch_run does one bmm per cell over the whole
-# batch. To exercise the GPU, set device="cuda" in DeepDFAMonitor.compile.
+# cross-trace batching showcase: both RuleRunner and DeepDFA do batched
+# matmuls per cell over the whole batch. DeepDFA does one matmul/cell;
+# RuleRunner does depth+1 (its intrinsic within-step sequential cost), so a
+# fair, vectorised comparison isolates that architectural difference rather
+# than Python per-trace overhead.
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
@@ -52,6 +63,18 @@ N_REPEATS    = 7
 N_WARMUP     = 3
 SEED         = 42
 
+# Phase 0.1 — kill the early-termination confound. ijcnn_n8 early-terminates
+# almost immediately on random traces, so without this the crisp symbolic walk
+# is timed giving up after a couple of cells while the batched monitors do the
+# full pass. Forcing all cells makes the cross-trace comparison fair. State
+# this explicitly in the paper.
+EARLY_TERMINATION = False
+
+# Tensor monitors run their batched matmuls here; the symbolic DFA ignores it.
+# Auto-uses the GPU when one is available — the parallel-execution axis Exp 3
+# is meant to exercise.
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
@@ -59,11 +82,23 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # Run
 # ---------------------------------------------------------------------------
 
-results = []
+csv_path = RESULTS_DIR / "exp3_batch_size.csv"
+reset_if_stale(csv_path, EARLY_TERMINATION)  # drop CSVs from the other mode
+completed = load_completed(csv_path)   # resume: skip cells already on disk
+
 total = len(MONITORS) * len(BATCH_SIZES)
 with tqdm(total=total, desc="exp3") as pbar:
     for monitor_cls in MONITORS:
         for batch_size in BATCH_SIZES:
+            key = result_key(
+                monitor_cls.__name__, FORMULA.name, TRACE_LENGTH, batch_size
+            )
+            if key in completed:
+                pbar.set_postfix(
+                    monitor=monitor_cls.__name__, batch=batch_size, skip=True
+                )
+                pbar.update()
+                continue
             r = time_monitor(
                 monitor_cls, FORMULA,
                 trace_length=TRACE_LENGTH,
@@ -71,20 +106,19 @@ with tqdm(total=total, desc="exp3") as pbar:
                 n_repeats=N_REPEATS,
                 n_warmup=N_WARMUP,
                 seed=SEED,
+                device=DEVICE,
+                early_termination=EARLY_TERMINATION,
             )
-            results.append(r)
+            append_result(r, csv_path)   # flush immediately for resumability
             pbar.set_postfix(monitor=monitor_cls.__name__, batch=batch_size)
             pbar.update()
 
-df = results_to_df(results)
+print(f"Saved (incremental): {csv_path}")
+df = pd.read_csv(csv_path)
 
 # Derive time-per-trace from time-per-cell * trace_length
 df["mean_s_per_trace"] = df["mean_s_per_cell"] * df["trace_length"]
 df["std_s_per_trace"]  = df["std_s_per_cell"]  * df["trace_length"]
-
-csv_path = RESULTS_DIR / "exp3_batch_size.csv"
-df.to_csv(csv_path, index=False)
-print(f"Saved: {csv_path}")
 
 # ---------------------------------------------------------------------------
 # Plot (two panels: time per trace and normalised speedup)
@@ -124,6 +158,10 @@ for ax, ylabel, title in [
     ax.grid(True, linestyle="--", alpha=0.4)
 
 ax2.set_yscale("log", base=2)
+
+et_note = "early termination OFF (all cells processed)" if not EARLY_TERMINATION \
+    else "early termination ON"
+fig.suptitle(f"Exp 3 — batch size ({et_note})", y=1.02)
 
 plot_path = RESULTS_DIR / "exp3_batch_size.png"
 fig.tight_layout()

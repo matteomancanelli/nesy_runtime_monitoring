@@ -54,17 +54,44 @@ class Monitor(ABC):
     def reset(self) -> None:
         """Reset to the initial configuration for monitoring a fresh trace."""
 
-    def run(self, trace: Iterable[Observation]) -> Verdict:
-        """Process a single trace, terminating early on a decided verdict."""
+    def run(
+        self, trace: Iterable[Observation], early_termination: bool = True
+    ) -> Verdict:
+        """Process a single trace.
+
+        With ``early_termination`` (the default), return as soon as an
+        absorbing SATISFY/VIOLATE verdict is reached. With
+        ``early_termination=False`` every cell is processed before
+        returning — required for a *fair per-cell-cost* measurement on
+        early-terminating formula families: otherwise a crisp paradigm
+        that gives up after ~2 cells is timed against batched paradigms
+        that process all cells, and the two are not the same workload
+        (see CLAUDE.md § Early-termination confound / Phase 0.1).
+
+        The returned verdict is identical in both modes: absorbing
+        states are sticky, so the first decided verdict is preserved
+        even when later cells are still processed.
+        """
         self.reset()
+        decided = Verdict.UNDECIDED
         for obs in trace:
             v = self.step(obs)
             if v is not Verdict.UNDECIDED:
-                return v
+                if early_termination:
+                    return v
+                if decided is Verdict.UNDECIDED:
+                    decided = v
+        if decided is not Verdict.UNDECIDED:
+            return decided
         return self.final_verdict()
 
     def batch_run(
-        self, traces: Iterable[Iterable[Observation]]
+        self,
+        traces: Iterable[Iterable[Observation]],
+        early_termination: bool = True,
     ) -> list[Verdict]:
-        """Sequential default; subclasses override for vectorized execution."""
-        return [self.run(t) for t in traces]
+        """Sequential default; subclasses override for vectorized execution.
+
+        ``early_termination`` is forwarded to :meth:`run`; see its docstring.
+        """
+        return [self.run(t, early_termination=early_termination) for t in traces]

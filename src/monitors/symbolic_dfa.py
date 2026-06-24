@@ -15,7 +15,9 @@ class SymbolicDFAMonitor(Monitor):
         self._state = dfa.initial
 
     @classmethod
-    def compile(cls, formula: str) -> "SymbolicDFAMonitor":
+    def compile(cls, formula: str, device: object = "cpu") -> "SymbolicDFAMonitor":
+        # `device` is accepted for a uniform compile() signature across all
+        # three paradigms but ignored: this is a pure-Python DFA walk.
         return cls(compile_ltlf(formula))
 
     def step(self, obs: Observation) -> Verdict:

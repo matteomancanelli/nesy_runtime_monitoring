@@ -14,6 +14,10 @@ dependencies:
   - black=26.3.1
   - pip
   - pip:
-    - torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+    # --extra-index-url must be its own line (pip ignores it when appended to a
+    # package spec). It ADDS the PyTorch CUDA index alongside PyPI, so torch
+    # resolves to the +cu124 build while ltlf2dfa still resolves from PyPI.
+    - --extra-index-url https://download.pytorch.org/whl/cu124
+    - torch==2.6.0+cu124
     - ltlf2dfa==1.0.2
     - -e .

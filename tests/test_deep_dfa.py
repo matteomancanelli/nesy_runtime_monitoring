@@ -165,6 +165,46 @@ def test_soft_matrix_crisp_is_one_hot() -> None:
     assert torch.all((M == 0) | (M == 1))
 
 
+# ----------------- vectorized crisp matrix (Phase 0.2) -----------------
+
+
+def test_crisp_matrix_row_stochastic() -> None:
+    """Disjoint cube cover -> the crisp transition matrix rows sum to 1."""
+    dt = DeepDFATensor(compile_ltlf("F ((a & b) | (a & c))"), mode="factored")
+    p = torch.tensor([0.3, 0.7, 0.4])
+    M = dt.crisp_matrix(p)
+    assert torch.allclose(M.sum(dim=1), torch.ones(dt.n_states), atol=1e-6)
+
+
+def test_crisp_matrix_is_one_hot_on_crisp() -> None:
+    """Crisp 0/1 input -> each cube is 0/1 and cubes are disjoint -> 0/1 matrix."""
+    dt = DeepDFATensor(compile_ltlf("F ((a & b) | (a & c))"), mode="factored")
+    for p in (torch.tensor([1.0, 1.0, 0.0]), torch.tensor([0.0, 1.0, 1.0])):
+        M = dt.crisp_matrix(p)
+        assert torch.all((M == 0) | (M == 1))
+
+
+@pytest.mark.parametrize(
+    "formula", ["F ((a & b) | (a & c))", "F ((a & b) | (a & c) | (a & d))", "G (a | b)"]
+)
+def test_crisp_matrix_equals_soft_matrix_on_read_once(formula: str) -> None:
+    """The orthogonal-cube crisp matrix equals the recursive soft matrix on
+    read-once guards, for *both* crisp and fractional inputs."""
+    dt = DeepDFATensor(compile_ltlf(formula), mode="factored")
+    rng = np.random.default_rng(_stable_seed(formula))
+    for _ in range(20):
+        p = torch.tensor(rng.random(dt.n_atoms), dtype=torch.float32)
+        assert torch.allclose(dt.crisp_matrix(p), dt.soft_matrix(p), atol=1e-6)
+
+
+def test_crisp_matrix_batched_matches_unbatched() -> None:
+    dt = DeepDFATensor(compile_ltlf("F ((a & b) | (a & c))"), mode="factored")
+    P = torch.tensor([[1.0, 0.0, 1.0], [0.0, 0.0, 0.0], [0.2, 0.5, 0.9]])
+    batched = dt.crisp_matrix(P)
+    for i in range(P.shape[0]):
+        assert torch.allclose(batched[i], dt.crisp_matrix(P[i]), atol=1e-6)
+
+
 # ----------------- scalability: factored avoids 2^|AP| -----------------
 
 

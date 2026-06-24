@@ -21,23 +21,39 @@ Two representations of the same transition function are provided:
                symbolic DFA's state blowup). Best for small |AP| and for
                the batching showcase (Exp 3, ijcnn_n8 -> 256 symbols).
 
-  * factored — no 2^|AP| tensor. Each edge guard is compiled to a closure
-               that computes its satisfaction probability recursively over
-               the boolean structure, assuming atom independence:
+  * factored — no 2^|AP| tensor. Two complementary views of each edge guard:
+
+      (1) Crisp monitoring (the path Exp 1-3 time). Each guard is decomposed
+          *once* at construction into a disjoint (orthogonal) cube cover by
+          Shannon expansion, and stored as `require-true` / `require-false`
+          integer masks over the atoms. The per-cell transition matrix is then
+          a single vectorized tensor reduction over those masks — no per-cell
+          Python recursion over sympy closures. This is what keeps the Exp 2
+          factored curve **flat** in |AP| (Phase 0.2): the per-cell cost is a
+          couple of batched tensor ops, not an O(formula-size) closure walk.
+          It is exact for crisp 0/1 inputs (each cube contributes 0/1 and the
+          cubes are mutually exclusive, so they sum to a 0/1 transition).
+
+      (2) Differentiable soft path (`soft_matrix`, for the deferred adaptation
+          PoC). Each guard is compiled to a closure that computes its
+          satisfaction probability recursively over the boolean structure,
+          assuming atom independence:
                    P(a)=p_a   P(¬φ)=1-P(φ)
                    P(φ∧ψ)=P(φ)P(ψ)   P(φ∨ψ)=1-(1-P(φ))(1-P(ψ))
-               With **crisp** 0/1 inputs this is exact for *any* guard
-               (product=AND, 1-∏(1-·)=OR exactly), so factored crisp
-               monitoring scales to large |AP| (Exp 2). With *fractional*
-               probabilities it is exact only for read-once guards (the
-               IJCNN family is read-once after MONA's factoring); this is
-               the differentiable path for the deferred adaptation PoC.
+          With **crisp** 0/1 inputs this is exact for *any* guard; with
+          *fractional* probabilities it is exact only for read-once guards
+          (the IJCNN family is read-once after MONA's factoring). This soft
+          path is kept separate so its read-once semantics are unchanged.
+
+    Neither view materializes the 2^|AP| dense tensor, so factored crisp
+    monitoring scales to large |AP| (Exp 2) where dense hits the alphabet wall.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 
+import numpy as np
 import torch
 from sympy import symbols, sympify
 from sympy.logic.boolalg import And, BooleanFalse, BooleanTrue, Not, Or
@@ -94,6 +110,40 @@ def _expr_to_prob(expr, atom_index: dict[str, int]) -> ProbFn:
 
         return _or
     raise TypeError(f"Unsupported guard expression node: {expr!r}")
+
+
+def _guard_cubes(label: str, atom_index: dict[str, int]) -> list[dict[str, bool]]:
+    """Disjoint (orthogonal) cube cover of a MONA guard label.
+
+    Returns a list of cubes; each cube maps atom name -> required truth value
+    (atoms absent from a cube are don't-cares). The cubes are mutually
+    exclusive (Shannon expansion), so a guard's satisfaction equals the *sum*
+    of the per-cube products — exact for crisp 0/1 inputs, and (because the
+    cubes are disjoint) row-stochastic when summed over a state's out-edges.
+    """
+    stripped = label.strip()
+    if stripped == "true":
+        return [{}]  # one all-don't-care cube — always fires
+    if stripped == "false":
+        return []  # never fires
+    locals_map = dict(zip(atom_index, symbols(list(atom_index))))
+    expr = sympify(stripped, locals=locals_map)
+    return [{str(v): val for v, val in cube.items()} for cube in _shannon_cubes(expr)]
+
+
+def _shannon_cubes(expr) -> list[dict]:
+    """Shannon-expand a boolean expr into disjoint cubes (paths to True)."""
+    if isinstance(expr, BooleanTrue):
+        return [{}]
+    if isinstance(expr, BooleanFalse):
+        return []
+    v = sorted(expr.free_symbols, key=str)[0]
+    cubes: list[dict] = []
+    for cube in _shannon_cubes(expr.subs(v, BooleanTrue())):
+        cubes.append({v: True, **cube})
+    for cube in _shannon_cubes(expr.subs(v, BooleanFalse())):
+        cubes.append({v: False, **cube})
+    return cubes
 
 
 class DeepDFATensor:
@@ -163,7 +213,8 @@ class DeepDFATensor:
     # ----- factored -----
 
     def _build_factored(self) -> None:
-        # (src_idx, dst_idx, prob_fn) per DFA transition.
+        # (src_idx, dst_idx, prob_fn) per DFA transition — the differentiable
+        # soft path (read-once-exact fractional probabilities; see soft_matrix).
         self._edges: list[tuple[int, int, ProbFn]] = [
             (
                 self.state_idx[t.src],
@@ -173,11 +224,62 @@ class DeepDFATensor:
             for t in self.dfa.transitions
         ]
 
+        # Vectorized crisp path: precompute require-true / require-false masks
+        # for every cube of every edge's disjoint cover. Building these *once*
+        # here replaces the per-cell sympy-closure walk, so crisp_matrix stays
+        # flat in |AP| (Phase 0.2).
+        rt_rows: list[list[float]] = []
+        rf_rows: list[list[float]] = []
+        flat_idx: list[int] = []  # src * |Q| + dst, per cube
+        for t in self.dfa.transitions:
+            si, di = self.state_idx[t.src], self.state_idx[t.dst]
+            for cube in _guard_cubes(t.label, self.atom_index):
+                rt = [0.0] * self.n_atoms
+                rf = [0.0] * self.n_atoms
+                for atom, val in cube.items():
+                    (rt if val else rf)[self.atom_index[atom]] = 1.0
+                rt_rows.append(rt)
+                rf_rows.append(rf)
+                flat_idx.append(si * self.n_states + di)
+
+        n_cubes = len(flat_idx)
+        self._cube_rt = torch.zeros(n_cubes, self.n_atoms, device=self.device)
+        self._cube_rf = torch.zeros(n_cubes, self.n_atoms, device=self.device)
+        if n_cubes:
+            self._cube_rt[:] = torch.tensor(rt_rows, device=self.device)
+            self._cube_rf[:] = torch.tensor(rf_rows, device=self.device)
+        self._cube_flat = torch.tensor(flat_idx, dtype=torch.long, device=self.device)
+
+    def crisp_matrix(self, p: torch.Tensor) -> torch.Tensor:
+        """Vectorized (..., |Q|, |Q|) transition matrix from the cube masks.
+
+        For crisp 0/1 atom values p (..., |AP|) this is the exact transition
+        matrix; it is the flat, closure-free path used by the monitor. Each
+        cube's value is the product over atoms of
+            1 - require_true * (1 - p) - require_false * p
+        (= 1 for a don't-care atom, p for a require-true atom, 1-p for a
+        require-false atom), and the disjoint cubes are summed into the matrix.
+        """
+        batch_shape = p.shape[:-1]
+        n_batch = 1
+        for d in batch_shape:
+            n_batch *= d
+        pf = p.reshape(n_batch, self.n_atoms).unsqueeze(1)  # (B, 1, |AP|)
+        factor = 1.0 - self._cube_rt * (1.0 - pf) - self._cube_rf * pf  # (B, C, |AP|)
+        cube_val = factor.prod(dim=-1)  # (B, C)
+        M = torch.zeros(
+            n_batch, self.n_states * self.n_states, device=p.device, dtype=p.dtype
+        )
+        M.index_add_(1, self._cube_flat, cube_val)
+        return M.view(*batch_shape, self.n_states, self.n_states)
+
     def soft_matrix(self, p: torch.Tensor) -> torch.Tensor:
         """Build the (..., |Q|, |Q|) transition matrix for atom-prob p (..., |AP|).
 
-        Differentiable in p. With crisp 0/1 p this is the exact transition
-        matrix; with fractional p it is exact for read-once guards.
+        Differentiable in p via the recursive read-once probability closures.
+        With crisp 0/1 p this is the exact transition matrix; with fractional p
+        it is exact for read-once guards. This is the path for the deferred
+        adaptation PoC; the crisp monitor uses :meth:`crisp_matrix` instead.
         """
         batch_shape = p.shape[:-1]
         M = torch.zeros(*batch_shape, self.n_states, self.n_states, device=p.device)
@@ -192,6 +294,23 @@ class DeepDFATensor:
             if obs.get(a, False):
                 p[i] = 1.0
         return p
+
+    def encode_presence(
+        self, trace_list: list[list[Observation]], L: int
+    ) -> np.ndarray:
+        """Crisp atom-presence array (B, L, |AP|) for a padded batch of traces.
+
+        Vectorized batch encoder: builds the whole presence array in numpy in a
+        single pass (one list-comprehension row per cell) instead of allocating
+        a torch vector per cell. This keeps batch encoding out of the per-cell
+        compute the timing measures, so the factored Exp 2 curve reflects the
+        model cost, not Python tensor-allocation overhead (Phase 0.2).
+        """
+        pres = np.zeros((len(trace_list), L, self.n_atoms), dtype=np.float32)
+        for b, trace in enumerate(trace_list):
+            for i, obs in enumerate(trace):
+                pres[b, i] = [obs.get(a, False) for a in self.atoms]
+        return pres
 
 
 class DeepDFAMonitor(Monitor):
@@ -225,7 +344,7 @@ class DeepDFAMonitor(Monitor):
         dt = self._dt
         if dt.mode == "dense":
             return q @ dt.T[:, dt.symbol_index(obs), :]
-        return q @ dt.soft_matrix(dt.prob_vector(obs))
+        return q @ dt.crisp_matrix(dt.prob_vector(obs))
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
@@ -251,7 +370,9 @@ class DeepDFAMonitor(Monitor):
     # ----- batched GPU path -----
 
     def batch_run(
-        self, traces: Iterable[Iterable[Observation]]
+        self,
+        traces: Iterable[Iterable[Observation]],
+        early_termination: bool = True,
     ) -> list[Verdict]:
         """Process all traces with batched matmuls.
 
@@ -259,6 +380,14 @@ class DeepDFAMonitor(Monitor):
         and end-of-trace semantics), but the per-step update is one batched
         ``bmm`` over the whole batch. Works in both modes; the dense mode is
         the GPU-batching showcase.
+
+        ``early_termination`` is accepted for interface parity with the base
+        ``Monitor`` but does not change the compute: the batched path already
+        advances *every* trace through *all* its cells uniformly (decided
+        traces are not frozen), so DeepDFA always pays the full per-cell cost.
+        Early termination is only replayed afterwards, per trace, to recover
+        the correct verdict (:meth:`_verdict_from_path`) — that reconstruction
+        runs regardless of the flag, so verdicts stay correct either way.
         """
         dt = self._dt
         trace_list = [list(t) for t in traces]
@@ -270,23 +399,21 @@ class DeepDFAMonitor(Monitor):
         q = dt.mu.unsqueeze(0).expand(B, -1).clone()  # (B, |Q|)
         states = torch.empty(B, L, dtype=torch.long, device=dt.device)
 
+        pres = dt.encode_presence(trace_list, L)  # (B, L, |AP|), numpy float32
+
         if dt.mode == "dense":
-            sym = torch.zeros(B, L, dtype=torch.long, device=dt.device)
-            for b, t in enumerate(trace_list):
-                for i, obs in enumerate(t):
-                    sym[b, i] = dt.symbol_index(obs)
+            weights = (1 << np.arange(dt.n_atoms, dtype=np.int64))
+            sym_np = (pres.astype(np.int64) * weights).sum(axis=2)  # (B, L)
+            sym = torch.from_numpy(sym_np).to(dt.device)
             for i in range(L):
                 sel = dt.T[:, sym[:, i], :].permute(1, 0, 2)  # (B, |Q|, |Q|)
                 q = torch.bmm(q.unsqueeze(1), sel).squeeze(1)
                 states[:, i] = q.argmax(dim=1)
         else:
-            # Stack per-step atom-probability vectors: (L, B, |AP|).
-            P = torch.zeros(L, B, dt.n_atoms, device=dt.device)
-            for b, t in enumerate(trace_list):
-                for i, obs in enumerate(t):
-                    P[i, b] = dt.prob_vector(obs)
+            # Per-step atom-probability stack (L, B, |AP|) from the batch encoder.
+            P = torch.from_numpy(pres).to(dt.device).permute(1, 0, 2).contiguous()
             for i in range(L):
-                M = dt.soft_matrix(P[i])  # (B, |Q|, |Q|)
+                M = dt.crisp_matrix(P[i])  # (B, |Q|, |Q|)
                 q = torch.bmm(q.unsqueeze(1), M).squeeze(1)
                 states[:, i] = q.argmax(dim=1)
 

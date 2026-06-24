@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear Temporal Logic over finite traces) with differentiable automata. The immediate goal is **Paper A** for the NeSy conference (~1 month deadline): a three-way comparison of LTLf runtime monitoring paradigms, with a proof-of-concept gradient-based adaptation experiment.
+Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear Temporal Logic over finite traces) with differentiable automata. The goal is **Paper A**: a three-way comparison of LTLf runtime monitoring paradigms, anchored on the *capabilities* neuro-symbolic monitors afford (handling soft/probabilistic observations; gradient-based specification adaptation), with timing experiments establishing competitiveness.
 
-This is an active research project — plans, experiments, and framing should be treated as working hypotheses, not fixed requirements. Expect iteration.
+**No hard deadline (as of 2026-06-24).** The original NeSy-conference deadline was dropped — we are taking the time to "do the best we can." Full scope and exploratory directions are on the table.
+
+This is an active research project — plans, experiments, and framing should be treated as working hypotheses, not fixed requirements. Expect iteration, and be open to unexpected directions (a new/hybrid paradigm, a new benchmark family, a fresh pivot).
 
 ## Paper A: The Core Idea
 
@@ -14,13 +16,77 @@ Three paradigms for LTLf runtime monitoring, compared theoretically and experime
 
 | Paradigm | How it works | Key property |
 |---|---|---|
-| **Symbolic DFA** | Compile LTLf → minimal DFA; track state explicitly | Fastest single-trace; no learning |
-| **RuleRunner** | Formula parse tree → extended truth tables → Horn clauses → CILP neural net | Learning constrained to syntactic neighbors |
-| **DeepDFA** | Compile LTLf → minimal DFA → differentiable transition matrix | Native GPU batching; fully differentiable |
+| **Symbolic DFA** | Compile LTLf → minimal DFA; track state explicitly | Fastest crisp single-trace; no learning; crisp boolean inputs only |
+| **RuleRunner** | Formula parse tree → extended truth tables → Horn clauses → CILP neural net | Learning localized to syntactic neighbors; nested-temporal representational limit; within-step sequential |
+| **DeepDFA** | Compile LTLf → minimal DFA → differentiable transition matrix | Native GPU batching; fully differentiable; soft-input propagation; alphabet (2^|AP|) blowup |
 
-Hypothesis (could be revised or completely changed): DeepDFA is not just faster in the batched setting — it is the right foundation for specification adaptation, because the DFA is a canonical semantic representation and the soft state is natively differentiable.
+### Framing (post first-pass results — 2026-06-24)
 
-Paper A ends with a proof-of-concept adaptation experiment (Experiment 4) that motivates the follow-up Paper B (AAAI/AAMAS/ICLR).
+The first implementation pass produced timing results (`results/exp1-3`) that reshaped the framing. **Read this before touching experiments or the paper narrative.**
+
+- **Do NOT anchor the paper on speed.** For crisp boolean monitoring the symbolic DFA is the theoretical optimum — a DFA walk is a dict lookup; nothing differentiable beats it. Symbolic dominating throughput is *expected*, not a threat. Trying to make a NeSy paradigm "win" on raw speed is a losing proposition and reviewers will see through it.
+- **Anchor on capability** — the reasons to go neuro-symbolic that symbolic *fundamentally cannot* offer: (1) **soft/probabilistic observations** (a neural perceptor emits probabilities, not booleans; DeepDFA's `soft_matrix` propagates probability mass to a calibrated verdict; symbolic must threshold and discard information), and (2) **gradient-based specification adaptation** (the differentiable monitor can be corrected from data; symbolic is frozen). Timing demotes to *competitiveness* evidence.
+- **Keep paradigms neutral.** Present a capability matrix and let it speak; do **not** pre-crown DeepDFA. Each paradigm has a distinct Achilles heel (symbolic = state blowup; RuleRunner = nested-temporal limit + within-step sequential cost; DeepDFA = 2^|AP| alphabet blowup) — that balance is the honest three-way story.
+- **Still try for an honest speed win.** We do want to improve speed and produce a *fair* comparison (see Phase 0). If a genuine batched-throughput advantage survives fair measurement (esp. on the GPU server, not the 4 GB laptop), it's a bonus — reported neutrally.
+
+Paper A ends with a proof-of-concept adaptation experiment that motivates the follow-up Paper B (AAAI/AAMAS/ICLR).
+
+## Research Plan (Paper A) — phases and steps
+
+Status legend: ✅ done · 🟡 in progress · 🔲 not started.
+
+### Phase 0 — Honest timing comparison (committed) 🔲
+
+Make the existing throughput experiments measure the same workload across paradigms, and try to genuinely improve speed. This is foundational — the current Exp 2/3 numbers are partly artifacts.
+
+- **0.1 — Kill the early-termination confound (Exp 2 & 3). 🟡 (mechanism done; re-run pending).** The IJCNN `◇(⋁(a₀∧aᵢ))` family early-terminates almost instantly on random traces, so Symbolic's reported ~1e-10 s/cell measures "how fast it gives up" (impossible as real per-cell compute: one Python dict lookup is ~5e-8 s) while the batched neural monitors process *all* cells uniformly — not apples-to-apples. Fix: add an `early_termination=False` measurement mode (force processing all cells for the per-cell-cost figures), and/or use a non-terminating family. State the choice explicitly in the paper.
+  - **Implemented:** `Monitor.run/batch_run` now take `early_termination: bool` ([base.py](src/monitors/base.py)); when False the crisp symbolic walk processes all cells (absorbing states are sticky, so verdicts are unchanged — verified in [tests/test_early_termination.py](tests/test_early_termination.py)). The batched neural monitors (DeepDFA, RuleRunner) already process all cells, so they accept the flag for parity but their compute is unchanged. `time_monitor(..., early_termination=)` threads it through and records it in `TimingResult`; `reset_if_stale()` drops CSVs measured in the other mode (the two are different workloads — don't resume/mix). Exp 2 & 3 set `EARLY_TERMINATION = False` and annotate the figure. Confirmed effect: symbolic per-cell cost on `ijcnn_n8` jumps from ~3e-9 s (give-up artifact) to ~3e-7 s (real dict lookup).
+  - **Pending:** re-run exp2/exp3 to regenerate `results/exp2*`, `results/exp3*` under the new mode (exp2 factored-DeepDFA is slow — see Phase 0.2 vectorization).
+- **0.2 — Fix DeepDFA in Exp 2 (dual finding). 🟡 (vectorization + dense panel done; re-run pending).** Factored-DeepDFA *was* growing 7e-5→7e-4 with n — a Python-closure-rebuild artifact, not the model. Produce two curves: (a) **dense-capped** that visibly hits the 2^n VRAM wall (= the alphabet-blowup *finding*), and (b) **vectorized** factored crisp path (precompute require-true/require-false integer masks; drop per-cell sympy closures) that stays flat. Separates *memory wall* from *compute cost*.
+  - **Implemented (b):** the factored *monitoring* path is now vectorized. Each guard is decomposed **once** at construction into a disjoint (orthogonal) cube cover by Shannon expansion (`_guard_cubes`/`_shannon_cubes` in [deep_dfa.py](src/monitors/deep_dfa.py)), stored as require-true/require-false integer masks; `DeepDFATensor.crisp_matrix(p)` builds the per-cell transition matrix as a single vectorized mask reduction (`∏_a [1 − rt·(1−p) − rf·p]`) — no per-cell sympy closures. `_advance` and `batch_run` route through it, and trace encoding is vectorized too (`encode_presence`, numpy, no per-cell tensor alloc). Effect: factored per-cell cost on the IJCNN family drops from ~2e-4 s (n=32, closure rebuild) to ~7e-6 s, and the n=2→32 growth from ~24× to ~3.7× (residual = genuine O(n²) mask reduction, not Python overhead). The differentiable `soft_matrix` (recursive, read-once-exact fractional) is **kept separate and unchanged**, so its read-once semantics and the non-read-once finding (Phase 3.3) are preserved.
+  - **Implemented (a):** [exp2_formula_complexity.py](experiments/exp2_formula_complexity.py) adds `DeepDFAMonitorDense` (capped at `DENSE_MAX_LEAVES=16`; skipped beyond — 2^32 ≈ 64 GB at |Q|=2) and a third **memory-wall panel** plotting dense `|Q|²·2^|AP|` vs factored mask bytes (log-y, 4 GB VRAM line), computed analytically so the infeasible tensors are never built. Verified: dense is *fastest where it fits* (~3e-6 s/cell) but walls out at n=32 (68.7 GB); factored stays flat and scales (47 KB at n=32).
+  - **Pending:** re-run exp2 to regenerate `results/exp2*` under the new mode with the dense/factored/memory panels (slow on the laptop; ideally the Docker GPU server, Phase 0.4).
+- **0.3 — Exp 3 measurement hygiene.** One `torch.cuda.synchronize()` around the whole timed region (not per cell); keep the batch on-device; read verdicts only at end-of-loop. Lead figures with the **absolute time-per-trace** panel; demote/annotate the speedup panel (its baseline is RuleRunner's catastrophic batch-1 number, which makes its "speedup" misleading).
+- **0.4 — Re-run Exp 3 on the Docker GPU server.** The 4 GB / 70 W laptop GPU saturates at tiny batch and undersells every GPU path. Re-run on the server (Docker-only host, see memory) and optionally with a larger automaton to give batched DeepDFA room. Honest outcome either way: a modest real win, or "GPU advantage needs larger automata/hardware."
+- **0.5 — (optional) Within-step depth micro-benchmark.** `X`-nest `ijcnn_n8` to depth ~10, batch=1, len=1; isolates RuleRunner's depth-linear cost vs DeepDFA's flat one-matmul, independent of breadth. (Design already sketched in § Benchmark Design.)
+
+**Exit criterion:** fair Exp 1–3 with the early-termination confound removed, DeepDFA's curve reflecting the model not Python overhead, and a clear verdict on whether any speed advantage survives.
+
+### Phase 1 — Capability Exp A: monitoring under perceptual uncertainty (committed, do before adaptation) 🔲
+
+The first capability that justifies NeSy, and simple in principle. Prioritized **before** adaptation because it reuses already-tested code (`soft_matrix` is row-stochastic and verified) and needs no training loop.
+
+- **1.1 — Noisy-observation generator.** Generate crisp ground-truth traces + true verdicts (from the symbolic monitor as oracle), then corrupt each atom into a probability: flip with probability ε, or replace with a noisy probability (e.g. Beta centered on the true value). Sweep ε.
+- **1.2 — Soft consumption per paradigm.** Symbolic: threshold each atom at 0.5 → crisp walk (the brittle baseline). DeepDFA: factored soft path → acceptance probability. RuleRunner: tanh variant → soft propagation. (Keep the comparison neutral — measure what each affords.)
+- **1.3 — Metrics.** Verdict **accuracy vs ε** *and* **calibration** of the soft acceptance probability (does predicted confidence track empirical correctness?). Possibly AUC / ECE. Expected: soft paradigms degrade gracefully and emit calibrated confidence; symbolic is brittle and binary.
+- **1.4 — New code.** `src/benchmarks/noise.py` (corruption models), `experiments/exp_uncertainty.py`, tests. The soft paths exist; main work is the harness + metrics.
+
+**Exit criterion:** a figure showing accuracy-vs-noise and a calibration plot demonstrating a capability symbolic cannot have.
+
+### Phase 2 — Capability Exp B: specification adaptation PoC 🔲
+
+The headline NeSy payoff and the bridge to Paper B. Higher risk (training loop + data).
+
+- **2.1 — Synthetic PoC first.** Start from a *wrong* spec (wrong target atom / over-strict threshold); make DeepDFA's soft transition (or acceptance) matrix learnable; train on labeled traces generated from the correct formula; show accuracy recovers. Symbolic = the control that cannot adapt.
+- **2.2 — RuleRunner adaptation (parallel data point).** Swap CILP `sign`→`tanh` (recompute biases via Garcez & Zaverucha `Amin`), adapt weights on misclassified traces. Neutral comparison of *what each differentiable paradigm affords*.
+- **2.3 — (stretch) Real data.** A BPIC log (BPIC 2012/2017) with a known Declare constraint, for a realistic adaptation story. Likely Paper B; a toy synthetic version suffices for Paper A.
+- **Code:** `src/adaptation/poc.py`, `experiments/exp4_adaptation.py` (both currently 🔲).
+
+### Phase 3 — Exploratory branches (open; any could become the contribution) 🔲
+
+Pursue opportunistically; these are the "unexpected directions."
+
+- **3.1 — Probabilistic three-valued LTLf monitoring (theory).** Formalize what it *means* to monitor a probabilistic trace: marginal acceptance probability (DeepDFA soft state) vs most-likely-path verdict (Viterbi) vs distribution over verdicts. Each paradigm naturally computes a different quantity; pinning down which is "correct" for safety monitoring is a paradigm-neutral theoretical contribution and a candidate true novelty.
+- **3.2 — A fourth / hybrid paradigm.** The empty matrix cell: exact+fast at runtime *and* differentiable for adaptation. Candidates: differentiable read-once guard circuits over the minimal DFA (sidesteps both the 2^|AP| blowup and the speed penalty — may be latent in the factored path), or straight-through symbolic (crisp at inference, relaxed only during adaptation).
+- **3.3 — Richer benchmark family.** The IJCNN `◇` family is a poor instrument (early-terminates; read-once guards make the soft path *exact*, hiding real divergence). Add Declare/BPM patterns, non-read-once-guard formulas (where soft paradigms provably diverge — a finding), and a state-blowup family (exposes symbolic's *and* DeepDFA's shared weakness — good for neutrality).
+- **3.4 — (Paper B seed) End-to-end backprop through the monitor into a perceptor.** A toy where a spec-violation loss trains a perception network — the real NeSy dream.
+
+### Phase 4 — Writing 🟡 (trails experiments; LaTeX in `latex/`)
+
+- Sec 1 intro: thesis = "characterize the affordances of each paradigm; the case for NeSy is capability, not speed." Resolve the three `\textcolor{red}` TODOs.
+- Sec 4 theory comparison (stub): the **capability matrix** + three Achilles heels, presented neutrally.
+- Sec 5 experiments (stub): fixed Exp 1–3 + Capability A (+ B); state early-termination handling and hardware explicitly.
+- Sec 6/7 related/conclusion (stubs).
 
 ## Repository Structure
 
@@ -46,16 +112,18 @@ nesy_runtime_monitoring/
 │   │   │   └── monitor.py     ✅ Monitor-interface wrapper (RuleRunnerMonitor)
 │   │   └── deep_dfa.py        ✅ Paradigm 3 — differentiable transition tensor (dense + factored)
 │   ├── adaptation/
-│   │   └── poc.py             🔲 Proof-of-concept gradient adaptation (deferred — no adaptation for now)
+│   │   └── poc.py             🔲 Proof-of-concept gradient adaptation (Phase 2)
 │   └── benchmarks/
 │       ├── __init__.py
 │       ├── formulas.py        ✅ Benchmark formula registry (IJCNN suite + trace-length suite)
+│       ├── noise.py           🔲 Observation-corruption models for Capability Exp A (Phase 1)
 │       └── runner.py          ✅ Timing harness (time_monitor, random_traces, results_to_df)
 ├── experiments/
 │   ├── exp1_single_trace.py   ✅ Trace-length scaling (G(a→Fb), 1k–10k cells)
 │   ├── exp2_formula_complexity.py ✅ Formula complexity / IJCNN 2014 reproduction (n leaves)
 │   ├── exp3_batch_size.py     ✅ Batch-size scaling (1–1024 traces, ijcnn_n8)
-│   └── exp4_adaptation.py     🔲 PoC adaptation (deferred — no Exp 4 for now)
+│   ├── exp_uncertainty.py     🔲 Capability Exp A — accuracy/calibration vs noise (Phase 1)
+│   └── exp4_adaptation.py     🔲 PoC adaptation (Phase 2)
 ├── tests/
 │   ├── test_compiler.py                    ✅ DFA structure + guard evaluation (9 tests)
 │   ├── test_symbolic_dfa.py                ✅ Step semantics, early termination, reset (21 tests)
@@ -80,7 +148,7 @@ step(obs: dict[str, bool]) -> Verdict      # SATISFY / VIOLATE / UNDECIDED
 final_verdict() -> Verdict                 # binary end-of-trace check; never UNDECIDED
 reset() -> None
 run(trace) -> Verdict                      # default: calls reset, loops step, then final_verdict
-batch_run(traces) -> list[Verdict]         # default: sequential run(); DeepDFA overrides for GPU
+batch_run(traces) -> list[Verdict]         # default: sequential run(); DeepDFA AND RuleRunner override for batched CPU/GPU
 ```
 
 Three-valued semantics (`UNDECIDED`) applies online — a trace mid-execution may not yet have a determined verdict. Absorbing states (all successors accepting, or all rejecting) enable early termination.
@@ -190,7 +258,7 @@ The L/R-mode truth tables are derived from B's column at the **pin value** — t
 **Knobs we may want to revisit:**
 - `_W = 1.0`. Any positive value works with sign activation; tanh would need a larger W for the activation to saturate. If we ever switch to tanh (for differentiability in Paper B's adaptation experiment), recompute hidden/output biases following Garcez & Zaverucha's `Amin` formula.
 - Sign activation. Step 3 is exact (sign matches set semantics). For gradient-based adaptation later we'd replace sign with tanh and keep the same weight structure.
-- No batching yet. `step()` operates on one observation at a time. Exp 3 (batch scaling) will need vectorised observations — batching the input tensor `x` along a leading dimension; the matrix products already support it.
+- Batching (✅ done). `step()` is still single-trace, but `CILPRunner.batch_run` adds a leading batch dimension to the activation tensor and runs the eval/react matmuls over the whole batch (`device="cpu"`/`"cuda"` via `from_formula(..., device=)`). Verified bit-for-bit equal to sequential `run()` in [tests/test_rulerunner_batch.py](tests/test_rulerunner_batch.py) on CPU and CUDA.
 
 ### Step 4 — monitor.py (✅ done)
 
@@ -199,14 +267,6 @@ The L/R-mode truth tables are derived from B's column at the **pin value** — t
 **Smoke-test scope.** [tests/test_rulerunner_monitor.py](tests/test_rulerunner_monitor.py) only verifies the ABC plumbing (`issubclass(RuleRunnerMonitor, Monitor)`, `compile` returns an instance, `run` and `batch_run` work, `reset` actually resets). The deep correctness work lives in the engine and CILP sweeps; duplicating it here adds nothing.
 
 **Subtle non-determinism caught after step 4 landed.** With three test files in play (engine sweep + CILP sweep + monitor smoke), the xfail-strict test for `G (a → X b)` started flipping to XPASS depending on test execution order. Root cause: the sweeps were seeding `np.random.default_rng` with `hash(formula) & 0xFFFFFFFF`. **Python's built-in `hash()` is randomised per interpreter session** (the `PYTHONHASHSEED` mechanism, designed against hash-collision DoS attacks), so each pytest invocation produced a different trace sample. The 1–4 traces (out of 80) where the nested-temporal limitation manifests sometimes fell outside the sample, and strict-xfail flagged that as a regression. **Fixed** by switching both sweeps to a stable MD5-based seed function `_stable_seed(formula)`. Verified across three independent runs: 155 passed / 6 xfailed every time. **Lesson**: never use `hash()` for cross-process reproducibility — either use a fixed integer or hash with `hashlib`.
-
-### Bugs discovered (with file:line pointers)
-
-1. **[compiler.py:76](src/formula/compiler.py#L76) — pre-existing accepting-states regex bug.** MONA's DOT output lists multi-state accepting sets as `node [shape = doublecircle]; 1; 2; 4;`. The old regex `r"node\s*\[\s*shape\s*=\s*doublecircle\s*\]\s*;\s*([^;]+);"` captured only state `1`. This was silently giving `SymbolicDFAMonitor` the wrong accepting set on **any formula whose DFA has more than one accepting state** — e.g. `WX a` has accepting set {1, 2, 4} but compiler returned {1}. The 21 existing `test_symbolic_dfa.py` tests happened not to cover such formulas. Caught by the equivalence sweep at step 2.5. **Fixed** with a block-extracting regex that captures everything between the `node [shape=doublecircle];` directive and the next `node [` / `init [` and then pulls every digit.
-
-2. **[engine.py:60](src/monitors/rulerunner/engine.py#L60) — off-by-one in convergence cap.** First draft used `range(self._depth)`. A depth-2 parse tree (`a | F b`) needs **3** passes: atom-eval (level 0), F-eval (level 1), OR-eval (level 2). So the cap is `depth + 1`, not `depth`.
-
-3. **[engine.py:_fire](src/monitors/rulerunner/engine.py) — react phase was deduplicating heads against this-cell state.** First draft of `_fire` skipped a rule if its head was already in `state`. Fine as a no-op skip in the eval loop's convergence detection. **Disastrous in the react phase**, because the next-cell R[.] literals overlap with the current cell's R[.] literals. Example: `[F(b)]? → R[F(b)]` and `[F(b)]? → R[b]` no-op'd out because `R[F(b)]` and `R[b]` were in cell-state from being this cell's initial R-literals. Next state ended up as just `{R[(a | F(b))]^R}` instead of `{R[(a | F(b))]^R, R[F(b)], R[b]}`, killing the rule-runner the next cell. **Fixed** by removing the head-skip from `_fire` and pushing the responsibility to callers: eval computes `produced - cell_state` to detect new facts; react keeps every firing head.
 
 ### Fundamental limitation — nested temporal under F/G/U/R
 
@@ -254,7 +314,9 @@ Uncommented `RuleRunnerMonitor` and added the import in all three experiment fil
 
 **Caveat for Exp 1 timing interpretation.** Exp 1's formula `G(a → F b)` is nested temporal, so RuleRunner's *verdicts* are wrong on some traces (see the limitation section above). But the formula was chosen precisely because it has no trap/sink — **no early termination ever fires**, so the per-cell cost is independent of verdict correctness. The timing measurement (`total_wall_time / (n_traces × trace_length)`) is fair. For the paper this is the right framing: "we measure per-cell cost on a formula where the rule encoding's correctness limitation does not affect the timing methodology, and separately document where the encoding diverges semantically." Exps 2 and 3 use the IJCNN scalability family (flat temporal) where the encoding is correct.
 
-**Batching gap (open for Paper A).** `CILPRunner.step` is single-trace. `Monitor.batch_run` falls back to sequential `run()` calls. For Exp 3 (batch-size scaling), this means RuleRunner shows the same flat-throughput curve `SymbolicDFAMonitor` does — i.e. no batching speedup — which is honest but not the most informative comparison. A natural extension is a `batch_step()` that adds a leading batch dimension to the activation tensor and clamps per-trace observations; the existing weight matrices broadcast natively. This is not blocking for first results, and surfaces a natural lead-in to DeepDFA's native batching advantage.
+**Cross-trace batching (✅ done — was an open gap).** `CILPRunner.batch_run` now vectorises the trace axis: per cell it runs the `depth+1` eval passes and the reactivation pass as batched matmuls over the whole batch (the weight matrices broadcast natively), faithful to IJCNN 2014's matrix-matrix formulation. It carries a `device` (`"cpu"`/`"cuda"`) threaded through `RuleRunnerMonitor.compile` and the `time_monitor` harness; the experiments auto-select `DEVICE = "cuda" if torch.cuda.is_available() else "cpu"`. Per-trace early termination and end-of-trace resolution are reconstructed after the uniform batched pass (first decided cell within a trace's length wins, else EOT on its final-cell state), so `batch_run == [run(t) …]` exactly — verified on CPU and CUDA (`tests/test_rulerunner_batch.py`, 0/1040 mismatches incl. the nested-temporal divergences, which it reproduces identically).
+
+This makes Exp 3 a *fair* comparison: vectorised RuleRunner vs vectorised DeepDFA on the same device, so the gap reflects the genuine architecture — RuleRunner's `depth+1` **within-step sequential** matmuls per cell vs DeepDFA's single matmul — not Python per-trace-loop overhead. RuleRunner benefits from cross-trace batching but stays bottlenecked by that within-step dependency, which is the clean story (DeepDFA is natively single-matmul-per-cell). The on-the-shelf `structured.py` (Fig. 5 variant) is intentionally left CPU/sequential — it's not used by the experiments.
 
 ### Remaining work
 
@@ -286,29 +348,31 @@ This is DeepDFA's structural scaling weakness, **dual to RuleRunner's nested-tem
 | mode | tensor | per-step cost | use |
 |---|---|---|---|
 | `dense` (default) | `T (|Q|, 2^|AP|, |Q|)` one-hot | one matmul / `bmm` | small `|AP|`; the **batching showcase** (Exp 3, ijcnn_n8 → 256 symbols) |
-| `factored` | none materialized | per-edge guard-prob closure | large `|AP|` (Exp 2, n up to 32); the **differentiable** soft path |
+| `factored` | none materialized | vectorized cube-mask reduction (crisp) / per-edge guard-prob closure (differentiable) | large `|AP|` (Exp 2, n up to 32); the **differentiable** soft path |
 
-**Factored details.** Each edge guard (a MONA label like `a & (b | c)`) is parsed with sympy and compiled to a torch closure computing satisfaction probability over the boolean tree assuming atom independence: `P(a)=p_a`, `P(¬φ)=1−P(φ)`, `P(φ∧ψ)=P(φ)P(ψ)`, `P(φ∨ψ)=1−(1−P(φ))(1−P(ψ))`. Key facts:
-- **Crisp 0/1 inputs → exact for *any* guard** (product = AND, `1−∏(1−·)` = OR exactly; no probability double-counting because inputs are 0/1). So factored crisp monitoring is exact and scales to large `|AP|`.
-- **Fractional inputs → exact only for read-once guards.** The IJCNN guard is read-once after MONA's factoring (`a & (b|c)`), so it's exact there; non-read-once guards (shared atoms across disjuncts) would be approximate. This only matters for the soft/differentiable path (Paper B), not for crisp monitoring.
-- `soft_matrix(p)` builds the `(…,|Q|,|Q|)` transition matrix; rows sum to 1 (outgoing guards partition the assignment space). It is differentiable in `p` — the entry point for the deferred adaptation experiment.
+**Factored details.** The factored mode has two complementary views of each edge guard (a MONA label like `a & (b | c)`):
+
+- **Crisp monitoring path (Phase 0.2 — the path Exp 1–3 time).** Each guard is decomposed *once* at construction into a **disjoint (orthogonal) cube cover** by Shannon expansion (`_guard_cubes`/`_shannon_cubes`), stored as `require-true`/`require-false` integer masks over the atoms. `crisp_matrix(p)` then builds the `(…,|Q|,|Q|)` transition matrix as a single vectorized reduction `cube = ∏_a [1 − rt·(1−p) − rf·p]` (= `p` for a require-true atom, `1−p` for require-false, `1` for don't-care) scattered into the matrix. No per-cell sympy closures → per-cell cost is a couple of batched tensor ops, **flat in |AP|** (vs the old per-cell closure walk that grew with formula size). Exact for crisp 0/1 inputs: each cube is 0/1 and the cubes are mutually exclusive, so they sum to a 0/1 transition; rows sum to 1 because a state's out-guards partition the assignment space.
+- **Differentiable soft path (`soft_matrix`, kept separate for the deferred adaptation PoC).** Each guard is compiled to a torch closure computing satisfaction probability over the boolean tree assuming atom independence: `P(a)=p_a`, `P(¬φ)=1−P(φ)`, `P(φ∧ψ)=P(φ)P(ψ)`, `P(φ∨ψ)=1−(1−P(φ))(1−P(ψ))`. **Crisp 0/1 inputs → exact for *any* guard.** **Fractional inputs → exact only for read-once guards** (the IJCNN guard is read-once after MONA's factoring; non-read-once would be approximate — the Phase 3.3 finding). This path is differentiable in `p` and is deliberately left recursive so the read-once semantics are unchanged; the crisp monitor does not use it.
+
+(For read-once guards the two views coincide on fractional inputs too — verified in the tests — since the orthogonal-cube sum equals the recursive read-once probability there.)
 
 ### Monitor mechanics
 
-- `step(obs)`: `q' = q @ T[:,σ,:]` (dense) or `q @ soft_matrix(prob_vector(obs))` (factored), then read the three-valued verdict off the precomputed `trap_idx` / `sink_idx` (SATISFY/VIOLATE absorbing) — same early-termination semantics as `SymbolicDFAMonitor`. `final_verdict` = accepting membership of `argmax(q)`.
-- `batch_run` **overrides** the base: encodes the whole batch and does **one `bmm` per cell** across all traces (dense: gather `T[:,σ_b,:]`; factored: batched `soft_matrix`). This is the GPU-batching path Exp 3 measures. Per-trace early termination / end-of-trace is replayed from the recorded state path so `batch_run` matches `[run(t) …]` exactly. `device="cuda"` is supported via `compile(..., device="cuda")`.
+- `step(obs)`: `q' = q @ T[:,σ,:]` (dense) or `q @ crisp_matrix(prob_vector(obs))` (factored), then read the three-valued verdict off the precomputed `trap_idx` / `sink_idx` (SATISFY/VIOLATE absorbing) — same early-termination semantics as `SymbolicDFAMonitor`. `final_verdict` = accepting membership of `argmax(q)`.
+- `batch_run` **overrides** the base: encodes the whole batch once (`encode_presence`, vectorized numpy) and does **one `bmm` per cell** across all traces (dense: gather `T[:,σ_b,:]`; factored: batched `crisp_matrix`). This is the GPU-batching path Exp 3 measures. Per-trace early termination / end-of-trace is replayed from the recorded state path so `batch_run` matches `[run(t) …]` exactly. `device="cuda"` is supported via `compile(..., device="cuda")`.
 
 ### Correctness
 
-`tests/test_deep_dfa.py` (115 tests): DeepDFA matches `SymbolicDFAMonitor` on the **full sweep including nested temporal — no xfails** (DeepDFA is exact where RuleRunner is not); dense == factored on crisp traces; `batch_run == [run(t) …]` in both modes; `soft_matrix` is row-stochastic and exact on the read-once IJCNN guard; factored handles `n=24` atoms with no `2^24` tensor.
+`tests/test_deep_dfa.py` (121 tests): DeepDFA matches `SymbolicDFAMonitor` on the **full sweep including nested temporal — no xfails** (DeepDFA is exact where RuleRunner is not); dense == factored on crisp traces; `batch_run == [run(t) …]` in both modes; `soft_matrix` is row-stochastic and exact on the read-once IJCNN guard; `crisp_matrix` is row-stochastic, 0/1 on crisp input, equals `soft_matrix` on read-once guards (crisp *and* fractional), and batched-matches-unbatched; factored handles `n=24` atoms with no `2^24` tensor.
 
-### Performance caveat (open)
+### Performance caveat (resolved — Phase 0.2)
 
-Factored `step` rebuilds `soft_matrix` from Python closures every cell (~1.8 ms/cell at n=32 vs ~5–12 µs/cell dense). Fine for correctness and for moderate Exp 2 configs, but the full Exp 2 (5000 cells × 100 traces) in factored mode is slow. If it bottlenecks: precompute per-edge literal masks and vectorize `soft_matrix` (require-true / require-false integer masks → tensor product over atoms), or cache crisp transitions. Not blocking for first results.
+Factored monitoring *used to* rebuild a `soft_matrix` from per-cell Python closures (~1.8 ms/cell at n=32). The crisp path is now the vectorized `crisp_matrix` over precomputed orthogonal-cube require-true/require-false masks (built once at construction), so per-cell cost is flat in |AP| (~7e-6 s/cell at n=32, ~3.7× over n=2→32 = the genuine O(n²) mask reduction). The recursive `soft_matrix` remains only for the differentiable fractional path (Paper B); it is no longer on the monitoring hot path.
 
 ### Experiment integration
 
-`DeepDFAMonitor` is in the `MONITORS` list of all three experiments. exp1 (`G(a→F b)`, 2 atoms) and exp3 (ijcnn_n8, 256 symbols) use **dense**; exp2 (atoms up to 32) uses a `DeepDFAMonitorFactored` subclass (dense would OOM at 2^32). To also show the dense blowup in exp2, add a dense variant capped at small n.
+`DeepDFAMonitor` is in the `MONITORS` list of all three experiments. exp1 (`G(a→F b)`, 2 atoms) and exp3 (ijcnn_n8, 256 symbols) use **dense**; exp2 (atoms up to 32) runs **both** a `DeepDFAMonitorFactored` subclass (all n, vectorized crisp path — flat) and a `DeepDFAMonitorDense` subclass capped at `DENSE_MAX_LEAVES=16` (skipped beyond — 2^32 would OOM), plus an analytic **memory-wall panel** (dense `|Q|²·2^|AP|` vs factored mask bytes) showing the alphabet-blowup finding (Phase 0.2).
 
 ## Benchmark Design
 
@@ -323,7 +387,7 @@ Factored `step` rebuilds `soft_matrix` from Python closures every cell (~1.8 ms/
 | Kind | What runs in parallel | Where it shows up |
 |---|---|---|
 | **Within-step** | evaluation rules (RuleRunner) / matmul atoms (DeepDFA) fire simultaneously within a single cell, rather than sequentially | Exp 2 (formula complexity): per-cell cost grows with parse-tree depth for RuleRunner (convergence loop runs `depth+1` passes), stays flat for DeepDFA (always one matmul); IJCNN 2014's primary contribution claim |
-| **Cross-trace** | multiple traces batched as matrix rows, turning matrix-vector into matrix-matrix products | Exp 3 (batch size): DeepDFA's GPU advantage is here; RuleRunner partially benefits but is bottlenecked by within-step sequential dependencies |
+| **Cross-trace** | multiple traces batched as matrix rows, turning matrix-vector into matrix-matrix products | Exp 3 (batch size): both DeepDFA and RuleRunner now batch this axis on CPU/CUDA (`batch_run`). DeepDFA's advantage is that it pays one matmul/cell; RuleRunner benefits from cross-trace batching but stays bottlenecked by its `depth+1` within-step sequential passes |
 
 IJCNN 2014 uses both, but their headline claim is within-step rule parallelism. Our Exp 2 captures this implicitly (per-cell time vs. formula size), and Exp 3 isolates cross-trace batching. They are separate axes and should be framed distinctly in the paper.
 
@@ -336,18 +400,21 @@ A micro-benchmark that isolates within-step parallelism explicitly, independent 
 - This directly separates the within-step depth-cost claim from Exp 2's breadth (leaves) scaling. It would be the cleanest empirical support for the "one matmul per cell" framing.
 - Scope assessment: straightforward to implement (add `X` wrappers in the formula list, reuse `time_monitor` with n_traces=1, trace_length=1). Main question is whether a 10-page paper has room for a fourth timing figure. Could be one subplot in a compound figure alongside Exp 1/2.
 
-**Experiments (Exp 4 deferred):**
+**Experiments (see § Research Plan for phases/status):**
 
-| Exp | X-axis | Formula | Parallelism kind | Expected story |
+| Exp | X-axis | Formula | Kind | Expected story |
 |---|---|---|---|---|
-| 1: trace length | 1k–10k cells | `G(a → F b)` (no trap/sink) | — | All paradigms flat — per-step cost is constant |
-| 2: formula complexity | n=2,4,8,16,32 leaves | IJCNN 2014 family | within-step (implicit) | Symbolic DFA flat; RuleRunner linear; DeepDFA flat with GPU overhead |
-| 3: batch size | 1–1024 parallel traces | `ijcnn_n8` (fixed) | cross-trace | DeepDFA's GPU advantage emerges here |
-| 4: adaptation PoC | — | Declare pattern | — | Deferred — requires real dataset + DeepDFA |
+| 1: trace length | 1k–10k cells | `G(a → F b)` (no trap/sink) | timing | All paradigms flat — per-step cost is constant |
+| 2: formula complexity | n=2,4,8,16,32 leaves | IJCNN family (early-term **off**, Phase 0.1) | timing / within-step | Symbolic flat; RuleRunner linear in depth; DeepDFA dense hits 2^n wall, factored flat once vectorized |
+| 3: batch size | 1–1024 parallel traces | `ijcnn_n8` (early-term **off**) | timing / cross-trace | Lead with absolute time; whether batched DeepDFA wins is an *honest open question* (re-run on server GPU, Phase 0.4) |
+| A: perceptual uncertainty | noise level ε | response/IJCNN | **capability** | Soft paradigms degrade gracefully + emit calibrated confidence; symbolic is brittle (Phase 1) |
+| 4: adaptation PoC | training steps | wrong→correct spec | **capability** | Differentiable monitors recover from data; symbolic cannot (Phase 2) |
 
 `G(a → F b)` is used for Exp 1 because it has no trap or accepting sink, so early termination never fires. This isolates pure per-step cost from early-termination frequency. `G a` does have a trap state (fires the moment `a` is false), so on random traces early termination would dominate and obscure the per-cell cost signal.
 
 **Timing methodology:** `total_wall_time / (n_traces × trace_length)` — divides by total potential cells, not actual cells processed. Follows IJCNN 2014. Early termination advantage is captured naturally: a paradigm that terminates early does less work and earns a lower per-cell cost.
+
+**⚠ Early-termination confound (first-pass finding — Phase 0.1 fixes this).** The methodology above conflates two things when used to compare *per-cell compute* across paradigms. On the IJCNN `◇(⋁(a₀∧aᵢ))` family, the formula early-terminates almost immediately on random traces, so the **crisp** monitors (Symbolic) process ~2 cells and divide by thousands of potential cells, reporting ~1e-10 s/cell — physically impossible as real per-cell compute (one Python dict lookup is ~5e-8 s). Meanwhile the **batched** neural monitors (`batch_run`) process *all* cells uniformly before replaying early termination. So Exp 2/3 as originally run do not compare the same workload — they compare "how fast a paradigm gives up" against "full batched pass." For the per-cell-cost and within-step figures, disable early termination (or use a non-terminating family) so all paradigms process all cells; reserve the early-termination reward for a *separate* data-dependent experiment if wanted. This does not affect Exp 1 (`G(a→Fb)` has no trap/sink, never early-terminates — which is exactly why it was chosen).
 
 **Extending experiments to new paradigms:** each script has a `MONITORS` list at the top. Uncomment `RuleRunnerMonitor` / `DeepDFAMonitor` once those are implemented — no other changes needed.
 

@@ -1,0 +1,71 @@
+\section{Background}
+
+\subsection{An Historical Overview of Temporal Logics over Finite Traces}
+\label{sec:overview}
+
+Studying LTL over finite traces gained significant attention \citep{lichtenstein1985glory,manna1995temporal}. The original RuleRunner system \citep{perotti2015runtime} refers to FLTL as a finite-trace variant of \ltl. As already mentioned, in the last decade \ltlf has established as the standard language for modeling finite traces of executions. Notably, FLTL and \ltlf share essentially the same syntax and semantics, offering two next operators, with a strong next operator $X$ which is false at the last position if no successor exists, and a weak next operator $W$ which is true at the last position (see Sec. \ref{sec:ltlf} for details). FLTL makes explicit use of an $\textit{END}$ symbol for signaling the last element of the trace, but this can be easily expressed with the weak next operator by $\textit{END} \equiv W  false$.  %This means that for any finite trace σ and position i, a formula φ is satisfied under FLTL semantics if and only if its \ltlf translation is satisfied under \ltlf semantics. 
+In this paper, we use \ltlf as the specification language for all three monitoring paradigms we compare.
+
+\noindent
+\textcolor{red}{TODO: Mention other finite-trace variants.}
+
+\subsection{Syntax and Semantics}
+\label{sec:ltlf}
+
+Given a finite set $\Sigma$ of atomic propositions, an \ltlf formula $\varphi$ has the form:
+%\begin{equation}
+\[
+    \varphi ::= \top \mid
+    \bot
+    \mid 
+    a
+    \mid
+    \lnot\varphi
+    \mid
+    \varphi_1\land\varphi_2
+    \mid
+    X\varphi
+    \mid
+    \varphi_1 U\varphi_2,
+\]
+%\end{equation}
+where $a \in \Sigma$. We use $\top$ and $\bot$ to denote $True$ and $False$, respectively. $X$ (Strong Next) and $U$ (Until) are temporal operators. Other temporal operators can be derived as follows: $W$ (Weak Next) is defined as $W \varphi \equiv \neg X\neg\varphi$, $R$ (Release) is defined as $\varphi_1 R \varphi_2 \equiv \neg(\neg\varphi_1 U \neg\varphi_2 )$, $G$ (globally) is defined as $G\varphi \equiv \bot R\varphi$, and $F$ (eventually) is defined as $F \varphi \equiv \top U \varphi$.
+
+A trace $\boldsymbol{\sigma} = (\sigma_{1}, \sigma_{2}, \dots, \sigma_{T})$ is a sequence of propositional assignments to the propositions in $\Sigma$, where $\sigma_{t} \in 2^\Sigma$ is the set of all and only propositions that are true at instant $t$. Additionally, $|\boldsymbol{\sigma}| = T$ denotes the length of the trace. 
+%Since every trace is finite, $|\boldsymbol{\sigma}| < \infty$.
+Note that, if the propositional symbols in $\Sigma$ are all \textit{mutually exclusive}, i.e., the domain produces exactly one symbol true at each step, then we have $\sigma_{t} \in \Sigma$.
+%
+Let $last = |\boldsymbol{\sigma}| - 1$. We inductively define when
+an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$), written $\boldsymbol{\sigma},i \models \varphi$, as follows:
+\begin{itemize}
+    \item $\boldsymbol{\sigma}, i \models a$ iff $a \in \boldsymbol{\sigma}_i$, for $a \in \Sigma$;
+    \item $\boldsymbol{\sigma}, i \models \neg \varphi$ iff $\boldsymbol{\sigma}, i \not\models \varphi$;
+    \item $\boldsymbol{\sigma}, i \models \varphi_1 \land \varphi_2$ iff $\boldsymbol{\sigma}, i \models \varphi_1$ and $\boldsymbol{\sigma}, i \models \varphi_2$;
+    \item $\boldsymbol{\sigma}, i \models X\varphi$ iff $i < last$ and  $\boldsymbol{\sigma}, i + 1 \models \varphi$;
+    \item $\boldsymbol{\sigma}, i \models \varphi_1 \muntil \varphi_2$ iff for some $j$ such that $i \leq j \leq last$, we have $\boldsymbol{\sigma}, j \models \varphi_2$, and for all $k$ such that $i \leq k < j$, we have $\boldsymbol{\sigma}, k \models \varphi_1$.
+\end{itemize}
+%
+\noindent
+We say that $\boldsymbol{\sigma}$ satisfies $\phi$, written $\boldsymbol{\sigma} \models \varphi$, if $\boldsymbol{\sigma}, 0 \models \varphi$. A formula $\varphi$ is satisfiable if it is true wrt some trace $\boldsymbol{\sigma}$, and is valid, if it is true wrt every trace $\boldsymbol{\sigma}$.
+
+Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \citep{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
+Additionally, we recursively define the extended transition function over traces $\delta^*: Q \times (2^\Sigma)^* \rightarrow Q$ as:
+
+\begin{equation}
+%\[
+\begin{array}{l}
+\delta^*(q,\epsilon) = q \\
+\delta^*(q, \sigma+\boldsymbol{x}) = \delta^*(\delta(q,\sigma) , \boldsymbol{x}),
+\end{array}
+%\]
+\end{equation}
+where $\sigma \in 2^\Sigma$ is a symbol and $\boldsymbol{x} \in (2^\Sigma)^*$ is a trace.  
+The automaton accepts the trace $\boldsymbol{\sigma}$ iff $\delta^*(q_0, \boldsymbol{\sigma}) \in F$, and in that case we say that $\boldsymbol{\sigma}$ belongs to the language of the automaton, denoted as $\calL(A_\varphi)$.  
+We have that $\varphi$ and $A_\varphi$ are equivalent because, for any trace $\boldsymbol{\sigma} \in (2^\Sigma)^*$:
+\begin{equation}
+%\[
+\boldsymbol{\sigma}\in \calL(A_\varphi) \iff\boldsymbol{\sigma}\vDash\varphi.
+%\]
+\end{equation}
+
+

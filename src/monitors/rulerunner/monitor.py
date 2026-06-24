@@ -17,6 +17,10 @@ dimension to the activation vector is the natural extension.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
+import torch
+
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
 from src.monitors.rulerunner.cilp import CILPRunner
@@ -29,8 +33,10 @@ class RuleRunnerMonitor(Monitor):
         self._runner = runner
 
     @classmethod
-    def compile(cls, formula: str) -> "RuleRunnerMonitor":
-        return cls(CILPRunner.from_formula(formula))
+    def compile(
+        cls, formula: str, device: str | torch.device = "cpu"
+    ) -> "RuleRunnerMonitor":
+        return cls(CILPRunner.from_formula(formula, device=device))
 
     def step(self, obs: Observation) -> Verdict:
         return self._runner.step(obs)
@@ -40,3 +46,16 @@ class RuleRunnerMonitor(Monitor):
 
     def reset(self) -> None:
         self._runner.reset()
+
+    def batch_run(
+        self,
+        traces: Iterable[Iterable[Observation]],
+        early_termination: bool = True,
+    ) -> list[Verdict]:
+        """Vectorised cross-trace path (CPU/CUDA). Delegates to the runner,
+        which parallelises the trace axis with batched matmuls; identical
+        verdicts to the sequential default. ``early_termination`` is accepted
+        for interface parity but does not change the compute — the batched
+        path always advances every trace through all its cells (see
+        ``CILPRunner.batch_run``)."""
+        return self._runner.batch_run(traces, early_termination=early_termination)

@@ -1,0 +1,95 @@
+\section{Symbolic and Neuro-Symbolic Monitoring Strategies}
+
+\subsection{Symbolic Monitoring}
+\label{sec:symbolic}
+
+\paragraph{Architecture.}
+The purely symbolic strategy is the classical automata-theoretic approach to runtime monitoring, and it serves as the exact baseline against which the two neuro-symbolic paradigms are measured. Given a specification $\varphi$, we compile it once into the minimal DFA $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$ introduced in Section~\ref{sec:ltlf}, using the standard \ltlf-to-automaton route \citep{LTLf,LTL2DFA1} as implemented by \texttt{ltlf2dfa} \citep{fuggitti-ltlf2dfa}. Monitoring is then a deterministic walk over this automaton: the monitor keeps a single current state $q$, initialized to $q_0$, and on observing the cell $\sigma_t \in 2^\Sigma$ it advances $q \leftarrow \delta(q, \sigma_t)$. Because the automaton is fixed and deterministic, each step costs a single transition lookup, independent of the trace seen so far and of the size of $\varphi$; after processing a prefix $\sigma_1 \cdots \sigma_t$ the current state is exactly $\delta^*(q_0, \sigma_1 \cdots \sigma_t)$. This makes symbolic monitoring the fastest paradigm on a single trace, at the cost of being entirely static: the automaton encodes the specification exactly and admits no learning or adaptation.
+
+\paragraph{Verdicts and early termination.}
+Online monitoring requires the three-valued runtime semantics of \citet{monitorability_LTL}: at each cell the monitor emits \textsc{satisfy}, \textsc{violate}, or \textsc{undecided}, the last meaning that the observed prefix can still be extended into both an accepting and a non-accepting continuation. A definite verdict can be issued as soon as the outcome is settled regardless of the future, which corresponds to two structural properties of the current state, both precomputed once by backward reachability over $A_\varphi$. A state is a \emph{trap} if no accepting state is reachable from it: reaching a trap means $\varphi$ is permanently violated, so the monitor halts with \textsc{violate}. Dually, a state is an \emph{accepting sink} if every state reachable from it (including itself) is accepting: the monitor halts with \textsc{satisfy}. With trap and sink sets materialized at compile time, the per-step verdict reduces to two set-membership tests on top of the transition lookup. As long as the current state is neither, the verdict is \textsc{undecided} and monitoring continues.
+
+Some specifications never reach a trap or a sink, so \textsc{step} returns \textsc{undecided} for the entire trace; the canonical example is the response pattern $G(a \rightarrow Fb)$, which can always be satisfied by a later $b$ and always be rescued from violation, hence has neither an accepting sink nor a trap. For these the verdict is only binary at the end of the trace, and the monitor reports a final verdict by testing acceptance of the state reached, i.e.\ \textsc{satisfy} iff $\delta^*(q_0, \boldsymbol{\sigma}) \in F$ and \textsc{violate} otherwise. Crucially, this monitor is exact on every \ltlf formula: its verdicts coincide with the semantics of Section~\ref{sec:ltlf} by construction, including the nested-temporal specifications on which RuleRunner diverges (Section~\ref{sec:rulerunner}).
+
+\subsection{Rule-based NeSy Monitoring: RuleRunner}
+\label{sec:rulerunner}
+
+\paragraph{Architecture.}
+
+A RuleRunner system is a tuple $\langle S,R_E,R_R \rangle$, where $S$ is the state of the system, $R_E$ is the set of \emph{evaluation rules}, and $R_R$ is the set of \emph{reactivation rules}. In details:
+
+\begin{itemize}
+    \item The sate $S$ contains observations, active rules, and truth evaluations. $R[\phi]$ denotes an active rule, while $[\phi]V$  denotes a 3-values truth evaluation, with $V \in \{T, F, ?\}$.
+    \item Evaluation rules are used to compute the truth value of a formula $\phi$ under verification, given the truth values of its direct subformulae $\psi_i$. They have the form $R[\phi],[\psi_1]V,...,[\psi_n]V \rightarrow [\phi]V$. For instance, $R[a \lor b], [a]T \rightarrow [a \lor b]T$, because the disjuction is evaluated to \emph{true} if one of the two disjuncts is true.
+    \item Reactivation rules are used when a formula $\phi$ is evaluated to undecided, i.e. $[\phi]?$, in which case that formula and its subformulae are scheduled to be monitored again in the next cell of the trace. They have the form $[\phi]? \rightarrow R[\phi],R[\psi_1],...,R[\psi_n]$. For instance, $[\Diamond b]? \rightarrow R[b],R[\Diamond b]$, because if $\Diamond b$ is undecided, we need to re-evaluate $b$ and $\Diamond b$ at the next step.
+\end{itemize}
+
+%\noindent
+%Note that evaluation rules are Horn clauses in implication form, and reactivation rules can be rewritten to be a set of Horn clauses as well.
+
+\noindent
+Both active rules and truth evaluations can be enriched by a \emph{qualifier}, such as $B$ (binary), $L$ (left) and $R$ (right), which provides additional information recording which operands within a formula/subformula are still being watched. For instance, $R[a \land \Diamond b], [a]T \rightarrow [a \land \Diamond b] ? R$, because if the left conjunct $a$ is true, it is still needed to check the truth value right conjunct $\Diamond b$ to assign a truth value to the conjunction.
+
+%$\mathsf{B}$ (both operands), and $\mathsf{L}$/$\mathsf{R}$ (only the left/right operand, after the other has been settled to its pinning value); the next operator switches to a monitoring mode $\mathsf{M}$ that mirrors its operand one cell later. 
+
+Verification of a trace against a formula proceeds iteratively on the cells of the trace. At the beginning of each iteration (corresponding to the monitoring of a cell), the state $S$ contains a set of rule names corresponding to the subformulae to be checked in that cell. First, the procedure includes observations of the current cell in the state $S$ and fires the evaluation rules repeatedly incrementing the state itself until it reaches a fixpoint. In practice, this means computing the truth values of all subformulae of $\phi$ in a bottom-up way, from simple atoms to $\phi$ itself (see Figure ...). If the root evaluates to true (resp. false), the monitor halts with verdict \textsc{satisfy} (resp.\ \textsc{violate}). Otherwise, the reactivation rules are fired, and the result constitute the state of the next iteration. Note that in this case the state is not expanded, but replaced by the result of reactivation rules. This is used to flush all the previous truth evaluation, which are to be computed from scratch in the new cell. The procedure terminates with a decided verdict because of special END-triggered evaluation rules, that returns either true or false if we consumed the whole trace. 
+
+A RuleRunner system can be translated in a logic program, which in turn can be encoded in a Recurrent Neural Network with a single hidden layer, s.t. each evaluation and reactivation rule is a mapping from the input layer to the output one. For a detailed description of RuleRunner and verification algorithm see \citet{perotti2014neural,perotti2015runtime}.
+
+
+\paragraph{Examples.}
+A limitation of RuleRunner emerges for formulas in which a temporal operator is nested inside the operand of another temporal operator that may reactivate that operand across successive cells. RuleRunner relies on maintaining a single shared state, with one truth status for each syntactic subformula. This design is well suited to many flat temporal specifications, but in nested cases it can conflate distinct live obligations corresponding to the same subformula at different trace positions. 
+
+Consider the two formulas $\varphi_g = F(a \land b)$ and $\varphi_b = F(a \land Xb)$, which differ only by a single next operator, monitored over the same trace $\boldsymbol{\sigma} = (\{a\}, \emptyset, \{b\})$. Neither formula is satisfied: $\varphi_g$ would require a cell where $a$ and $b$ hold \emph{together} (but $a$ occurs only at $t = 0$ and $b$ only at $t = 2$), and $\varphi_b$ would require a cell $t$ with $a \in \sigma_t$ and $b \in \sigma_{t+1}$ (but the only $a$ is at $t = 0$,and is not followed by a $b$ at $t = 1$). The correct verdict in both cases is therefore \textsc{violate}, but RuleRunner can provide the correct answer only for the first formula.  
+
+First, consider $\varphi_g$. The run is:
+%
+\noindent
+\begin{center}\small
+\begin{tabular}{c c l l}
+\toprule
+$t$ & $\sigma_t$ & evaluation & reactivation\\
+\midrule
+\multirow{2}{*}{$0$} & \multirow{2}{*}{$\{a\}$} & $[a]T,[b]F \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & $\rightarrow R[F(a \land b)],R[a],R[b],R[a \land b]$\\[1.5ex]
+\multirow{2}{*}{$1$} & \multirow{2}{*}{$\emptyset$} & $[a]F,[b]F \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & $\rightarrow R[F(a \land b)],R[a],R[b],R[a \land b]$\\[1.5ex]
+\multirow{3}{*}{$2$} & \multirow{3}{*}{$\{b\}$} & $[a]F,[b]T \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & \\
+& & $[F(a \land b)]? \rightarrow_{\textsc{end}} [F(a \land b)]F$ & $\rightarrow \textsc{violate}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Now, consider $\varphi_b$, In this case, the run diverges:
+\begin{center}\small
+\begin{tabular}{c c l l}
+\toprule
+$t$ & $\sigma_t$ & evaluation & reactivation\\
+\midrule
+\multirow{3}{*}{$0$} & \multirow{3}{*}{$\{a\}$} & $R[Xb] \rightarrow [Xb]?$ & $\rightarrow R[Xb]M,R[b]$ \\
+&  & $[a]T,[Xb]? \rightarrow [a \land Xb]?R$ & $\rightarrow R[a \land Xb]R$  \\
+&  & $[a \land Xb]?R \rightarrow [F(a \land Xb)]?$ & $\rightarrow R[F(a \land Xb)],R[a],R[Xb],R[a \land Xb]$ \\[1.5ex]
+
+\multirow{6}{*}{$1$} & \multirow{6}{*}{$\emptyset$} & $R[Xb] \rightarrow [Xb]?$ & $\rightarrow R[Xb]M,R[b]$ \\
+& & $R[Xb]M, [b]F \rightarrow [Xb]F$ & \\
+&  & $R[a \land Xb]R,[Xb]? \rightarrow [a \land Xb]?R$ & $\rightarrow R[a \land Xb]R$  \\
+&  & $R[a \land Xb]R,[Xb]T \rightarrow [a \land Xb]T$ &  \\
+&  & $R[a \land Xb],[a]F \rightarrow [a \land Xb]F$ &  \\
+&  & $[a \land Xb]?R \rightarrow [F(a \land Xb)]?$ & $\rightarrow R[F(a \land Xb)],R[a],R[Xb],R[a \land Xb]$ \\[1.5ex]
+
+\multirow{5}{*}{$2$} & \multirow{5}{*}{$\{b\}$} & $R[Xb] \rightarrow [Xb]?$ & \\
+& & $R[Xb]M, [b]T \rightarrow [Xb]T$ & \\
+&  & $R[a \land Xb]R,[Xb]T \rightarrow [a \land Xb]T$ &  \\
+&  & $R[a \land Xb],[a]F \rightarrow [a \land Xb]F$ &  \\
+&  & $[a \land Xb]T \rightarrow [F(a \land Xb)]T$ & $\rightarrow \textsc{satisfy}$ (wrong) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The divergence stems from RuleRunner's single shared state, which keeps exactly one truth slot per syntactic subformula. For $\varphi_g$ the operand $a \land b$ is purely propositional: it is re-evaluated from scratch at every cell and never carried across cells, so the conjunction always reflects the current instant alone, and the monitor correctly reports \textsc{violate}. For $\varphi_b$, instead, the operand contains the temporal subformula $Xb$, whose truth is only settled one cell later; the eventually operator spawns a fresh copy of $a \land Xb$ at every cell, yet all copies share the single literal $[Xb]$ and the single carried conjunction $[a \land Xb]R$. When $b$ finally holds at $t = 2$, the resulting $[Xb]T$ is consumed by the carried mode-$R$ conjunction, which pins its already-settled left conjunct to true and concludes $[a \land Xb]T$ --- even though no single instant ever had $a$ immediately followed by $b$. Lacking any way to distinguish obligations originating at different positions, RuleRunner conflates them and wrongly reports \textsc{satisfy}. This is a structural consequence of the one-literal-per-subformula encoding, not an implementation artifact, and it affects exactly the nested-temporal formulas (such as the response pattern $G(a \rightarrow Fb)$) that are common in practice; the automata-based paradigms of the next section do not suffer from it, since a single canonical state machine never conflates concurrent obligations.
+
+
+
+\subsection{Automata-based NeSy Monitoring: DeepDFA}

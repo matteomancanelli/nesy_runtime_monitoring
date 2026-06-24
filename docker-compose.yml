@@ -1,0 +1,17 @@
+# Convenience wrapper around the Dockerfile.
+#
+#   docker compose build
+#   docker compose run --rm exp python experiments/exp1_single_trace.py
+#
+# Results land in ./results on the host (mounted volume) and persist across
+# runs, so an interrupted experiment resumes on the next invocation.
+#
+# `gpus: all` needs Docker Compose v2.30+. If your server's compose is older,
+# use the plain `docker run --gpus all ...` form from DOCKER.md instead.
+services:
+  exp:
+    build: .
+    image: nesy-monitoring:latest
+    gpus: all
+    volumes:
+      - ./results:/app/results

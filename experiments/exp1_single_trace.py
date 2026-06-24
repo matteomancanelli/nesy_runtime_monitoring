@@ -15,10 +15,17 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
 import matplotlib.pyplot as plt
+import pandas as pd
+import torch
 from tqdm import tqdm
 
 from src.benchmarks.formulas import TRACE_LENGTH_SUITE
-from src.benchmarks.runner import results_to_df, time_monitor
+from src.benchmarks.runner import (
+    append_result,
+    load_completed,
+    result_key,
+    time_monitor,
+)
 from src.monitors.deep_dfa import DeepDFAMonitor
 from src.monitors.rulerunner import RuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
@@ -42,6 +49,10 @@ N_REPEATS = 7
 N_WARMUP  = 3
 SEED      = 42
 
+# Tensor monitors (RuleRunner, DeepDFA) run their batched matmuls here;
+# the symbolic DFA ignores it. Auto-uses the GPU when one is available.
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
@@ -49,11 +60,18 @@ RESULTS_DIR.mkdir(exist_ok=True)
 # Run
 # ---------------------------------------------------------------------------
 
-results = []
+csv_path = RESULTS_DIR / "exp1_single_trace.csv"
+completed = load_completed(csv_path)   # resume: skip cells already on disk
+
 total = len(MONITORS) * len(TRACE_LENGTHS)
 with tqdm(total=total, desc="exp1") as pbar:
     for monitor_cls in MONITORS:
         for tl in TRACE_LENGTHS:
+            key = result_key(monitor_cls.__name__, FORMULA.name, tl, N_TRACES)
+            if key in completed:
+                pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl, skip=True)
+                pbar.update()
+                continue
             r = time_monitor(
                 monitor_cls, FORMULA,
                 trace_length=tl,
@@ -61,15 +79,14 @@ with tqdm(total=total, desc="exp1") as pbar:
                 n_repeats=N_REPEATS,
                 n_warmup=N_WARMUP,
                 seed=SEED,
+                device=DEVICE,
             )
-            results.append(r)
+            append_result(r, csv_path)   # flush immediately for resumability
             pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl)
             pbar.update()
 
-df = results_to_df(results)
-csv_path = RESULTS_DIR / "exp1_single_trace.csv"
-df.to_csv(csv_path, index=False)
-print(f"Saved: {csv_path}")
+print(f"Saved (incremental): {csv_path}")
+df = pd.read_csv(csv_path)
 
 # ---------------------------------------------------------------------------
 # Plot
