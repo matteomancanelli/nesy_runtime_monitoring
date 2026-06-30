@@ -1,4 +1,5 @@
 \section{Experimental Comparison}
+\label{sec:experiments}
 
 All three monitoring paradigms are implemented in a common framework sharing a uniform \textsc{Monitor} interface, which ensures that the experimental harness is paradigm-agnostic: timing experiments iterate over a list of monitor instances without any paradigm-specific branching. The shared compilation pipeline uses \texttt{ltlf2dfa} \citep{fuggitti-ltlf2dfa} to translate each \ltlf formula into a minimal DFA once at construction time.
 

@@ -14,11 +14,12 @@ monitoring comparison.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
 
 from src.benchmarks.formulas import BenchmarkFormula
 from src.monitors.base import Monitor
@@ -36,6 +37,7 @@ class TimingResult:
     std_s_per_cell: float
     device: str = "cpu"
     early_termination: bool = True
+    gpu_name: str = ""
 
 
 def random_traces(
@@ -91,15 +93,29 @@ def time_monitor(
 
     monitor = monitor_cls.compile(formula.formula, device=device)
 
+    # CUDA kernel launches are asynchronous, so time.perf_counter() would stop
+    # before the GPU finishes unless we synchronize. We sync ONCE around the
+    # whole timed region (after the full batch_run), never per cell (Phase 0.3
+    # measurement hygiene) — a per-cell sync would serialize the batched path
+    # and inflate the very GPU advantage Exp 3 is meant to measure.
+    cuda_sync = device == "cuda" and torch.cuda.is_available()
+    # Stamp the GPU model so results from different machines (laptop vs Colab vs
+    # server) are attributable and comparable. Empty on CPU.
+    gpu_name = torch.cuda.get_device_name() if cuda_sync else ""
+
     # warm-up: prime caches without contributing to measurements
     for _ in range(n_warmup):
         monitor.batch_run(traces, early_termination=early_termination)
+    if cuda_sync:
+        torch.cuda.synchronize()  # drain warm-up before the first measurement
 
     total_cells = n_traces * trace_length
     times: list[float] = []
     for _ in range(n_repeats):
         t0 = time.perf_counter()
         monitor.batch_run(traces, early_termination=early_termination)
+        if cuda_sync:
+            torch.cuda.synchronize()  # ensure all kernels finished before t1
         times.append(time.perf_counter() - t0)
 
     per_cell = [t / total_cells for t in times]
@@ -114,6 +130,7 @@ def time_monitor(
         std_s_per_cell=float(np.std(per_cell)),
         device=device,
         early_termination=early_termination,
+        gpu_name=gpu_name,
     )
 
 

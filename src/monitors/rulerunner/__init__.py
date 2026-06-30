@@ -6,5 +6,6 @@ Perotti, Garcez, Boella, IJCNN 2014.
 """
 
 from src.monitors.rulerunner.monitor import RuleRunnerMonitor
+from src.monitors.rulerunner.structured import StructuredRuleRunnerMonitor
 
-__all__ = ["RuleRunnerMonitor"]
+__all__ = ["RuleRunnerMonitor", "StructuredRuleRunnerMonitor"]

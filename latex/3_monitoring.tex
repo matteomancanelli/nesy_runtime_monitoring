@@ -93,3 +93,27 @@ The divergence stems from RuleRunner's single shared state, which keeps exactly 
 
 
 \subsection{Automata-based NeSy Monitoring: DeepDFA}
+\label{sec:deepdfa}
+
+\paragraph{Architecture.}
+DeepDFA \citep{deepdfa_ecai2024} keeps the automaton of the symbolic paradigm but replaces its explicit state walk with a differentiable, tensorized one; we adopt the same forward formulation used for predictive monitoring of business processes by \citet{mezini2025neuro}. Starting again from the minimal DFA $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$ of Section~\ref{sec:ltlf}, we encode its transition function as a three-way tensor $T \in \{0,1\}^{|Q| \times |2^\Sigma| \times |Q|}$ with $T[q, \sigma, q'] = 1$ iff $\delta(q, \sigma) = q'$, and the accepting set as an indicator vector $v_o \in \{0,1\}^{|Q|}$ with $v_o[q] = 1$ iff $q \in F$. The monitor state is no longer a single automaton state but a row vector $\mathbf{q}_t \in [0,1]^{|Q|}$ over states, initialized to the one-hot vector $\mathbf{q}_0 = v_i$ of $q_0$. Writing $T_\sigma = T[\,\cdot\,, \sigma, \cdot\,] \in \{0,1\}^{|Q| \times |Q|}$ for the (row-stochastic) transition matrix of symbol $\sigma$, a step is a single vector--matrix product
+\begin{equation}
+  \mathbf{q}_t = \mathbf{q}_{t-1}\, T_{\sigma_t},
+  \qquad
+  \mathrm{acc}_t = \mathbf{q}_t \cdot v_o,
+  \label{eq:deepdfa-crisp}
+\end{equation}
+where $\mathrm{acc}_t \in [0,1]$ is the acceptance score of the prefix read so far. On crisp observations every $T_{\sigma_t}$ is a $0/1$ permutation-like matrix and $\mathbf{q}_t$ stays one-hot, so the update reproduces the symbolic walk exactly: $\mathbf{q}_t$ is the indicator of $\delta^*(q_0, \sigma_1 \cdots \sigma_t)$. Consequently DeepDFA is, like the symbolic monitor and unlike RuleRunner, \emph{exact on every} \ltlf \emph{formula}, including the nested-temporal specifications of Section~\ref{sec:rulerunner}; the single canonical automaton again precludes the conflation of concurrent obligations. The three-valued verdict and early termination are read off exactly as in Section~\ref{sec:symbolic}, by testing membership of $\argmax_q \mathbf{q}_t[q]$ in the precomputed trap and accepting-sink sets, and the final verdict tests its acceptance.
+
+\paragraph{Soft observations and differentiability.}
+The reason to pay for this tensorization is that Equation~\eqref{eq:deepdfa-crisp} extends verbatim to \emph{probabilistic} observations, which the symbolic walk cannot represent. Suppose a cell is delivered not as a crisp assignment but as a vector of per-atom probabilities $\mathbf{p}_t \in [0,1]^{\Sigma}$, as produced by a neural perceptor or a noisy sensor. We replace the one-hot symbol selection by an \emph{expected} transition matrix $M(\mathbf{p}_t) \in [0,1]^{|Q| \times |Q|}$, whose entry $(q, q')$ is the probability that the guard of edge $q \to q'$ is satisfied under $\mathbf{p}_t$, computed compositionally over the boolean structure of the guard under an atom-independence assumption ($P(a) = p_a$, $P(\lnot \psi) = 1 - P(\psi)$, $P(\psi_1 \land \psi_2) = P(\psi_1)P(\psi_2)$, $P(\psi_1 \lor \psi_2) = 1 - (1 - P(\psi_1))(1 - P(\psi_2))$). The update and acceptance score are unchanged,
+\begin{equation}
+  \mathbf{q}_t = \mathbf{q}_{t-1}\, M(\mathbf{p}_t),
+  \qquad
+  \mathrm{acc}_t = \mathbf{q}_t \cdot v_o,
+  \label{eq:deepdfa-soft}
+\end{equation}
+but now $\mathbf{q}_t$ is a genuine distribution over DFA states and $\mathrm{acc}_t$ is a calibrated acceptance probability that propagates the perceptual uncertainty all the way to the verdict, rather than discarding it through a hard $0.5$ threshold. Because each $M(\mathbf{p}_t)$ is a smooth, row-stochastic function of $\mathbf{p}_t$ (and, if desired, of learnable parameters of $T$), the whole monitor is differentiable: gradients of a verdict loss flow back through the automaton, which is what makes DeepDFA the vehicle for gradient-based specification adaptation and, ultimately, end-to-end training of a perceptor. On crisp inputs $M(\mathbf{p}_t)$ collapses to $T_{\sigma_t}$ and the probabilistic semantics is exact for any guard; on fractional inputs it is exact whenever the guard is \emph{read-once} (each atom occurring once), and an independence approximation otherwise.
+
+\paragraph{The alphabet blow-up.}
+DeepDFA's structural cost is dual to those of the other two paradigms. The transition tensor is indexed by the full alphabet $2^\Sigma$, so a dense materialization is exponential in the number of atoms, $|T| = |Q|^2 \cdot 2^{|\Sigma|}$. One can avoid building the dense tensor by evaluating the per-edge guard probabilities on the fly --- the factored form underlying Equations~\eqref{eq:deepdfa-crisp}--\eqref{eq:deepdfa-soft}, which never enumerates $2^\Sigma$ --- and this is what we use for specifications over many atoms. But the blow-up is not merely an implementation choice: when a single guard depends on all $|\Sigma|$ atoms there is in general no sub-exponential set of symbols to sum over, and only the read-once circuit structure of a guard (which a flat DFA does not expose) permits its satisfaction probability to be computed in time linear in $|\Sigma|$. This alphabet blow-up is therefore DeepDFA's Achilles heel, the counterpart of the symbolic monitor's state-space blow-up and RuleRunner's nested-temporal limit, and we return to it in the comparison of Section~\ref{sec:theory-cmp} and the scalability experiments of Section~\ref{sec:experiments}.

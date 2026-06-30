@@ -235,17 +235,22 @@ class StructuredCILPRunner:
 class StructuredRuleRunnerMonitor(Monitor):
     """`Monitor`-ABC adapter over `StructuredCILPRunner`.
 
-    Not exported from the package ``__init__`` and not used by the
-    experiments — provided so the structured network can be slotted into any
-    `Monitor`-based harness on demand, exactly like `RuleRunnerMonitor` wraps
-    `CILPRunner`.
+    The structured (IJCNN 2014 Fig. 5) variant of the RuleRunner network, slotted
+    into the `Monitor` harness as a second RuleRunner data point alongside
+    `RuleRunnerMonitor` (CILP). It is **CPU/sequential** — it has no cross-trace
+    batching, so its time-per-trace is flat in batch size (the deliberate
+    contrast in Exp 3); per cell it is lightweight (no batched matmuls).
     """
 
     def __init__(self, runner: StructuredCILPRunner) -> None:
         self._runner = runner
 
     @classmethod
-    def compile(cls, formula: str) -> "StructuredRuleRunnerMonitor":
+    def compile(
+        cls, formula: str, device: str = "cpu"
+    ) -> "StructuredRuleRunnerMonitor":
+        # ``device`` is accepted for Monitor-interface parity (the harness passes
+        # it to every monitor) but ignored: the structured runner is CPU-only.
         return cls(StructuredCILPRunner.from_formula(formula))
 
     def step(self, obs: Observation) -> Verdict:

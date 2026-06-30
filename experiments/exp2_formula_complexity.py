@@ -32,12 +32,17 @@ from src.benchmarks.runner import (
     time_monitor,
 )
 from src.formula.compiler import compile_ltlf
-from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFATensor
-from src.monitors.rulerunner import RuleRunnerMonitor
+from src.monitors.deep_dfa import (
+    DeepDFAMonitorDense,
+    DeepDFAMonitorFactored,
+    DeepDFATensor,
+)
+from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
-
 # Phase 0.2 — DeepDFA's dual finding. The IJCNN family scales atoms up to n=32.
+# DeepDFAMonitorFactored / DeepDFAMonitorDense are reusable subclasses defined in
+# src/monitors/deep_dfa.py (shared with exp1/3/5):
 #
 #   * Factored mode never materializes the 2^|AP| tensor: each guard is a small
 #     disjoint cube cover, and the per-cell transition is a vectorized mask
@@ -51,21 +56,6 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 #     so its curve shows "fast but memory-walls out" against factored's "flat
 #     and scales". Beyond the cap, building 2^n symbols is infeasible (n=32 is
 #     4.3e9 symbols / ~64 GB at |Q|=2), so we skip it.
-class DeepDFAMonitorFactored(DeepDFAMonitor):
-    @classmethod
-    def compile(
-        cls, formula: str, device: str | torch.device = "cpu"
-    ) -> DeepDFAMonitor:
-        return DeepDFAMonitor.compile(formula, mode="factored", device=device)
-
-
-class DeepDFAMonitorDense(DeepDFAMonitor):
-    @classmethod
-    def compile(
-        cls, formula: str, device: str | torch.device = "cpu"
-    ) -> DeepDFAMonitor:
-        return DeepDFAMonitor.compile(formula, mode="dense", device=device)
-
 
 # Largest leaf count for which the 2^|AP| dense tensor is still feasible to
 # build/store. Above this the dense variant is skipped (it would OOM); the
@@ -77,9 +67,13 @@ DENSE_MAX_LEAVES = 16
 # Configuration
 # ---------------------------------------------------------------------------
 
+# RuleRunnerMonitor (CILP) + StructuredRuleRunnerMonitor (Fig. 5 variant) give
+# the intra-RuleRunner comparison from IJCNN 2014 alongside the symbolic and
+# DeepDFA baselines (see docs/EXPERIMENT_MAP.md).
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
+    StructuredRuleRunnerMonitor,
     DeepDFAMonitorFactored,
     DeepDFAMonitorDense,
 ]

@@ -26,8 +26,8 @@ from src.benchmarks.runner import (
     result_key,
     time_monitor,
 )
-from src.monitors.deep_dfa import DeepDFAMonitor
-from src.monitors.rulerunner import RuleRunnerMonitor
+from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFAMonitorFactored
+from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 # ---------------------------------------------------------------------------
@@ -35,10 +35,14 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # ---------------------------------------------------------------------------
 
 # G(a -> F b) has 2 atoms, so DeepDFA's dense 2^|AP| alphabet is tiny (4).
+# DeepDFAMonitor is the dense default; DeepDFAMonitorFactored and the structured
+# RuleRunner are added as within-paradigm reference lines (see docs/EXPERIMENT_MAP.md).
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
+    StructuredRuleRunnerMonitor,
     DeepDFAMonitor,
+    DeepDFAMonitorFactored,
 ]
 
 FORMULA = TRACE_LENGTH_SUITE[0]          # G(a -> F b) — no early termination

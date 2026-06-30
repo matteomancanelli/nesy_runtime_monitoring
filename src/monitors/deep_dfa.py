@@ -432,3 +432,32 @@ class DeepDFAMonitor(Monitor):
                 return Verdict.SATISFY
         last = dt.state_idx[dt.dfa.initial] if length == 0 else int(path[length - 1])
         return Verdict.SATISFY if dt.accepting[last] > 0 else Verdict.VIOLATE
+
+
+# ---------------------------------------------------------------------------
+# Mode-fixed subclasses (reusable across experiments)
+# ---------------------------------------------------------------------------
+#
+# The timing harness keys results by ``monitor_cls.__name__``, so these distinct
+# names give dense and factored their own curves/CSV rows when both appear in an
+# experiment's MONITORS list. ``DeepDFAMonitor`` itself still defaults to dense.
+
+
+class DeepDFAMonitorDense(DeepDFAMonitor):
+    """DeepDFA pinned to the dense ``2^|AP|`` transition tensor."""
+
+    @classmethod
+    def compile(
+        cls, formula: str, device: str | torch.device = "cpu"
+    ) -> "DeepDFAMonitorDense":
+        return super().compile(formula, mode="dense", device=device)
+
+
+class DeepDFAMonitorFactored(DeepDFAMonitor):
+    """DeepDFA pinned to the factored (vectorized cube-mask) crisp path."""
+
+    @classmethod
+    def compile(
+        cls, formula: str, device: str | torch.device = "cpu"
+    ) -> "DeepDFAMonitorFactored":
+        return super().compile(formula, mode="factored", device=device)

@@ -36,8 +36,8 @@ from src.benchmarks.runner import (
     result_key,
     time_monitor,
 )
-from src.monitors.deep_dfa import DeepDFAMonitor
-from src.monitors.rulerunner import RuleRunnerMonitor
+from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFAMonitorFactored
+from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 # ---------------------------------------------------------------------------
@@ -50,10 +50,16 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # RuleRunner does depth+1 (its intrinsic within-step sequential cost), so a
 # fair, vectorised comparison isolates that architectural difference rather
 # than Python per-trace overhead.
+# DeepDFAMonitor is dense (the batching showcase); DeepDFAMonitorFactored is a
+# reference line. StructuredRuleRunnerMonitor is CPU/sequential — it CANNOT
+# batch cross-trace, so its time-per-trace stays flat as batch grows; that is a
+# deliberate contrast for this experiment, not a defect (docs/EXPERIMENT_MAP.md).
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
+    StructuredRuleRunnerMonitor,
     DeepDFAMonitor,
+    DeepDFAMonitorFactored,
 ]
 
 FORMULA      = IJCNN_SUITE[2]    # ijcnn_n8 — enough atoms to be interesting
@@ -121,7 +127,11 @@ df["mean_s_per_trace"] = df["mean_s_per_cell"] * df["trace_length"]
 df["std_s_per_trace"]  = df["std_s_per_cell"]  * df["trace_length"]
 
 # ---------------------------------------------------------------------------
-# Plot (two panels: time per trace and normalised speedup)
+# Plot (Phase 0.3: LEAD with absolute time-per-trace; the speedup panel is
+# demoted/annotated. Each monitor's speedup is normalised to ITS OWN batch=1
+# time, so cross-monitor speedup comparison is misleading — RuleRunner's
+# batch-1 number is catastrophically slow, which inflates its apparent
+# "speedup". The absolute panel is the honest lead figure.)
 # ---------------------------------------------------------------------------
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
@@ -145,8 +155,8 @@ x_ref = np.array(BATCH_SIZES)
 ax2.plot(x_ref, x_ref / x_ref[0], linestyle="--", color="gray", label="ideal linear")
 
 for ax, ylabel, title in [
-    (ax1, "Time per trace (ms)", "Impact of batch size — time per trace"),
-    (ax2, "Speedup vs batch=1", "Throughput scaling"),
+    (ax1, "Time per trace (ms)", "LEAD: absolute time per trace"),
+    (ax2, "Speedup vs own batch=1", "Speedup (demoted — per-monitor baseline)"),
 ]:
     ax.set_xlabel("Batch size (number of traces)")
     ax.set_xscale("log", base=2)
@@ -158,6 +168,13 @@ for ax, ylabel, title in [
     ax.grid(True, linestyle="--", alpha=0.4)
 
 ax2.set_yscale("log", base=2)
+ax2.text(
+    0.5, -0.32,
+    "Caveat: each curve is normalised to its OWN batch=1 time, so curves are\n"
+    "NOT comparable across monitors (RuleRunner's batch-1 is catastrophically\n"
+    "slow, inflating its apparent speedup). Read absolute times from the left.",
+    transform=ax2.transAxes, ha="center", va="top", fontsize=7.5, color="0.35",
+)
 
 et_note = "early termination OFF (all cells processed)" if not EARLY_TERMINATION \
     else "early termination ON"
@@ -165,7 +182,7 @@ fig.suptitle(f"Exp 3 — batch size ({et_note})", y=1.02)
 
 plot_path = RESULTS_DIR / "exp3_batch_size.png"
 fig.tight_layout()
-fig.savefig(plot_path, dpi=150)
+fig.savefig(plot_path, dpi=150, bbox_inches="tight")
 print(f"Saved: {plot_path}")
 plt.close(fig)
 
