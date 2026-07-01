@@ -24,6 +24,13 @@ class BenchmarkFormula:
     formula: str
     atoms: tuple[str, ...]
     n_leaves: int
+    # Whether every DFA edge guard is read-once (each atom appears at most
+    # once). On a read-once guard DeepDFA's soft_matrix is *exact*, so the
+    # acceptance probability is the true marginal by construction — perfect
+    # calibration would then be a hollow identity. The calibration claim
+    # (Phase 1.3) must be made on a non-read-once formula. Default True: the
+    # IJCNN / response references are read-once.
+    read_once: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -102,4 +109,36 @@ TRACE_LENGTH_SUITE: tuple[BenchmarkFormula, ...] = (
     _RESPONSE,
     _EVENTUALLY,
     _GLOBALLY,
+)
+
+
+# ---------------------------------------------------------------------------
+# Calibration suite (Capability Exp A, Phase 1.3)
+# ---------------------------------------------------------------------------
+
+# The soft acceptance-probability readout is only a *non-trivial* calibration
+# target when the DFA's edge guards are NOT read-once. On a read-once guard
+# DeepDFA's soft_matrix is exact (P(accept) is the true marginal), so any
+# reliability curve is a hollow identity. The 2-of-3 majority function
+# (a&b)|(b&c)|(a&c) is the classic non-read-once boolean (each atom appears
+# twice); MONA keeps it un-factored on the accepting edge (verified — the
+# guard is literally "(a & b) | (a & c) | (b & c)"), so the independence-
+# assuming soft product over-counts and the confidence must be calibrated
+# *empirically*. This is the formula that makes the calibration a result.
+_MAJORITY3 = BenchmarkFormula(
+    name="majority3",
+    formula="F((a & b) | (b & c) | (a & c))",
+    atoms=("a", "b", "c"),
+    n_leaves=3,
+    read_once=False,
+)
+
+# Read-once references (soft path is exact ⇒ calibration is the hollow
+# identity — included as the contrast to the majority formula).
+#   * response  G(a -> F b): the canonical BPM pattern, simple guards.
+#   * ijcnn_n4:  F(OR (a0 & ai)) — read-once after MONA's factoring.
+CALIBRATION_SUITE: tuple[BenchmarkFormula, ...] = (
+    _MAJORITY3,
+    _RESPONSE,
+    ijcnn_formula(4),
 )

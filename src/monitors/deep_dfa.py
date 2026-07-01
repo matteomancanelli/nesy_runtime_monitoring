@@ -1,7 +1,7 @@
 """Paradigm 3: DeepDFA — differentiable transition-tensor monitor.
 
-This reimplements the DeepDFA forward pass (Mezini et al.) against 
-our own `DFA` dataclass and `Monitor` interface. We deliberately 
+This reimplements the DeepDFA forward pass (Mezini et al.) against
+our own `DFA` dataclass and `Monitor` interface. We deliberately
 do NOT vendor their code (see CLAUDE.md § Paradigm 3 for the full rationale):
 
   * Their DeepDFA assumes the BPM *mutual-exclusivity* assumption — exactly
@@ -295,6 +295,33 @@ class DeepDFATensor:
                 p[i] = 1.0
         return p
 
+    def soft_prob_vector(self, obs: dict[str, float]) -> torch.Tensor:
+        """Atom-probability vector (|AP|,) from a *soft* observation.
+
+        Values are per-atom probabilities in [0, 1]; a missing atom is treated
+        as probability 0 (false), matching :meth:`prob_vector`'s crisp default.
+        """
+        p = torch.zeros(self.n_atoms, device=self.device)
+        for i, a in enumerate(self.atoms):
+            p[i] = float(obs.get(a, 0.0))
+        return p
+
+    def encode_soft(
+        self, trace_list: list[list[dict[str, float]]], L: int
+    ) -> np.ndarray:
+        """Atom-probability array (B, L, |AP|) for a padded batch of soft traces.
+
+        Soft analogue of :meth:`encode_presence`: reads the float probability of
+        each atom (missing -> 0.0) instead of a bool. Padding cells (beyond a
+        trace's length) are left 0.0; the batched soft readout masks them out so
+        they never affect a shorter trace's state distribution.
+        """
+        P = np.zeros((len(trace_list), L, self.n_atoms), dtype=np.float32)
+        for b, trace in enumerate(trace_list):
+            for i, obs in enumerate(trace):
+                P[b, i] = [float(obs.get(a, 0.0)) for a in self.atoms]
+        return P
+
     def encode_presence(
         self, trace_list: list[list[Observation]], L: int
     ) -> np.ndarray:
@@ -432,6 +459,130 @@ class DeepDFAMonitor(Monitor):
                 return Verdict.SATISFY
         last = dt.state_idx[dt.dfa.initial] if length == 0 else int(path[length - 1])
         return Verdict.SATISFY if dt.accepting[last] > 0 else Verdict.VIOLATE
+
+    # ----- soft readout (Phase 1.2: monitoring under perceptual uncertainty) -----
+    #
+    # Marginal acceptance probability (Option A, CLAUDE.md § Phase 1). Given a
+    # *soft* trace (per-atom probabilities), propagate the full state
+    # DISTRIBUTION through the differentiable `soft_matrix` (row-stochastic for
+    # fractional inputs) and read the accepting mass at end-of-trace. Crucially
+    # there is NO mid-trace argmax: collapsing to a single state each step would
+    # discard the probability mass and reduce to the brittle "threshold-and-walk"
+    # readout (Option B), which is exactly what the symbolic baseline does.
+    #
+    # This uses `soft_matrix` (recursive read-once guard probabilities), not
+    # `crisp_matrix`: on non-read-once guards the two differ, and the read-once
+    # `soft_matrix` is what makes calibration an *empirical* question there
+    # rather than an exact-marginal identity (Phase 1.3 / 3.3).
+
+    def _require_soft(self) -> None:
+        # The soft readout is the factored mode's differentiable path: it needs
+        # the per-edge guard-probability closures (`soft_matrix` / `_edges`),
+        # which only the factored build materializes. Dense stores a 2^|AP|
+        # one-hot tensor with no fractional-input semantics. Compile with
+        # mode="factored" (or use DeepDFAMonitorFactored) for soft monitoring.
+        if self._dt.mode != "factored":
+            raise ValueError(
+                "soft readout requires factored mode; compile with "
+                "mode='factored' (or use DeepDFAMonitorFactored)"
+            )
+
+    def acceptance_probability(
+        self, soft_trace: Iterable[dict[str, float]], normalize: bool = False
+    ) -> float:
+        """Acceptance score in [0, 1] (usually) for a single soft trace.
+
+        Reference (unbatched) implementation; see
+        :meth:`batch_acceptance_probability` for the fast path and for the
+        meaning of ``normalize`` (the read-once vs non-read-once caveat).
+        """
+        self._require_soft()
+        dt = self._dt
+        q = dt.mu.clone()
+        for obs in soft_trace:
+            q = q @ dt.soft_matrix(dt.soft_prob_vector(obs))
+        accept = float(q @ dt.accepting)
+        if normalize:
+            mass = float(q.sum())
+            return accept / mass if mass > 0.0 else accept
+        return accept
+
+    def soft_verdict(
+        self,
+        soft_trace: Iterable[dict[str, float]],
+        threshold: float = 0.5,
+        normalize: bool = False,
+    ) -> Verdict:
+        """Binary verdict from the acceptance score at ``threshold``."""
+        p = self.acceptance_probability(soft_trace, normalize=normalize)
+        return Verdict.SATISFY if p >= threshold else Verdict.VIOLATE
+
+    def batch_acceptance_probability(
+        self,
+        soft_traces: Iterable[Iterable[dict[str, float]]],
+        normalize: bool = False,
+    ) -> list[float]:
+        """Marginal acceptance score for a batch of soft traces.
+
+        One batched ``soft_matrix`` + ``bmm`` per cell over the whole batch.
+        Traces of unequal length are padded; padding cells are masked so a
+        shorter trace's distribution is frozen once it ends. Equivalent to
+        ``[self.acceptance_probability(t) for t in soft_traces]``.
+
+        ``normalize`` (Capability Exp A, Phase 1.4): ``soft_matrix`` is only
+        row-stochastic when every DFA guard is **read-once**. On a
+        non-read-once guard (e.g. the 2-of-3 majority) the independence-
+        assuming guard-probability product over-counts, so the row sums
+        exceed 1 and the raw ``q_final @ accepting`` is *not* a valid
+        probability (it can exceed 1). With ``normalize=True`` the score is
+        divided by the total propagated mass ``q_final @ 1``, forcing a value
+        in [0, 1]; this is exact/unchanged for read-once guards (mass == 1)
+        and a heuristic renormalization otherwise. The raw score is the
+        settled Option-A readout and is kept as the default so the
+        non-stochasticity remains observable (it is a *finding*).
+        """
+        self._require_soft()
+        dt = self._dt
+        trace_list = [list(t) for t in soft_traces]
+        if not trace_list:
+            return []
+        lengths = torch.tensor(
+            [len(t) for t in trace_list], device=dt.device
+        )
+        B, L = len(trace_list), int(lengths.max())
+        q = dt.mu.unsqueeze(0).expand(B, -1).clone()  # (B, |Q|)
+        if L == 0:
+            accept = (q * dt.accepting).sum(dim=1)
+            return self._finish_score(q, accept, normalize)
+        P = torch.from_numpy(dt.encode_soft(trace_list, L)).to(dt.device)
+        for i in range(L):
+            M = dt.soft_matrix(P[:, i, :])  # (B, |Q|, |Q|)
+            q_new = torch.bmm(q.unsqueeze(1), M).squeeze(1)
+            active = (i < lengths).unsqueeze(1)  # freeze ended traces
+            q = torch.where(active, q_new, q)
+        accept = (q * dt.accepting).sum(dim=1)
+        return self._finish_score(q, accept, normalize)
+
+    @staticmethod
+    def _finish_score(
+        q: torch.Tensor, accept: torch.Tensor, normalize: bool
+    ) -> list[float]:
+        if normalize:
+            mass = q.sum(dim=1)
+            accept = torch.where(mass > 0.0, accept / mass, accept)
+        return accept.cpu().tolist()
+
+    def batch_soft_verdict(
+        self,
+        soft_traces: Iterable[Iterable[dict[str, float]]],
+        threshold: float = 0.5,
+        normalize: bool = False,
+    ) -> list[Verdict]:
+        """Binary verdicts for a batch of soft traces at ``threshold``."""
+        return [
+            Verdict.SATISFY if p >= threshold else Verdict.VIOLATE
+            for p in self.batch_acceptance_probability(soft_traces, normalize=normalize)
+        ]
 
 
 # ---------------------------------------------------------------------------

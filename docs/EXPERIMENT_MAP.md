@@ -66,7 +66,7 @@ Reusable subclasses `DeepDFAMonitorDense` / `DeepDFAMonitorFactored` live in
 |---|---|---|---|---|
 | **dense** (default) | `T(\|Q\|, 2^{\|AP\|}, \|Q\|)` one-hot | one `bmm` | exp1, exp2 (n≤16), exp3, exp5 | fastest where alphabet fits — the batching showcase |
 | **factored** | vectorized cube-mask reduction (no `2^{\|AP\|}` tensor) | ~2–5× dense | **all** (exp1/2/3/5) | scales past where dense fits (n up to 32); elsewhere a constant-overhead reference line |
-| **soft** (`soft_matrix`) | recursive read-once guard-prob closures (differentiable) | n/a (not timed) | **no current experiment** | reserved for capability: Phase 1 (uncertainty) + Phase 2 (adaptation) |
+| **soft** (`soft_matrix`) | recursive guard-prob closures (differentiable) | n/a (not timed) | **Capability Exp A ✅** ([exp_uncertainty.py](../experiments/exp_uncertainty.py)) + Phase 2 (adaptation) | Readout = **marginal acceptance probability** `q_final @ accepting` (Option A): propagate the full state *distribution*, **no mid-trace argmax**, threshold at 0.5 at end-of-trace. ⚠ `soft_matrix` is row-stochastic **only for read-once guards**; on non-read-once guards (`majority3`) the raw score exceeds 1 (Phase 1.4 finding), so `batch_acceptance_probability` gained a `normalize=` flag (÷ total mass ⇒ [0,1]; no-op for read-once). Both readouts compared in Exp A. |
 
 - **exp2 is where dense vs factored is the headline** — the dual finding (dense
   fast-but-walls-out vs factored flat-but-scales). The alphabet-blowup story.
@@ -97,7 +97,7 @@ free to sweep without new code.
 - **A. Paradigm** — Symbolic / RuleRunner / DeepDFA.
 - **B. Within-paradigm variant** — DeepDFA {dense, factored, soft}; RuleRunner {CILP, structured}.
 - **C. Workload stressor** — trace length · formula breadth (`2^{\|AP\|}`) · parse-tree depth · batch size · state count `\|Q\|`.
-- **D. Measurement mode** — `early_termination` on/off (flag exists) · crisp vs soft input (soft needs new harness).
+- **D. Measurement mode** — `early_termination` on/off (flag exists) · crisp vs soft input. The soft harness is being built piece by piece: corruption models + oracle ([noise.py](../src/benchmarks/noise.py), Phase 1.1 ✅), DeepDFA soft-run readout (Phase 1.2 ✅, factored-only), and accuracy/calibration metrics ([calibration.py](../src/benchmarks/calibration.py), Phase 1.3 ✅ — ECE/reliability/Brier/AUC, numpy+scipy). The timing `runner.py` does not transfer. ⚠ Calibration on the read-once IJCNN family is a hollow identity (`soft_matrix` is exact there) — the `CALIBRATION_SUITE` therefore leads with the **non-read-once** `majority3` (`F((a&b)|(b&c)|(a&c))`, verified un-factored by MONA; soft over-counts ~0.086) so the claim is empirical, with read-once references as the contrast. Wired into [exp_uncertainty.py](../experiments/exp_uncertainty.py) (Phase 1.4 ✅): accuracy-vs-ε + reliability/ECE figures. **Findings:** soft is *competitive, not dominant* on the hard verdict (thresholding the unbiased Beta mean is near Bayes-optimal; identical to symbolic under bitflip) — the capability is the *calibrated confidence*, which symbolic cannot emit; and the raw soft score is *not a valid probability* on non-read-once guards (>1), needing normalization.
 - **E. Hardware** — cpu / local-cuda / Colab-cuda / Docker-server (same code).
 - **F. Metric derivation** — per-cell vs per-trace vs speedup (post-processing only).
 
@@ -126,7 +126,7 @@ free to sweep without new code.
 | local vs Colab vs server hardware | 🟢 FREE (run same script; stamped by `gpu_name`) |
 | cpu vs cuda for same monitor | 🟢 FREE (toggle `DEVICE`) |
 | state-blowup family (Sym + DeepDFA shared weakness) | 🟠 small new code (new formulas) |
-| soft-input accuracy / calibration (Capability A) | 🔴 new code (Phase 1) |
+| soft-input accuracy / calibration (Capability A) | ✅ addressed ([exp_uncertainty.py](../experiments/exp_uncertainty.py), Phase 1.1–1.4): accuracy-vs-ε + reliability/ECE, raw vs normalized soft readout, non-read-once defect |
 | adaptation (Capability B) | 🔴 new code (Phase 2) |
 
 ---
@@ -157,8 +157,10 @@ it explains:
   timing axes will not move the paper — they are competitiveness evidence, and
   the matrix above shows the remaining timing cells are either free reference
   lines or low-value.
-- **The paper's weight is in the 🔴 capability cells (Phase 1/2), not yet built.**
-  That is where to point energy after Phase 0's re-runs land.
+- **The paper's weight is in the capability cells. Capability A (Phase 1,
+  perceptual uncertainty) is now ✅ built** ([exp_uncertainty.py](../experiments/exp_uncertainty.py));
+  **Capability B (Phase 2, adaptation) 🔴 remains** and is the next capability
+  target. Point energy there and at Phase 0's re-runs.
 - **All ✅/green-handled items are done:** every experiment runs the full
   5-monitor set (CILP + Structured RuleRunner, dense + factored DeepDFA), and
   results are GPU-stamped. The only remaining free axes are pure toggles
