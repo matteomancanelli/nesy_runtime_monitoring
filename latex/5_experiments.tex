@@ -1,9 +1,9 @@
 \section{Experimental Comparison}
 \label{sec:experiments}
 
-All three monitoring paradigms are implemented in a common framework sharing a uniform \textsc{Monitor} interface, which ensures that the experimental harness is paradigm-agnostic: timing experiments iterate over a list of monitor instances without any paradigm-specific branching. The shared compilation pipeline uses \texttt{ltlf2dfa} \citep{fuggitti-ltlf2dfa} to translate each \ltlf formula into a minimal DFA once at construction time.
+All three monitoring paradigms are implemented in a common framework sharing a uniform \textsc{Monitor} interface, which ensures that the experimental harness is paradigm-agnostic: timing experiments iterate over a list of monitor instances without any paradigm-specific branching. The shared compilation pipeline uses \texttt{ltlf2dfa} \cite{fuggitti-ltlf2dfa} to translate each \ltlf formula into a minimal DFA once at construction time.
 
-We evaluate the monitoring paradigms along three axes, using synthetic traces throughout Experiments 1–3 to isolate per-step monitoring cost from data-dependent effects such as early-termination frequency. This follows the methodology of experiments in \citet{perotti2014neural}. 
+We evaluate the monitoring paradigms along three axes, using synthetic traces throughout Experiments 1–3 to isolate per-step monitoring cost from data-dependent effects such as early-termination frequency. This follows the methodology of experiments in \cite{perotti2014neural}. 
 %Here we compare their approach with the symbolic DFA and DeepDFA baselines, which were absent from the original evaluation.
 
 

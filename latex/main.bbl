@@ -1,0 +1,78 @@
+\begin{thebibliography}{10}
+
+\bibitem{monitorability_LTL}
+Andreas Bauer, Martin Leucker, and Christian Schallhart.
+\newblock Runtime verification for {LTL} and {TLTL}.
+\newblock {\em {ACM} Trans. Softw. Eng. Methodol.}, 20(4):14:1--14:64, 2011.
+
+\bibitem{LTLf}
+Giuseppe {De Giacomo} and Moshe~Y. Vardi.
+\newblock Linear temporal logic and linear dynamic logic on finite traces.
+\newblock In Francesca Rossi, editor, {\em {IJCAI} 2013, Proceedings of the
+  23rd International Joint Conference on Artificial Intelligence, Beijing,
+  China, August 3-9, 2013}, pages 854--860. {IJCAI/AAAI}, 2013.
+
+\bibitem{fuggitti-ltlf2dfa}
+Francesco Fuggitti.
+\newblock Ltlf2dfa.
+\newblock {\em Zenodo}, 2019.
+
+\bibitem{lichtenstein1985glory}
+Orna Lichtenstein, Amir Pnueli, and Lenore Zuck.
+\newblock The glory of the past.
+\newblock In {\em Workshop on Logic of Programs}, pages 196--218. Springer,
+  1985.
+
+\bibitem{manna1995temporal}
+Zohar Manna and Amir Pnueli.
+\newblock {\em Temporal Verification of Reactive Systems}, volume~1.
+\newblock Springer-Verlag, 1995.
+
+\bibitem{mezini2025neuro}
+Axel Mezini, Elena Umili, Ivan Donadello, Fabrizio~Maria Maggi, Matteo
+  Mancanelli, and Fabio Patrizi.
+\newblock Neuro-symbolic predictive process monitoring.
+\newblock {\em arXiv preprint arXiv:2509.00834}, 2025.
+
+\bibitem{perotti2015runtime}
+Alan Perotti, Guido Boella, and Artur~d’Avila Garcez.
+\newblock Runtime verification through forward chaining.
+\newblock In {\em Runtime Verification: 6th International Conference, RV 2015,
+  Vienna, Austria, September 22-25, 2015. Proceedings}, pages 185--200.
+  Springer, 2015.
+
+\bibitem{perotti2014neural}
+Alan Perotti, Artur~d'Avila Garcez, and Guido Boella.
+\newblock Neural networks for runtime verification.
+\newblock In {\em 2014 International Joint Conference on Neural Networks
+  (IJCNN)}, pages 2637--2644. IEEE, 2014.
+
+\bibitem{perotti2015neural}
+Alan Perotti, Artur~d'Avila Garcez, and Guido Boella.
+\newblock Neural-symbolic monitoring and adaptation.
+\newblock In {\em 2015 International Joint Conference on Neural Networks
+  (IJCNN)}, pages 1--8. IEEE, 2015.
+
+\bibitem{LTL}
+Amir Pnueli.
+\newblock The temporal logic of programs.
+\newblock In {\em 18th Annual Symposium on Foundations of Computer Science,
+  Providence, Rhode Island, USA, 31 October - 1 November 1977}, pages 46--57.
+  {IEEE} Computer Society, 1977.
+
+\bibitem{deepdfa_ecai2024}
+Elena Umili and Roberto Capobianco.
+\newblock Deepdfa: Automata learning through neural probabilistic relaxations.
+\newblock In {\em {ECAI} 2024 - 27th European Conference on Artificial
+  Intelligence, 19-24 October 2024, Santiago de Compostela, Spain - Including
+  13th Conference on Prestigious Applications of Intelligent Systems {(PAIS}
+  2024)}, pages 1051--1058, 2024.
+
+\bibitem{LTL2DFA1}
+Shufang Zhu, Lucas~M. Tabajara, Jianwen Li, Geguang Pu, and Moshe~Y. Vardi.
+\newblock Symbolic {LTL}f synthesis.
+\newblock In Carles Sierra, editor, {\em Proceedings of the Twenty-Sixth
+  International Joint Conference on Artificial Intelligence, {IJCAI} 2017,
+  Melbourne, Australia, August 19-25, 2017}, pages 1362--1369. ijcai.org, 2017.
+
+\end{thebibliography}

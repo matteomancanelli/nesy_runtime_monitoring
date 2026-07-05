@@ -3,7 +3,7 @@
 \subsection{An Historical Overview of Temporal Logics over Finite Traces}
 \label{sec:overview}
 
-Studying LTL over finite traces gained significant attention \citep{lichtenstein1985glory,manna1995temporal}. The original RuleRunner system \citep{perotti2015runtime} refers to FLTL as a finite-trace variant of \ltl. As already mentioned, in the last decade \ltlf has established as the standard language for modeling finite traces of executions. Notably, FLTL and \ltlf share essentially the same syntax and semantics, offering two next operators, with a strong next operator $X$ which is false at the last position if no successor exists, and a weak next operator $W$ which is true at the last position (see Sec. \ref{sec:ltlf} for details). FLTL makes explicit use of an $\textit{END}$ symbol for signaling the last element of the trace, but this can be easily expressed with the weak next operator by $\textit{END} \equiv W  false$.  %This means that for any finite trace σ and position i, a formula φ is satisfied under FLTL semantics if and only if its \ltlf translation is satisfied under \ltlf semantics. 
+Studying LTL over finite traces gained significant attention \cite{lichtenstein1985glory,manna1995temporal}. The original RuleRunner system \cite{perotti2015runtime} refers to FLTL as a finite-trace variant of \ltl. As already mentioned, in the last decade \ltlf has established as the standard language for modeling finite traces of executions. Notably, FLTL and \ltlf share essentially the same syntax and semantics, offering two next operators, with a strong next operator $X$ which is false at the last position if no successor exists, and a weak next operator $W$ which is true at the last position (see Sec. \ref{sec:ltlf} for details). FLTL makes explicit use of an $\textit{END}$ symbol for signaling the last element of the trace, but this can be easily expressed with the weak next operator by $\textit{END} \equiv W  false$.  %This means that for any finite trace σ and position i, a formula φ is satisfied under FLTL semantics if and only if its \ltlf translation is satisfied under \ltlf semantics. 
 In this paper, we use \ltlf as the specification language for all three monitoring paradigms we compare.
 
 \noindent
@@ -48,7 +48,7 @@ an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$),
 \noindent
 We say that $\boldsymbol{\sigma}$ satisfies $\phi$, written $\boldsymbol{\sigma} \models \varphi$, if $\boldsymbol{\sigma}, 0 \models \varphi$. A formula $\varphi$ is satisfiable if it is true wrt some trace $\boldsymbol{\sigma}$, and is valid, if it is true wrt every trace $\boldsymbol{\sigma}$.
 
-Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \citep{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
+Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \cite{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
 Additionally, we recursively define the extended transition function over traces $\delta^*: Q \times (2^\Sigma)^* \rightarrow Q$ as:
 
 \begin{equation}
