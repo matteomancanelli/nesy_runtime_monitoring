@@ -18,7 +18,6 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -31,11 +30,9 @@ from src.benchmarks.runner import (
     result_key,
     time_monitor,
 )
-from src.formula.compiler import compile_ltlf
 from src.monitors.deep_dfa import (
     DeepDFAMonitorDense,
     DeepDFAMonitorFactored,
-    DeepDFATensor,
 )
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
@@ -122,7 +119,7 @@ with tqdm(total=total, desc="exp2") as pbar:
                 pbar.update()
                 continue
             key = result_key(
-                monitor_cls.__name__, formula.name, TRACE_LENGTH, N_TRACES
+                monitor_cls.__name__, formula.name, TRACE_LENGTH, N_TRACES, DEVICE
             )
             if key in completed:
                 pbar.set_postfix(
@@ -148,86 +145,14 @@ print(f"Saved (incremental): {csv_path}")
 df = pd.read_csv(csv_path)
 
 # ---------------------------------------------------------------------------
-# Transition-representation memory vs n — the alphabet-blowup *finding*.
-# Computed analytically (no need to build the infeasible dense tensors): the
-# dense tensor is (|Q|, 2^n, |Q|) float32; the factored cube masks are
-# (n_cubes, n) require-true + require-false float32. |Q| and the cube count
-# come from the (cheap) DFA compilation, which never materializes 2^n.
+# Plot (decoupled: the two timing panels + the analytic alphabet-blowup memory
+# wall are drawn by experiments/plots.py from the CSV, so figures can be
+# re-generated — and CPU/GPU CSVs overlaid — without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-FLOAT_BYTES = 4
-mem = []
-for formula in IJCNN_SUITE:
-    dfa = compile_ltlf(formula.formula)
-    n_q = len(dfa.states)
-    dt = DeepDFATensor(dfa, mode="factored")
-    dense_bytes = n_q * n_q * (2 ** formula.n_leaves) * FLOAT_BYTES
-    factored_bytes = (dt._cube_rt.numel() + dt._cube_rf.numel()) * FLOAT_BYTES
-    mem.append((formula.n_leaves, dense_bytes, factored_bytes))
+from experiments.plots import plot_exp2  # noqa: E402
 
-mem_n = [m[0] for m in mem]
-dense_gb = [m[1] / 1e9 for m in mem]
-factored_gb = [m[2] / 1e9 for m in mem]
-
-# ---------------------------------------------------------------------------
-# Plot: two timing panels (raw + per-leaf, matching IJCNN 2014) + memory wall
-# ---------------------------------------------------------------------------
-
-fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 4.2))
-
-for monitor_name, group in df.groupby("monitor_name"):
-    group = group.sort_values("n_leaves")
-    x = group["n_leaves"]
-    y_us = group["mean_s_per_cell"] * 1e6
-    yerr_us = group["std_s_per_cell"] * 1e6
-
-    ax1.errorbar(x, y_us, yerr=yerr_us, marker="o", label=monitor_name, capsize=3)
-    ax2.errorbar(x, y_us / x, yerr=yerr_us / x, marker="o", label=monitor_name, capsize=3)
-
-all_n = [f.n_leaves for f in IJCNN_SUITE]
-for ax, ylabel, title in [
-    (ax1, "Avg time per cell (µs)", "Impact of number of leaves"),
-    (ax2, "Avg time per cell per leaf (µs)", "Averaged impact of number of leaves"),
-]:
-    ax.set_xlabel("Leaves (atoms) — exponential scale")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.set_xticks(all_n)
-    ax.legend()
-    ax.grid(True, linestyle="--", alpha=0.4)
-
-# Memory panel: dense 2^n wall vs factored mask growth (log-y).
-ax3.plot(mem_n, dense_gb, marker="o", color="tab:red",
-         label="DeepDFA dense  $|Q|^2\\,2^{|AP|}$")
-ax3.plot(mem_n, factored_gb, marker="o", color="tab:green",
-         label="DeepDFA factored (cube masks)")
-ax3.axhline(4.0, color="gray", linestyle=":", label="4 GB VRAM (laptop)")
-ax3.axvline(DENSE_MAX_LEAVES, color="tab:red", linestyle="--", alpha=0.4)
-ax3.set_yscale("log")
-ax3.set_xlabel("Leaves (atoms)")
-ax3.set_ylabel("Transition representation (GB)")
-ax3.set_title("Alphabet-blowup finding: dense $2^{|AP|}$ memory wall")
-ax3.set_xticks(all_n)
-ax3.legend(fontsize=8)
-ax3.grid(True, which="both", linestyle="--", alpha=0.4)
-
-et_note = "early termination OFF (all cells processed)" if not EARLY_TERMINATION \
-    else "early termination ON"
-fig.suptitle(
-    f"Exp 2 — formula complexity ({et_note}); "
-    f"dense timed for n≤{DENSE_MAX_LEAVES}, factored for all n",
-    y=1.02,
-)
-
-plot_path = RESULTS_DIR / "exp2_formula_complexity.png"
-fig.tight_layout()
-fig.savefig(plot_path, dpi=150)
-print(f"Saved: {plot_path}")
-plt.close(fig)
-
-print("\nTransition-representation memory (GB):")
-for n, d, f in zip(mem_n, dense_gb, factored_gb):
-    print(f"  n={n:2d}  dense={d:.3e}  factored={f:.3e}")
+plot_exp2(csv_path)
 
 # ---------------------------------------------------------------------------
 # Summary table

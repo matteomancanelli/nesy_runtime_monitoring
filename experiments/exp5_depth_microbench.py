@@ -42,7 +42,6 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -128,7 +127,7 @@ with tqdm(total=total, desc="exp5") as pbar:
         for depth in DEPTHS:
             formula = nested_x(BASE_FORMULA, depth)
             key = result_key(
-                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE
+                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE, DEVICE
             )
             if key in completed:
                 pbar.set_postfix(
@@ -157,39 +156,13 @@ df = pd.read_csv(csv_path)
 df["depth"] = df["formula_name"].str.extract(r"_xdepth(\d+)$").astype(int)
 
 # ---------------------------------------------------------------------------
-# Plot: per-cell time vs nested-X depth
+# Plot (decoupled: per-cell-time-vs-depth lives in experiments/plots.py, so the
+# figure can be re-generated from the CSV without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-fig, ax = plt.subplots(figsize=(7, 4.5))
+from experiments.plots import plot_exp5  # noqa: E402
 
-for monitor_name, group in df.groupby("monitor_name"):
-    group = group.sort_values("depth")
-    ax.errorbar(
-        group["depth"],
-        group["mean_s_per_cell"] * 1e6,           # microseconds per cell
-        yerr=group["std_s_per_cell"] * 1e6,
-        marker="o", capsize=3, label=monitor_name,
-    )
-
-ax.set_xlabel("Nested-X depth (parse-tree levels over fixed ijcnn_n8 breadth)")
-ax.set_ylabel("Time per cell (µs)")
-ax.set_title("Exp 5 — within-step cost vs parse-tree depth")
-ax.set_xticks(DEPTHS)
-ax.set_yscale("log")
-ax.legend()
-ax.grid(True, linestyle="--", alpha=0.4)
-
-et_note = "early termination OFF" if not EARLY_TERMINATION else "early termination ON"
-fig.suptitle(
-    f"batch=1, trace_len=1, breadth=ijcnn_n8 ({et_note}, device={DEVICE})",
-    y=0.98, fontsize=9,
-)
-
-plot_path = RESULTS_DIR / "exp5_depth_microbench.png"
-fig.tight_layout()
-fig.savefig(plot_path, dpi=150)
-print(f"Saved: {plot_path}")
-plt.close(fig)
+plot_exp5(csv_path)
 
 # ---------------------------------------------------------------------------
 # Summary table

@@ -22,8 +22,6 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -97,7 +95,7 @@ with tqdm(total=total, desc="exp3") as pbar:
     for monitor_cls in MONITORS:
         for batch_size in BATCH_SIZES:
             key = result_key(
-                monitor_cls.__name__, FORMULA.name, TRACE_LENGTH, batch_size
+                monitor_cls.__name__, FORMULA.name, TRACE_LENGTH, batch_size, DEVICE
             )
             if key in completed:
                 pbar.set_postfix(
@@ -121,74 +119,21 @@ with tqdm(total=total, desc="exp3") as pbar:
 
 print(f"Saved (incremental): {csv_path}")
 df = pd.read_csv(csv_path)
-
-# Derive time-per-trace from time-per-cell * trace_length
 df["mean_s_per_trace"] = df["mean_s_per_cell"] * df["trace_length"]
-df["std_s_per_trace"]  = df["std_s_per_cell"]  * df["trace_length"]
 
 # ---------------------------------------------------------------------------
-# Plot (Phase 0.3: LEAD with absolute time-per-trace; the speedup panel is
-# demoted/annotated. Each monitor's speedup is normalised to ITS OWN batch=1
-# time, so cross-monitor speedup comparison is misleading — RuleRunner's
-# batch-1 number is catastrophically slow, which inflates its apparent
-# "speedup". The absolute panel is the honest lead figure.)
+# Plot (decoupled: the LEAD absolute-time-per-trace panel + the demoted speedup
+# panel live in experiments/plots.py, so figures can be re-generated from the
+# CSV — and a CPU CSV and GPU CSV overlaid — without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+from experiments.plots import plot_exp3  # noqa: E402
 
-baseline_times: dict[str, float] = {}
-
-for monitor_name, group in df.groupby("monitor_name"):
-    group = group.sort_values("n_traces")
-    x = group["n_traces"]
-    y_ms = group["mean_s_per_trace"] * 1e3
-    yerr_ms = group["std_s_per_trace"] * 1e3
-    baseline_times[monitor_name] = group["mean_s_per_trace"].iloc[0]
-
-    ax1.errorbar(x, y_ms, yerr=yerr_ms, marker="o", label=monitor_name, capsize=3)
-
-    speedup = baseline_times[monitor_name] / group["mean_s_per_trace"]
-    ax2.plot(x, speedup, marker="o", label=monitor_name)
-
-# Reference: ideal linear speedup
-x_ref = np.array(BATCH_SIZES)
-ax2.plot(x_ref, x_ref / x_ref[0], linestyle="--", color="gray", label="ideal linear")
-
-for ax, ylabel, title in [
-    (ax1, "Time per trace (ms)", "LEAD: absolute time per trace"),
-    (ax2, "Speedup vs own batch=1", "Speedup (demoted — per-monitor baseline)"),
-]:
-    ax.set_xlabel("Batch size (number of traces)")
-    ax.set_xscale("log", base=2)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.set_xticks(BATCH_SIZES)
-    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
-    ax.legend()
-    ax.grid(True, linestyle="--", alpha=0.4)
-
-ax2.set_yscale("log", base=2)
-ax2.text(
-    0.5, -0.32,
-    "Caveat: each curve is normalised to its OWN batch=1 time, so curves are\n"
-    "NOT comparable across monitors (RuleRunner's batch-1 is catastrophically\n"
-    "slow, inflating its apparent speedup). Read absolute times from the left.",
-    transform=ax2.transAxes, ha="center", va="top", fontsize=7.5, color="0.35",
-)
-
-et_note = "early termination OFF (all cells processed)" if not EARLY_TERMINATION \
-    else "early termination ON"
-fig.suptitle(f"Exp 3 — batch size ({et_note})", y=1.02)
-
-plot_path = RESULTS_DIR / "exp3_batch_size.png"
-fig.tight_layout()
-fig.savefig(plot_path, dpi=150, bbox_inches="tight")
-print(f"Saved: {plot_path}")
-plt.close(fig)
+plot_exp3(csv_path)
 
 # ---------------------------------------------------------------------------
 # Summary table
 # ---------------------------------------------------------------------------
 
 print()
-print(df[["monitor_name", "n_traces", "mean_s_per_trace", "std_s_per_trace"]].to_string(index=False))
+print(df[["monitor_name", "n_traces", "mean_s_per_trace"]].to_string(index=False))

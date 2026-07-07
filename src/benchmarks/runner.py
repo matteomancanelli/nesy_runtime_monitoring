@@ -150,17 +150,24 @@ def results_to_df(results: list[TimingResult]) -> pd.DataFrame:
 
 
 def result_key(
-    monitor_name: str, formula_name: str, trace_length: int, n_traces: int
-) -> tuple[str, str, int, int]:
+    monitor_name: str,
+    formula_name: str,
+    trace_length: int,
+    n_traces: int,
+    device: str = "cpu",
+) -> tuple[str, str, int, int, str]:
     """Canonical identity of one timed cell, used for resume de-duplication.
 
-    Within any single experiment this 4-tuple is unique: exp1 varies
-    trace_length, exp2 varies formula_name, exp3 varies n_traces; the rest are
-    fixed. (Config knobs like n_repeats/device are deliberately not part of the
-    key — changing them mid-grid and resuming would mix settings; delete the
-    CSV to recompute from scratch in that case.)
+    Within any single experiment this key is unique: exp1 varies trace_length,
+    exp2 varies formula_name, exp3 varies n_traces; the rest are fixed. ``device``
+    IS part of the key so a CPU and a CUDA measurement of the same cell coexist
+    in one CSV rather than the second being skipped as "already done" — this is
+    what lets us accumulate a CPU run and a GPU run into the same file and then
+    draw the CPU-vs-GPU comparison plots. (Other config knobs like n_repeats are
+    deliberately not part of the key — changing them mid-grid and resuming would
+    mix settings; delete the CSV to recompute from scratch in that case.)
     """
-    return (monitor_name, formula_name, int(trace_length), int(n_traces))
+    return (monitor_name, formula_name, int(trace_length), int(n_traces), str(device))
 
 
 def append_result(result: TimingResult, csv_path: str | Path) -> None:
@@ -198,17 +205,22 @@ def reset_if_stale(csv_path: str | Path, early_termination: bool) -> None:
         path.unlink()
 
 
-def load_completed(csv_path: str | Path) -> set[tuple[str, str, int, int]]:
+def load_completed(csv_path: str | Path) -> set[tuple[str, str, int, int, str]]:
     """Return the set of result_key()s already present in csv_path.
 
     Empty if the file does not exist. Used to skip cells computed by a prior
-    (possibly interrupted) run so experiments resume where they left off.
+    (possibly interrupted) run so experiments resume where they left off. The
+    device is read from each row (defaulting to "cpu" for legacy CSVs without
+    the column) so a resumed run on a different device is treated as new work.
     """
     path = Path(csv_path)
     if not path.exists():
         return set()
     prior = pd.read_csv(path)
     return {
-        result_key(r.monitor_name, r.formula_name, r.trace_length, r.n_traces)
+        result_key(
+            r.monitor_name, r.formula_name, r.trace_length, r.n_traces,
+            getattr(r, "device", "cpu"),
+        )
         for r in prior.itertuples(index=False)
     }

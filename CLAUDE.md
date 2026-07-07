@@ -142,6 +142,7 @@ nesy_runtime_monitoring/
 │   ├── exp3_batch_size.py     ✅ Batch-size scaling (1–1024 traces, ijcnn_n8)
 │   ├── exp5_depth_microbench.py ✅ Within-step depth micro-benchmark (nested-X, Phase 0.5)
 │   ├── exp_uncertainty.py     ✅ Capability Exp A — accuracy/calibration vs noise (Phase 1.4)
+│   ├── plots.py               ✅ All plotting, decoupled from the runs (CSV→PNG; log-y timing panels; CPU-vs-GPU overlays + per-monitor device-comparison figure)
 │   └── exp4_adaptation.py     🔲 PoC adaptation (Phase 2)
 ├── tests/
 │   ├── test_compiler.py                    ✅ DFA structure + guard evaluation (9 tests)
@@ -481,8 +482,15 @@ pytest tests/test_symbolic_dfa.py::test_eventually
 # Lint
 ruff check .
 
-# Run an experiment
+# Run an experiment (writes results/*.csv, then plots it)
 python experiments/exp1_single_trace.py
+
+# Re-plot WITHOUT re-running (plotting is decoupled — reads the CSVs in results/)
+python experiments/plots.py                 # regenerate every figure
+python experiments/plots.py exp3            # just one experiment
+# In code: from experiments.plots import plot_exp3
+#   plot_exp3(["results/exp3_cpu.csv", "results/exp3_gpu.csv"])   # overlay configs
+#   plot_device_comparison([...cpu.csv, ...gpu.csv], "exp3")      # CPU-vs-GPU per monitor
 ```
 
 ## Dependencies

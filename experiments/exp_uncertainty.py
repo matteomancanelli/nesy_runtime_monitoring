@@ -55,7 +55,6 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
@@ -64,7 +63,6 @@ from tqdm import tqdm
 from src.benchmarks.calibration import (
     brier_score,
     expected_calibration_error,
-    reliability_curve,
     roc_auc,
     verdict_accuracy,
 )
@@ -273,128 +271,14 @@ df.to_csv(CSV_PATH, index=False)
 print(f"Saved: {CSV_PATH}")
 
 # ---------------------------------------------------------------------------
-# Figure 1 — verdict accuracy vs ε (rows = noise model, cols = formula)
+# Plot (decoupled: both the accuracy figure and the calibration figure are
+# drawn by experiments/plots.py from the CSV, so they can be re-generated
+# without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-formulas = list(CALIBRATION_SUITE)
-noise_names = list(NOISE_MODELS)
-fig, axes = plt.subplots(
-    len(noise_names), len(formulas),
-    figsize=(4.6 * len(formulas), 3.6 * len(noise_names)),
-    squeeze=False,
-)
-for r, noise_name in enumerate(noise_names):
-    for c, f in enumerate(formulas):
-        ax = axes[r][c]
-        g = df[(df["formula"] == f.name) & (df["noise"] == noise_name)]
-        g = g.sort_values("eps")
-        ax.plot(g["eps"], g["sym_acc"], marker="s", label="Symbolic (threshold)")
-        ax.plot(g["eps"], g["raw_acc"], marker="o", label="DeepDFA soft (raw)")
-        ax.plot(g["eps"], g["norm_acc"], marker="^", ls="--",
-                label="DeepDFA soft (norm)")
-        rate = lengths[f.name][1]
-        ax.axhline(max(rate, 1.0 - rate), color="gray", ls=":", alpha=0.6,
-                   label="majority-class baseline")
-        ax.set_ylim(0.45, 1.02)
-        ax.set_title(f"{f.name}  ({'read-once' if f.read_once else 'NON-read-once'})")
-        ax.set_xlabel("noise level ε")
-        if c == 0:
-            ax.set_ylabel(f"{noise_name} noise\nverdict accuracy")
-        ax.grid(True, ls="--", alpha=0.4)
-        if r == 0 and c == 0:
-            ax.legend(fontsize=8)
-fig.suptitle(
-    "Capability Exp A — verdict accuracy vs perceptual noise\n"
-    "(soft is competitive, not dominant, on the hard verdict; under bitflip "
-    "the soft monitor sees the same crisp bits ⇒ identical to symbolic)",
-    y=1.02,
-)
-fig.tight_layout()
-acc_path = RESULTS_DIR / "exp_uncertainty_accuracy.png"
-fig.savefig(acc_path, dpi=150, bbox_inches="tight")
-print(f"Saved: {acc_path}")
-plt.close(fig)
+from experiments.plots import plot_uncertainty  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Figure 2 — calibration (the capability symbolic cannot have). Focus on the
-# Beta (fractional-perceptor) noise, where the soft path actually consumes
-# fractional confidence.
-# ---------------------------------------------------------------------------
-
-MAJORITY = CALIBRATION_SUITE[0]        # non-read-once
-assert not MAJORITY.read_once
-
-fig, (axr, axe, axd) = plt.subplots(1, 3, figsize=(16, 4.6))
-
-# (a) Reliability diagram at REP_EPS for majority3: raw (clipped) vs normalized.
-Lm, _ = lengths[MAJORITY.name]
-crisp_m = clean[MAJORITY.name]
-labels_m = labels_by_formula[MAJORITY.name]
-soft_m = BetaNoise(REP_EPS, concentration=BETA_CONCENTRATION).corrupt_all(
-    crisp_m, np.random.default_rng(1_000)
-)
-dd_m = DeepDFAMonitorFactored.compile(MAJORITY.formula, device=DEVICE)
-raw_m = np.clip(dd_m.batch_acceptance_probability(soft_m, normalize=False), 0.0, 1.0)
-norm_m = np.asarray(dd_m.batch_acceptance_probability(soft_m, normalize=True))
-
-axr.plot([0, 1], [0, 1], color="gray", ls=":", label="perfectly calibrated")
-for scores, lab, style in [(raw_m, "raw", "o-"), (norm_m, "normalized", "^--")]:
-    bins = reliability_curve(scores, labels_m, N_BINS)
-    xs = [b.mean_confidence for b in bins if b.count]
-    ys = [b.accuracy for b in bins if b.count]
-    axr.plot(xs, ys, style, label=f"{lab} (ECE="
-             f"{expected_calibration_error(scores, labels_m, N_BINS):.3f})")
-axr.set_xlabel("mean predicted confidence")
-axr.set_ylabel("empirical accuracy")
-axr.set_title(f"Reliability — {MAJORITY.name} (non-read-once)\nBeta noise ε={REP_EPS}")
-axr.set_xlim(0, 1)
-axr.set_ylim(0, 1)
-axr.legend(fontsize=8)
-axr.grid(True, ls="--", alpha=0.4)
-
-# (b) ECE vs ε (Beta): raw vs norm for every formula. Read-once ⇒ raw == norm.
-for f in formulas:
-    g = df[(df["formula"] == f.name) & (df["noise"] == "beta")].sort_values("eps")
-    tag = "read-once" if f.read_once else "NON-read-once"
-    axe.plot(g["eps"], g["raw_ece"], marker="o",
-             label=f"{f.name} raw ({tag})")
-    if not f.read_once:  # norm differs only for non-read-once
-        axe.plot(g["eps"], g["norm_ece"], marker="^", ls="--",
-                 label=f"{f.name} norm")
-axe.set_xlabel("noise level ε")
-axe.set_ylabel("Expected Calibration Error")
-axe.set_title("ECE vs noise (Beta)\nonly the soft paradigm emits a confidence")
-axe.legend(fontsize=8)
-axe.grid(True, ls="--", alpha=0.4)
-
-# (c) Normalization defect: raw score exceeds [0,1] on the non-read-once guard.
-g = df[(df["formula"] == MAJORITY.name) & (df["noise"] == "beta")].sort_values("eps")
-axd.plot(g["eps"], g["raw_max_score"], marker="o", color="tab:red",
-         label="raw max score")
-axd.axhline(1.0, color="gray", ls=":", label="valid-probability ceiling")
-axd2 = axd.twinx()
-axd2.plot(g["eps"], g["raw_frac_over1"], marker="s", color="tab:purple",
-          label="fraction of scores > 1")
-axd2.set_ylabel("fraction of traces with raw score > 1", color="tab:purple")
-axd.set_xlabel("noise level ε")
-axd.set_ylabel("raw acceptance score (max)", color="tab:red")
-axd.set_title(f"Non-read-once defect — {MAJORITY.name}\nraw soft_matrix rows are "
-              "not stochastic (sum≈1.16)")
-axd.legend(fontsize=8, loc="upper left")
-axd2.legend(fontsize=8, loc="lower right")
-axd.grid(True, ls="--", alpha=0.4)
-
-fig.suptitle(
-    "Capability Exp A — calibration: the soft monitor emits a confidence "
-    "(symbolic cannot); on non-read-once guards the raw readout is not a valid "
-    "probability and needs normalization",
-    y=1.03,
-)
-fig.tight_layout()
-cal_path = RESULTS_DIR / "exp_uncertainty_calibration.png"
-fig.savefig(cal_path, dpi=150, bbox_inches="tight")
-print(f"Saved: {cal_path}")
-plt.close(fig)
+plot_uncertainty(CSV_PATH)
 
 # ---------------------------------------------------------------------------
 # Console summary

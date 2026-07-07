@@ -14,7 +14,6 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-import matplotlib.pyplot as plt
 import pandas as pd
 import torch
 from tqdm import tqdm
@@ -71,7 +70,7 @@ total = len(MONITORS) * len(TRACE_LENGTHS)
 with tqdm(total=total, desc="exp1") as pbar:
     for monitor_cls in MONITORS:
         for tl in TRACE_LENGTHS:
-            key = result_key(monitor_cls.__name__, FORMULA.name, tl, N_TRACES)
+            key = result_key(monitor_cls.__name__, FORMULA.name, tl, N_TRACES, DEVICE)
             if key in completed:
                 pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl, skip=True)
                 pbar.update()
@@ -93,33 +92,13 @@ print(f"Saved (incremental): {csv_path}")
 df = pd.read_csv(csv_path)
 
 # ---------------------------------------------------------------------------
-# Plot
+# Plot (decoupled: plotting lives in experiments/plots.py so figures can be
+# re-generated from the CSV without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-fig, ax = plt.subplots(figsize=(7, 4))
+from experiments.plots import plot_exp1  # noqa: E402
 
-for monitor_name, group in df.groupby("monitor_name"):
-    group = group.sort_values("trace_length")
-    ax.errorbar(
-        group["trace_length"] / 1_000,
-        group["mean_s_per_cell"] * 1e6,
-        yerr=group["std_s_per_cell"] * 1e6,
-        marker="o",
-        label=monitor_name,
-        capsize=3,
-    )
-
-ax.set_xlabel("Monitored cells (×10³)")
-ax.set_ylabel("Avg time per cell (µs)")
-ax.set_title(f"Impact of trace length — formula: {FORMULA.formula}")
-ax.legend()
-ax.grid(True, linestyle="--", alpha=0.4)
-
-plot_path = RESULTS_DIR / "exp1_single_trace.png"
-fig.tight_layout()
-fig.savefig(plot_path, dpi=150)
-print(f"Saved: {plot_path}")
-plt.close(fig)
+plot_exp1(csv_path)
 
 # ---------------------------------------------------------------------------
 # Summary table
