@@ -159,4 +159,5 @@ plot_exp2(csv_path)
 # ---------------------------------------------------------------------------
 
 print()
-print(df[["monitor_name", "n_leaves", "mean_s_per_cell", "std_s_per_cell"]].to_string(index=False))
+_cols = ["monitor_name", "n_leaves", "mean_s_per_cell", "std_s_per_cell"]
+print(df[_cols].to_string(index=False))

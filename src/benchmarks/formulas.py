@@ -142,3 +142,42 @@ CALIBRATION_SUITE: tuple[BenchmarkFormula, ...] = (
     _RESPONSE,
     ijcnn_formula(4),
 )
+
+
+# ---------------------------------------------------------------------------
+# State-scaling suite (Exp 6): large automata, small alphabet
+# ---------------------------------------------------------------------------
+
+# The IJCNN family scales the *alphabet* (|AP|); this family scales the *state
+# space* (|Q|) while keeping the alphabet tiny (2 atoms). It is the instrument
+# for the "do larger automata invert the symbolic-wins trend?" question: a big
+# |Q| gives DeepDFA's batched matmul real O(|Q|^2) work per launch to amortize
+# the fixed per-call overhead against, whereas the symbolic walk only ever
+# touches the current state's out-edges and stays ~flat in |Q|.
+#
+# Bounded response "every a is followed by b within k steps",
+#   G( a -> (b | X b | X^2 b | ... | X^k b) ),
+# is a real BPM pattern whose minimal DFA tracks the tightest pending deadline,
+# so |Q| grows ~linearly with the deadline k while |AP| = 2 is fixed (dense
+# 2^|AP| = 4, so the dense tensor stays feasible even at large |Q|). The exact
+# |Q| is recorded at run time (Exp 6 compiles each formula and stamps |Q|).
+
+STATE_SCALING_DEADLINES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+
+
+def bounded_response(k: int) -> BenchmarkFormula:
+    """G(a -> (b | X b | ... | X^k b)) — response within deadline k."""
+    if k < 0:
+        raise ValueError(f"k must be >= 0, got {k}")
+    consequent = " | ".join("X(" * j + "b" + ")" * j for j in range(k + 1))
+    return BenchmarkFormula(
+        name=f"boundedresp_k{k}",
+        formula=f"G(a -> ({consequent}))",
+        atoms=("a", "b"),
+        n_leaves=k,  # deadline; Exp 6 overwrites this with the measured |Q|
+    )
+
+
+STATE_SCALING_SUITE: tuple[BenchmarkFormula, ...] = tuple(
+    bounded_response(k) for k in STATE_SCALING_DEADLINES
+)

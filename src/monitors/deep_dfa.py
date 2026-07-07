@@ -340,6 +340,11 @@ class DeepDFATensor:
         return pres
 
 
+# Above this many bytes for the (L·B·|Q|²) prefix stack, the parallel scan
+# falls back to the sequential loop (which is O(1)-memory in trace length).
+SCAN_MEM_LIMIT_BYTES = 4 * 1024**3  # 4 GB
+
+
 class DeepDFAMonitor(Monitor):
     """Paradigm 3: monitor driven by the DeepDFA transition tensor.
 
@@ -448,6 +453,68 @@ class DeepDFAMonitor(Monitor):
         return [
             self._verdict_from_path(states_cpu[b], lengths[b]) for b in range(B)
         ]
+
+    # ----- parallel prefix-scan batched run (Phase 0.6: kill the per-cell
+    #        launch overhead by folding the whole trace into O(log L) matmuls) --
+    #
+    # The crisp update q_t = q_{t-1} @ M_t makes the state path a *prefix product*
+    # of the per-cell transition matrices: q_t = q_0 @ (M_1 @ ... @ M_t). Matrix
+    # product is associative, so those prefix products can be computed with an
+    # associative (Hillis–Steele) scan in ceil(log2 L) batched matmuls over the
+    # WHOLE time axis at once, instead of L sequential per-cell bmm()s. The
+    # sequential path's dominant cost at small |Q| is the fixed per-launch
+    # overhead paid L times (~1e2 µs/cell at batch 1 in Exp 3); the scan pays it
+    # ~log2(L) times over much larger matmuls, which is the lever that can invert
+    # the "symbolic always wins" trend when there is enough work (large batch
+    # and/or large |Q|). Trade-off: it materializes all L·B transition matrices
+    # (L·B·|Q|² floats), so it is memory-bound at large |Q| — we fall back to the
+    # sequential loop past SCAN_MEM_LIMIT_BYTES.
+
+    def _transition_stack(self, trace_list, L: int, B: int) -> torch.Tensor:
+        """All per-cell transition matrices as (L, B, |Q|, |Q|)."""
+        dt = self._dt
+        pres = dt.encode_presence(trace_list, L)  # (B, L, |AP|)
+        if dt.mode == "dense":
+            weights = 1 << np.arange(dt.n_atoms, dtype=np.int64)
+            sym_np = (pres.astype(np.int64) * weights).sum(axis=2)  # (B, L)
+            sym = torch.from_numpy(sym_np).to(dt.device).transpose(0, 1)  # (L, B)
+            # dt.T is (|Q|, S, |Q|); gather symbols -> (|Q|, L, B, |Q|) -> (L,B,|Q|,|Q|)
+            return dt.T[:, sym, :].permute(1, 2, 0, 3).contiguous()
+        # (L, B, |AP|) then flatten cells for one vectorized crisp_matrix build.
+        P = torch.from_numpy(pres).to(dt.device).permute(1, 0, 2).contiguous()
+        M = dt.crisp_matrix(P.reshape(L * B, dt.n_atoms))  # (L*B, |Q|, |Q|)
+        return M.view(L, B, dt.n_states, dt.n_states)
+
+    def _scan_states(self, trace_list, lengths, L: int, B: int) -> torch.Tensor:
+        """Per-cell argmax state path (B, L) via an associative prefix scan."""
+        dt = self._dt
+        mm = self._transition_stack(trace_list, L, B)  # (L, B, |Q|, |Q|)
+        # Hillis–Steele inclusive prefix product along the time axis (dim 0).
+        d = 1
+        while d < L:
+            prev = mm
+            mm = prev.clone()
+            mm[d:] = torch.matmul(prev[: L - d], prev[d:])  # left operand = earlier
+            d *= 2
+        # q_t = q_0 @ P_t  (mu is one-hot on the initial state)
+        q = torch.einsum("s,lbst->lbt", dt.mu, mm)  # (L, B, |Q|)
+        return q.argmax(dim=-1).transpose(0, 1).contiguous().cpu()  # (B, L)
+
+    def _batch_run_scan(self, traces, early_termination: bool = True) -> list[Verdict]:
+        trace_list = [list(t) for t in traces]
+        if not trace_list:
+            return []
+        lengths = [len(t) for t in trace_list]
+        B, L = len(trace_list), max(lengths)
+        dt = self._dt
+        est_bytes = L * B * dt.n_states * dt.n_states * 4
+        if est_bytes > SCAN_MEM_LIMIT_BYTES:
+            # Too big to materialize the whole prefix stack; the sequential loop
+            # is O(1)-memory in L. (A chunked scan would bound this; left for
+            # later — the point here is to measure the scan where it fits.)
+            return super().batch_run(traces, early_termination=early_termination)
+        states = self._scan_states(trace_list, lengths, L, B)
+        return [self._verdict_from_path(states[b], lengths[b]) for b in range(B)]
 
     def _verdict_from_path(self, path: torch.Tensor, length: int) -> Verdict:
         dt = self._dt
@@ -612,3 +679,25 @@ class DeepDFAMonitorFactored(DeepDFAMonitor):
         cls, formula: str, device: str | torch.device = "cpu"
     ) -> "DeepDFAMonitorFactored":
         return super().compile(formula, mode="factored", device=device)
+
+
+class DeepDFAMonitorScan(DeepDFAMonitor):
+    """DeepDFA whose ``batch_run`` uses the parallel prefix-scan (dense tensor).
+
+    Same verdicts as the sequential ``DeepDFAMonitor`` (verified against it), but
+    the whole batched trace is folded into O(log L) big matmuls instead of L
+    per-cell ``bmm``s, so it pays the fixed per-launch overhead ~log2(L) times
+    rather than L times. This is the "single/parallel scan" direction: the lever
+    that can beat the symbolic walk once there is enough work (large batch and/or
+    large automaton). Memory-bound at large |Q| (falls back to the sequential
+    loop past ``SCAN_MEM_LIMIT_BYTES``).
+    """
+
+    @classmethod
+    def compile(
+        cls, formula: str, device: str | torch.device = "cpu"
+    ) -> "DeepDFAMonitorScan":
+        return super().compile(formula, mode="dense", device=device)
+
+    def batch_run(self, traces, early_termination: bool = True) -> list[Verdict]:
+        return self._batch_run_scan(traces, early_termination=early_termination)

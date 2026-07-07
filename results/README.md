@@ -18,6 +18,7 @@ no Docker in this project.
 | `exp2_formula_complexity.csv` | per-cell cost vs formula size (IJCNN family) | `n_leaves` |
 | `exp3_batch_size.csv` | throughput vs batch size (`ijcnn_n8`) | `n_traces` |
 | `exp5_depth_microbench.csv` | within-step cost vs nested-X depth | depth (from `formula_name`) |
+| `exp6_state_scaling.csv` | per-cell cost vs automaton size `|Q|` (bounded response) | `n_leaves` (holds the measured `|Q|`) |
 | `exp_uncertainty.csv` | accuracy + calibration vs perceptual noise | `eps` |
 
 ### Timing CSV columns (exp1/2/3/5)
@@ -84,6 +85,7 @@ Files written (per experiment):
   `exp2_memory_wall.png`
 - exp3 → `exp3_time_per_trace.png`, `exp3_speedup.png`
 - exp5 → `exp5_depth.png`
+- exp6 → `exp6_state_scaling.png`
 - uncertainty → `exp_uncertainty_accuracy_{noise}_{formula}.png` (one per cell),
   `exp_uncertainty_reliability.png`, `exp_uncertainty_ece.png`,
   `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png`

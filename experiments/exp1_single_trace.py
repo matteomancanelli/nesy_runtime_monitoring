@@ -25,7 +25,11 @@ from src.benchmarks.runner import (
     result_key,
     time_monitor,
 )
-from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFAMonitorFactored
+from src.monitors.deep_dfa import (
+    DeepDFAMonitor,
+    DeepDFAMonitorFactored,
+    DeepDFAMonitorScan,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -42,6 +46,7 @@ MONITORS = [
     StructuredRuleRunnerMonitor,
     DeepDFAMonitor,
     DeepDFAMonitorFactored,
+    DeepDFAMonitorScan,   # parallel prefix-scan — long trace is its best case
 ]
 
 FORMULA = TRACE_LENGTH_SUITE[0]          # G(a -> F b) — no early termination
@@ -105,4 +110,5 @@ plot_exp1(csv_path)
 # ---------------------------------------------------------------------------
 
 print()
-print(df[["monitor_name", "trace_length", "mean_s_per_cell", "std_s_per_cell"]].to_string(index=False))
+_cols = ["monitor_name", "trace_length", "mean_s_per_cell", "std_s_per_cell"]
+print(df[_cols].to_string(index=False))

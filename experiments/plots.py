@@ -67,11 +67,13 @@ MONITOR_STYLE: dict[str, tuple[str, str]] = {
     "DeepDFAMonitor":              ("DeepDFA (dense)",        "#D55E00"),  # vermillion
     "DeepDFAMonitorDense":         ("DeepDFA (dense)",        "#D55E00"),
     "DeepDFAMonitorFactored":      ("DeepDFA (factored)",     "#009E73"),  # green
+    "DeepDFAMonitorScan":          ("DeepDFA (scan)",         "#56B4E9"),  # sky blue
 }
 # Draw order for legends (canonical, not alphabetical).
 _MONITOR_ORDER = [
     "SymbolicDFAMonitor", "RuleRunnerMonitor", "StructuredRuleRunnerMonitor",
     "DeepDFAMonitor", "DeepDFAMonitorDense", "DeepDFAMonitorFactored",
+    "DeepDFAMonitorScan",
 ]
 _FALLBACK_COLORS = ["#56B4E9", "#000000", "#999999", "#F0E442"]
 
@@ -362,6 +364,23 @@ def plot_exp5(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
 
 
 # ---------------------------------------------------------------------------
+# Exp 6 — per-cell cost vs automaton size |Q|  (1 file)
+# ---------------------------------------------------------------------------
+
+
+def plot_exp6(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    df = load_timing(csv_paths or RESULTS_DIR / "exp6_state_scaling.csv")
+    out_dir = out_dir or RESULTS_DIR
+
+    fig, ax = _new_ax(figsize=(7.5, 4.6))
+    _draw_timing(ax, df, "n_leaves")  # n_leaves holds the measured |Q| (exp6)
+    ax.set_xlabel("DFA states |Q|  (bounded-response deadline)")
+    ax.set_ylabel("Avg time per cell (µs)")
+    ax.set_title("Exp 6 — time per cell vs automaton size |Q|")
+    return [_save(fig, ax, out_dir / "exp6_state_scaling.png")]
+
+
+# ---------------------------------------------------------------------------
 # CPU vs GPU comparisons  (one file per monitor + one speedup file)
 # ---------------------------------------------------------------------------
 
@@ -370,6 +389,7 @@ _EXP_XAXIS = {
     "exp2": ("n_leaves", "Leaves (atoms)", False),
     "exp3": ("n_traces", "Batch size (traces)", True),
     "exp5": ("depth", "Nested-X depth", False),
+    "exp6": ("n_leaves", "DFA states |Q|", False),
 }
 
 
@@ -631,6 +651,7 @@ _PLOTTERS = {
     "exp2": plot_exp2,
     "exp3": plot_exp3,
     "exp5": plot_exp5,
+    "exp6": plot_exp6,
     "uncertainty": plot_uncertainty,
 }
 

@@ -34,7 +34,11 @@ from src.benchmarks.runner import (
     result_key,
     time_monitor,
 )
-from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFAMonitorFactored
+from src.monitors.deep_dfa import (
+    DeepDFAMonitor,
+    DeepDFAMonitorFactored,
+    DeepDFAMonitorScan,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -58,6 +62,7 @@ MONITORS = [
     StructuredRuleRunnerMonitor,
     DeepDFAMonitor,
     DeepDFAMonitorFactored,
+    DeepDFAMonitorScan,   # parallel prefix-scan variant of dense DeepDFA
 ]
 
 FORMULA      = IJCNN_SUITE[2]    # ijcnn_n8 — enough atoms to be interesting
