@@ -6,18 +6,31 @@ you can re-style a plot without re-running the (slow) sweep: edit here and call
 the relevant ``plot_*`` function, or run this file to regenerate every figure
 from whatever CSVs are currently in ``results/``.
 
-Two design points worth knowing:
+Conventions (so the whole paper reads as one system):
+
+* **One file per plot.** No side-by-side composites — each logical plot is its
+  own PNG so it can be dropped into LaTeX independently. Functions that used to
+  draw a multi-panel figure now return a *list* of the files they wrote.
+
+* **Consistent colours + labels.** Every paradigm has one fixed colour and one
+  display name across every figure (``MONITOR_STYLE``), from the Okabe–Ito
+  colourblind-safe palette (validated: worst adjacent CVD ΔE ≈ 37). Hardware
+  config (CPU vs GPU) is encoded by *line style*, never by colour, so colour
+  always means "which monitor".
 
 * **Log y-axis on the timing panels.** Per-cell costs span >2 orders of
-  magnitude (Symbolic ~0.1 µs vs DeepDFA ~15 µs), so a linear axis flattens the
-  cheap paradigms onto the x-axis. All timing panels use a log y-scale.
+  magnitude (Symbolic ~0.1 µs vs DeepDFA ~15 µs); a linear axis flattens the
+  cheap paradigms onto the x-axis.
 
-* **CPU vs GPU overlays.** Each timing row is stamped with ``device`` and
-  ``gpu_name`` (Colab was run both on CPU and on a Tesla T4). Every ``plot_*``
-  function accepts one path OR a list of paths: pass several CSVs (e.g. a CPU
-  run and a GPU run) and the curves are split by hardware config. The dedicated
-  ``plot_device_comparison`` faceting draws, per monitor, the CPU curve against
-  the GPU curve for a fixed experiment.
+* **CPU vs GPU.** Each timing row is stamped with ``device``/``gpu_name`` (Colab
+  is run both on CPU and on a Tesla T4). Every ``plot_*`` accepts one path OR a
+  list of paths: pass several CSVs and curves split by hardware. ``plot_device_
+  comparison`` draws, per monitor, CPU vs GPU; ``plot_device_speedup`` draws the
+  CPU/GPU speed-up ratio per monitor.
+
+The heavy stack (ltlf2dfa/MONA, torch) is imported lazily — only the analytic
+memory-wall and the reliability diagram need it — so re-styling a timing figure
+needs just matplotlib/pandas.
 
 Run:
     python experiments/plots.py                    # regenerate everything
@@ -36,16 +49,41 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# NOTE: the heavy stack (ltlf2dfa/MONA, torch) is imported *lazily* inside the
-# two functions that analytically recompute something from the formulas (the
-# exp2 memory-wall panel and the exp_uncertainty reliability diagram). Every
-# other plot is driven entirely by the CSV, so re-styling a timing figure needs
-# only matplotlib/pandas — no torch, no MONA. This is what makes "act on the
-# plot only" cheap.
-
 RESULTS_DIR = ROOT / "results"
 DENSE_MAX_LEAVES = 16
 FLOAT_BYTES = 4
+
+# ---------------------------------------------------------------------------
+# Canonical monitor identity: one display name + one colour, used everywhere.
+# Okabe–Ito palette (colourblind-safe). DeepDFAMonitor (the dense default in
+# exp1/3/5) and DeepDFAMonitorDense (exp2) are the same paradigm variant, so
+# they share a name and colour. Hardware is a line style, never a colour.
+# ---------------------------------------------------------------------------
+
+MONITOR_STYLE: dict[str, tuple[str, str]] = {
+    "SymbolicDFAMonitor":          ("Symbolic DFA",           "#0072B2"),  # blue
+    "RuleRunnerMonitor":           ("RuleRunner (flat)",      "#E69F00"),  # orange
+    "StructuredRuleRunnerMonitor": ("RuleRunner (structured)", "#CC79A7"),  # purple
+    "DeepDFAMonitor":              ("DeepDFA (dense)",        "#D55E00"),  # vermillion
+    "DeepDFAMonitorDense":         ("DeepDFA (dense)",        "#D55E00"),
+    "DeepDFAMonitorFactored":      ("DeepDFA (factored)",     "#009E73"),  # green
+}
+# Draw order for legends (canonical, not alphabetical).
+_MONITOR_ORDER = [
+    "SymbolicDFAMonitor", "RuleRunnerMonitor", "StructuredRuleRunnerMonitor",
+    "DeepDFAMonitor", "DeepDFAMonitorDense", "DeepDFAMonitorFactored",
+]
+_FALLBACK_COLORS = ["#56B4E9", "#000000", "#999999", "#F0E442"]
+
+
+def style_for(monitor: str, seen: dict[str, str] | None = None) -> tuple[str, str]:
+    """(display label, colour) for a monitor class name; stable fallback if new."""
+    if monitor in MONITOR_STYLE:
+        return MONITOR_STYLE[monitor]
+    seen = seen if seen is not None else {}
+    if monitor not in seen:
+        seen[monitor] = _FALLBACK_COLORS[len(seen) % len(_FALLBACK_COLORS)]
+    return monitor, seen[monitor]
 
 
 # ---------------------------------------------------------------------------
@@ -54,18 +92,13 @@ FLOAT_BYTES = 4
 
 
 def _as_paths(csv_paths: str | Path | list) -> list[Path]:
-    """Normalise a single path or a list of paths to a list of Paths."""
     if isinstance(csv_paths, (str, Path)):
         csv_paths = [csv_paths]
     return [Path(p) for p in csv_paths]
 
 
 def config_label(device: str, gpu_name: str | float) -> str:
-    """Human-readable hardware label used to split/annotate curves.
-
-    ``cpu`` -> "CPU"; ``cuda`` -> "GPU (Tesla T4)" (or just "GPU" if the name is
-    missing). This is the grouping key for CPU-vs-GPU comparisons.
-    """
+    """Hardware label used to split/annotate curves: "CPU" or "GPU (Tesla T4)"."""
     if str(device) == "cuda":
         missing = gpu_name is None or isinstance(gpu_name, float)
         name = "" if missing else str(gpu_name)
@@ -74,19 +107,8 @@ def config_label(device: str, gpu_name: str | float) -> str:
 
 
 def load_timing(csv_paths: str | Path | list) -> pd.DataFrame:
-    """Load and concatenate one or more timing CSVs, adding derived columns.
-
-    Adds:
-      * ``config``          — hardware label from (device, gpu_name).
-      * ``mean_s_per_trace``/``std_s_per_trace`` — per-cell * trace_length.
-      * ``us_per_cell``/``us_err`` — microseconds, the plotting unit.
-    Missing ``device``/``gpu_name`` columns (very old CSVs) default to CPU.
-    """
-    frames = []
-    for path in _as_paths(csv_paths):
-        if not path.exists():
-            continue
-        frames.append(pd.read_csv(path))
+    """Load and concatenate one or more timing CSVs, adding derived columns."""
+    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
     if not frames:
         raise FileNotFoundError(f"no timing CSVs found among {csv_paths}")
     df = pd.concat(frames, ignore_index=True)
@@ -102,31 +124,95 @@ def load_timing(csv_paths: str | Path | list) -> pd.DataFrame:
     return df
 
 
-def _series_label(monitor: str, config: str, multi_config: bool) -> str:
-    """Legend label: include the hardware only when >1 config is on the plot."""
-    return f"{monitor} — {config}" if multi_config else monitor
-
-
-# One dashing per hardware config so CPU vs GPU is distinguishable when both are
-# overlaid on the same axes (colour still encodes the monitor).
+# Line style per hardware config: CPU solid, GPU dashed, extras after.
 _CONFIG_DASH = ["-", "--", ":", "-."]
+_CONFIG_MARKER = ["o", "s", "^", "D"]
 
 
-def _config_styles(configs: list[str]) -> dict[str, str]:
-    n = len(_CONFIG_DASH)
-    return {c: _CONFIG_DASH[i % n] for i, c in enumerate(sorted(configs))}
+def _config_styles(configs: list[str]) -> tuple[dict[str, str], dict[str, str]]:
+    ordered = sorted(configs, key=lambda c: (c != "CPU", c))  # CPU first -> solid
+    dash = {c: _CONFIG_DASH[i % len(_CONFIG_DASH)] for i, c in enumerate(ordered)}
+    mark = {c: _CONFIG_MARKER[i % len(_CONFIG_MARKER)] for i, c in enumerate(ordered)}
+    return dash, mark
+
+
+def _ordered_monitors(df: pd.DataFrame) -> list[str]:
+    present = set(df["monitor_name"])
+    canon = [m for m in _MONITOR_ORDER if m in present]
+    extra = sorted(m for m in present if m not in _MONITOR_ORDER)
+    # de-dup while keeping order (DeepDFAMonitor/Dense map to same label)
+    return list(dict.fromkeys(canon + extra))
+
+
+def _new_ax(figsize=(7.0, 4.6)):
+    fig, ax = plt.subplots(figsize=figsize)
+    return fig, ax
+
+
+def _save(fig, ax, out: Path, legend=True) -> Path:
+    if legend:
+        ax.legend(fontsize=8)
+    ax.grid(True, which="both", ls="--", alpha=0.4)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {out}")
+    return out
+
+
+def _draw_timing(ax, df, xcol, ynorm=None) -> None:
+    """Draw per-monitor timing curves (µs/cell) vs xcol on a log-y axis.
+
+    ``ynorm``: optional column to divide by (e.g. n_leaves for per-leaf cost).
+    Colour = monitor; line style = hardware config; legend labels include the
+    config only when more than one is present.
+    """
+    configs = sorted(df["config"].unique())
+    multi = len(configs) > 1
+    dash, mark = _config_styles(configs)
+    seen: dict[str, str] = {}
+    for monitor in _ordered_monitors(df):
+        label, color = style_for(monitor, seen)
+        for cfg in sorted(df.loc[df["monitor_name"] == monitor, "config"].unique()):
+            g = df[(df["monitor_name"] == monitor) & (df["config"] == cfg)]
+            g = g.sort_values(xcol)
+            y = g["us_per_cell"]
+            yerr = g["us_err"]
+            if ynorm is not None:
+                y = y / g[ynorm]
+                yerr = yerr / g[ynorm]
+            lbl = f"{label} — {cfg}" if multi else label
+            ax.errorbar(g[xcol], y, yerr=yerr, marker=mark[cfg], ms=6, lw=2,
+                        capsize=3, color=color, ls=dash[cfg], label=lbl)
+    ax.set_yscale("log")
+
+
+# ---------------------------------------------------------------------------
+# Exp 1 — per-cell cost vs trace length  (1 file)
+# ---------------------------------------------------------------------------
+
+
+def plot_exp1(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    df = load_timing(csv_paths or RESULTS_DIR / "exp1_single_trace.csv")
+    out_dir = out_dir or RESULTS_DIR
+    df["kcells"] = df["trace_length"] / 1_000
+
+    fig, ax = _new_ax()
+    _draw_timing(ax, df, "kcells")
+    ax.set_xlabel("Monitored cells (×10³)")
+    ax.set_ylabel("Avg time per cell (µs)")
+    formula = df["formula_name"].iloc[0]
+    ax.set_title(f"Exp 1 — time per cell vs trace length ({formula})")
+    return [_save(fig, ax, out_dir / "exp1_time_per_cell.png")]
+
+
+# ---------------------------------------------------------------------------
+# Exp 2 — per-cell cost vs formula complexity + memory wall  (3 files)
+# ---------------------------------------------------------------------------
 
 
 def _memory_curves() -> tuple[list[int], list[float], list[float]]:
-    """Analytic transition-representation memory (GB) for the IJCNN family.
-
-    Dense tensor is |Q|^2 * 2^|AP| float32; factored cube masks are the
-    require-true/require-false integer masks. Computed from the (cheap) DFA
-    compilation, which never materialises 2^n — same as the experiment.
-
-    Needs the heavy stack (ltlf2dfa/MONA + torch); imported lazily so the timing
-    plots stay dependency-light. Raises ImportError if unavailable.
-    """
+    """Analytic transition-representation memory (GB). Lazily needs ltlf2dfa+torch."""
     from src.benchmarks.formulas import IJCNN_SUITE
     from src.formula.compiler import compile_ltlf
     from src.monitors.deep_dfa import DeepDFATensor
@@ -144,289 +230,261 @@ def _memory_curves() -> tuple[list[int], list[float], list[float]]:
     return mem_n, dense_gb, factored_gb
 
 
-# ---------------------------------------------------------------------------
-# Exp 1 — per-cell cost vs trace length
-# ---------------------------------------------------------------------------
-
-
-def plot_exp1(csv_paths=None, out: Path | None = None) -> Path:
-    csv_paths = csv_paths or RESULTS_DIR / "exp1_single_trace.csv"
-    df = load_timing(csv_paths)
-    configs = sorted(df["config"].unique())
-    multi = len(configs) > 1
-    dash = _config_styles(configs)
-
-    fig, ax = plt.subplots(figsize=(7.5, 4.5))
-    for (monitor, cfg), g in df.groupby(["monitor_name", "config"]):
-        g = g.sort_values("trace_length")
-        ax.errorbar(
-            g["trace_length"] / 1_000, g["us_per_cell"], yerr=g["us_err"],
-            marker="o", capsize=3, ls=dash[cfg],
-            label=_series_label(monitor, cfg, multi),
-        )
-
-    ax.set_xlabel("Monitored cells (×10³)")
-    ax.set_ylabel("Avg time per cell (µs)")
-    ax.set_yscale("log")            # (2) fast paradigms would collapse on linear
-    formula = df["formula_name"].iloc[0]
-    ax.set_title(f"Exp 1 — impact of trace length ({formula})")
-    ax.legend(fontsize=8)
-    ax.grid(True, which="both", ls="--", alpha=0.4)
-
-    out = out or RESULTS_DIR / "exp1_single_trace.png"
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print(f"Saved: {out}")
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Exp 2 — per-cell cost vs formula complexity (+ analytic memory wall)
-# ---------------------------------------------------------------------------
-
-
-def plot_exp2(csv_paths=None, out: Path | None = None) -> Path:
-    csv_paths = csv_paths or RESULTS_DIR / "exp2_formula_complexity.csv"
-    df = load_timing(csv_paths)
+def plot_exp2(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    df = load_timing(csv_paths or RESULTS_DIR / "exp2_formula_complexity.csv")
+    out_dir = out_dir or RESULTS_DIR
     all_n = sorted(df["n_leaves"].unique())
-    configs = sorted(df["config"].unique())
-    multi = len(configs) > 1
-    dash = _config_styles(configs)
+    outs = []
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 4.4))
+    # (1) time per cell
+    fig, ax = _new_ax()
+    _draw_timing(ax, df, "n_leaves")
+    ax.set_xlabel("Leaves (atoms)")
+    ax.set_ylabel("Avg time per cell (µs)")
+    ax.set_xticks(all_n)
+    ax.set_title("Exp 2 — time per cell vs formula size")
+    outs.append(_save(fig, ax, out_dir / "exp2_time_per_cell.png"))
 
-    for (monitor, cfg), g in df.groupby(["monitor_name", "config"]):
-        g = g.sort_values("n_leaves")
-        x = g["n_leaves"]
-        lbl = _series_label(monitor, cfg, multi)
-        ax1.errorbar(x, g["us_per_cell"], yerr=g["us_err"], marker="o",
-                     capsize=3, ls=dash[cfg], label=lbl)
-        ax2.errorbar(x, g["us_per_cell"] / x, yerr=g["us_err"] / x, marker="o",
-                     capsize=3, ls=dash[cfg], label=lbl)
+    # (2) time per cell, per leaf
+    fig, ax = _new_ax()
+    _draw_timing(ax, df, "n_leaves", ynorm="n_leaves")
+    ax.set_xlabel("Leaves (atoms)")
+    ax.set_ylabel("Avg time per cell per leaf (µs)")
+    ax.set_xticks(all_n)
+    ax.set_title("Exp 2 — time per cell, per leaf")
+    outs.append(_save(fig, ax, out_dir / "exp2_time_per_cell_per_leaf.png"))
 
-    for ax, ylabel, title in [
-        (ax1, "Avg time per cell (µs)", "Time per cell vs formula size"),
-        (ax2, "Avg time per cell per leaf (µs)", "Time per cell, per leaf"),
-    ]:
-        ax.set_xlabel("Leaves (atoms)")
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
-        ax.set_yscale("log")        # (2) symbolic (~0.1µs) vs DeepDFA (~µs..ms)
-        ax.set_xticks(all_n)
-        ax.legend(fontsize=8)
-        ax.grid(True, which="both", ls="--", alpha=0.4)
-
-    # Memory panel is analytic (recomputed from the formulas, not the CSV) so it
-    # needs the heavy stack; degrade to a note if it is unavailable.
+    # (3) analytic memory wall (dense/factored colours match the timing curves)
+    fig, ax = _new_ax()
     try:
         mem_n, dense_gb, factored_gb = _memory_curves()
-        ax3.plot(mem_n, dense_gb, marker="o", color="tab:red",
-                 label="DeepDFA dense  $|Q|^2\\,2^{|AP|}$")
-        ax3.plot(mem_n, factored_gb, marker="o", color="tab:green",
-                 label="DeepDFA factored (cube masks)")
-        ax3.axhline(4.0, color="gray", ls=":", label="4 GB VRAM (laptop)")
-        ax3.axvline(DENSE_MAX_LEAVES, color="tab:red", ls="--", alpha=0.4)
-        ax3.set_yscale("log")
-        ax3.set_ylabel("Transition representation (GB)")
-        ax3.set_title("Alphabet-blowup: dense $2^{|AP|}$ memory wall")
-        ax3.set_xticks(mem_n)
-        ax3.legend(fontsize=8)
+        _, dense_c = MONITOR_STYLE["DeepDFAMonitorDense"]
+        _, fact_c = MONITOR_STYLE["DeepDFAMonitorFactored"]
+        ax.plot(mem_n, dense_gb, marker="o", ms=6, lw=2, color=dense_c,
+                label="DeepDFA (dense)  $|Q|^2\\,2^{|AP|}$")
+        ax.plot(mem_n, factored_gb, marker="^", ms=6, lw=2, color=fact_c,
+                label="DeepDFA (factored) cube masks")
+        ax.axhline(4.0, color="gray", ls=":", label="4 GB VRAM")
+        ax.axvline(DENSE_MAX_LEAVES, color=dense_c, ls="--", alpha=0.4)
+        ax.set_yscale("log")
+        ax.set_ylabel("Transition representation (GB)")
+        ax.set_xticks(mem_n)
+        ax.set_title("Exp 2 — alphabet-blowup: dense $2^{|AP|}$ memory wall")
+        legend = True
     except ImportError:
-        ax3.text(0.5, 0.5, "memory panel needs ltlf2dfa + torch\n(recomputed "
-                 "analytically, not in the CSV)", ha="center", va="center",
-                 transform=ax3.transAxes, fontsize=9, color="0.4")
-        ax3.set_title("Alphabet-blowup memory wall (unavailable)")
-    ax3.set_xlabel("Leaves (atoms)")
-    ax3.grid(True, which="both", ls="--", alpha=0.4)
-
-    fig.suptitle("Exp 2 — formula complexity", y=1.02)
-    out = out or RESULTS_DIR / "exp2_formula_complexity.png"
-    fig.tight_layout()
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {out}")
-    return out
+        ax.text(0.5, 0.5, "memory panel needs ltlf2dfa + torch\n(recomputed "
+                "analytically, not stored in the CSV)", ha="center", va="center",
+                transform=ax.transAxes, fontsize=9, color="0.4")
+        ax.set_title("Exp 2 — memory wall (deps unavailable)")
+        legend = False
+    ax.set_xlabel("Leaves (atoms)")
+    outs.append(_save(fig, ax, out_dir / "exp2_memory_wall.png", legend=legend))
+    return outs
 
 
 # ---------------------------------------------------------------------------
-# Exp 3 — throughput vs batch size
+# Exp 3 — throughput vs batch size  (2 files)
 # ---------------------------------------------------------------------------
 
 
-def plot_exp3(csv_paths=None, out: Path | None = None) -> Path:
-    csv_paths = csv_paths or RESULTS_DIR / "exp3_batch_size.csv"
-    df = load_timing(csv_paths)
+def plot_exp3(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    df = load_timing(csv_paths or RESULTS_DIR / "exp3_batch_size.csv")
+    out_dir = out_dir or RESULTS_DIR
     batch_sizes = sorted(df["n_traces"].unique())
     configs = sorted(df["config"].unique())
     multi = len(configs) > 1
-    dash = _config_styles(configs)
+    dash, mark = _config_styles(configs)
+    outs = []
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12.5, 4.4))
+    # (1) LEAD: absolute time per trace (ms), log-y
+    fig, ax = _new_ax(figsize=(7.5, 4.6))
+    seen: dict[str, str] = {}
+    for monitor in _ordered_monitors(df):
+        label, color = style_for(monitor, seen)
+        for cfg in sorted(df.loc[df["monitor_name"] == monitor, "config"].unique()):
+            g = df[(df["monitor_name"] == monitor) & (df["config"] == cfg)]
+            g = g.sort_values("n_traces")
+            lbl = f"{label} — {cfg}" if multi else label
+            ax.errorbar(g["n_traces"], g["mean_s_per_trace"] * 1e3,
+                        yerr=g["std_s_per_trace"] * 1e3, marker=mark[cfg], ms=6,
+                        lw=2, capsize=3, color=color, ls=dash[cfg], label=lbl)
+    ax.set_yscale("log")
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(batch_sizes)
+    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.set_xlabel("Batch size (number of traces)")
+    ax.set_ylabel("Time per trace (ms)")
+    ax.set_title("Exp 3 — absolute time per trace")
+    outs.append(_save(fig, ax, out_dir / "exp3_time_per_trace.png"))
 
-    for (monitor, cfg), g in df.groupby(["monitor_name", "config"]):
-        g = g.sort_values("n_traces")
-        x = g["n_traces"]
-        lbl = _series_label(monitor, cfg, multi)
-        ax1.errorbar(x, g["mean_s_per_trace"] * 1e3, yerr=g["std_s_per_trace"] * 1e3,
-                     marker="o", capsize=3, ls=dash[cfg], label=lbl)
-        baseline = g["mean_s_per_trace"].iloc[0]
-        ax2.plot(x, baseline / g["mean_s_per_trace"], marker="o", ls=dash[cfg],
-                 label=lbl)
-
+    # (2) speed-up vs own batch=1 (demoted; per-monitor baseline)
+    fig, ax = _new_ax(figsize=(7.5, 4.6))
+    seen = {}
+    for monitor in _ordered_monitors(df):
+        label, color = style_for(monitor, seen)
+        for cfg in sorted(df.loc[df["monitor_name"] == monitor, "config"].unique()):
+            g = df[(df["monitor_name"] == monitor) & (df["config"] == cfg)]
+            g = g.sort_values("n_traces")
+            baseline = g["mean_s_per_trace"].iloc[0]
+            lbl = f"{label} — {cfg}" if multi else label
+            ax.plot(g["n_traces"], baseline / g["mean_s_per_trace"], marker=mark[cfg],
+                    ms=6, lw=2, color=color, ls=dash[cfg], label=lbl)
     x_ref = np.array(batch_sizes)
-    ax2.plot(x_ref, x_ref / x_ref[0], ls="--", color="gray", label="ideal linear")
-
-    for ax, ylabel, title in [
-        (ax1, "Time per trace (ms)", "LEAD: absolute time per trace"),
-        (ax2, "Speedup vs own batch=1", "Speedup (per-monitor baseline)"),
-    ]:
-        ax.set_xlabel("Batch size (number of traces)")
-        ax.set_xscale("log", base=2)
-        ax.set_ylabel(ylabel)
-        ax.set_title(title)
-        ax.set_xticks(batch_sizes)
-        ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
-        ax.legend(fontsize=8)
-        ax.grid(True, which="both", ls="--", alpha=0.4)
-    ax1.set_yscale("log")           # (2) time-per-trace spans orders of magnitude
-    ax2.set_yscale("log", base=2)
-    ax2.text(
-        0.5, -0.32,
-        "Caveat: each curve is normalised to its OWN batch=1 time, so curves are\n"
-        "NOT comparable across monitors. Read absolute times from the left panel.",
-        transform=ax2.transAxes, ha="center", va="top", fontsize=7.5, color="0.35",
-    )
-
-    fig.suptitle("Exp 3 — batch size", y=1.02)
-    out = out or RESULTS_DIR / "exp3_batch_size.png"
-    fig.tight_layout()
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {out}")
-    return out
+    ax.plot(x_ref, x_ref / x_ref[0], ls="--", color="gray", label="ideal linear")
+    ax.set_yscale("log", base=2)
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(batch_sizes)
+    ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.set_xlabel("Batch size (number of traces)")
+    ax.set_ylabel("Speedup vs own batch=1")
+    ax.set_title("Exp 3 — speedup (per-monitor baseline; read absolute times above)")
+    outs.append(_save(fig, ax, out_dir / "exp3_speedup.png"))
+    return outs
 
 
 # ---------------------------------------------------------------------------
-# Exp 5 — within-step cost vs nested-X depth
+# Exp 5 — within-step cost vs nested-X depth  (1 file)
 # ---------------------------------------------------------------------------
 
 
-def plot_exp5(csv_paths=None, out: Path | None = None) -> Path:
-    csv_paths = csv_paths or RESULTS_DIR / "exp5_depth_microbench.csv"
-    df = load_timing(csv_paths)
+def plot_exp5(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    df = load_timing(csv_paths or RESULTS_DIR / "exp5_depth_microbench.csv")
+    out_dir = out_dir or RESULTS_DIR
     df["depth"] = df["formula_name"].str.extract(r"_xdepth(\d+)$").astype(int)
-    depths = sorted(df["depth"].unique())
-    configs = sorted(df["config"].unique())
-    multi = len(configs) > 1
-    dash = _config_styles(configs)
 
-    fig, ax = plt.subplots(figsize=(7.5, 4.6))
-    for (monitor, cfg), g in df.groupby(["monitor_name", "config"]):
-        g = g.sort_values("depth")
-        ax.errorbar(
-            g["depth"], g["us_per_cell"], yerr=g["us_err"],
-            marker="o", capsize=3, ls=dash[cfg],
-            label=_series_label(monitor, cfg, multi),
-        )
-
+    fig, ax = _new_ax()
+    _draw_timing(ax, df, "depth")
     ax.set_xlabel("Nested-X depth (parse-tree levels over fixed ijcnn_n8 breadth)")
     ax.set_ylabel("Time per cell (µs)")
-    ax.set_yscale("log")
-    ax.set_xticks(depths)
+    ax.set_xticks(sorted(df["depth"].unique()))
     ax.set_title("Exp 5 — within-step cost vs parse-tree depth")
-    ax.legend(fontsize=8)
-    ax.grid(True, which="both", ls="--", alpha=0.4)
-
-    out = out or RESULTS_DIR / "exp5_depth_microbench.png"
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
-    plt.close(fig)
-    print(f"Saved: {out}")
-    return out
+    return [_save(fig, ax, out_dir / "exp5_depth.png")]
 
 
 # ---------------------------------------------------------------------------
-# CPU vs GPU comparison — one subplot per monitor, for a fixed experiment
+# CPU vs GPU comparisons  (one file per monitor + one speedup file)
 # ---------------------------------------------------------------------------
 
-# x-axis column + human label for each timing experiment.
 _EXP_XAXIS = {
-    "exp1": ("trace_length", "Trace length (cells)"),
-    "exp2": ("n_leaves", "Leaves (atoms)"),
-    "exp3": ("n_traces", "Batch size (traces)"),
-    "exp5": ("depth", "Nested-X depth"),
+    "exp1": ("trace_length", "Trace length (cells)", False),
+    "exp2": ("n_leaves", "Leaves (atoms)", False),
+    "exp3": ("n_traces", "Batch size (traces)", True),
+    "exp5": ("depth", "Nested-X depth", False),
 }
 
 
-def plot_device_comparison(
-    csv_paths, experiment: str, out: Path | None = None, monitors=None,
-) -> Path | None:
-    """Facet CPU vs GPU per monitor for one timing experiment.
-
-    ``csv_paths`` must together contain >1 hardware config (e.g. a CPU CSV and a
-    GPU CSV, or one accumulated CSV with both). Each subplot is one monitor with
-    its CPU and GPU curves overlaid, answering "what does the GPU buy this
-    paradigm?" directly. Returns None (and warns) if only one config is present.
-    """
+def _prep_device_df(csv_paths, experiment: str):
     df = load_timing(csv_paths)
     if experiment == "exp5":
         df["depth"] = df["formula_name"].str.extract(r"_xdepth(\d+)$").astype(int)
-    xcol, xlabel = _EXP_XAXIS[experiment]
+    xcol, xlabel, logx = _EXP_XAXIS[experiment]
+    return df, xcol, xlabel, logx
 
+
+def plot_device_comparison(csv_paths, experiment: str,
+                           out_dir: Path | None = None, monitors=None) -> list[Path]:
+    """One file per monitor: its CPU curve vs its GPU curve (same colour, CPU
+    solid/circle, GPU dashed/square). Needs both a CPU and a GPU CSV."""
+    df, xcol, xlabel, logx = _prep_device_df(csv_paths, experiment)
+    out_dir = out_dir or RESULTS_DIR
     configs = sorted(df["config"].unique())
     if len(configs) < 2:
-        print(f"[{experiment}] only one config present ({configs}); "
-              "device comparison needs both a CPU and a GPU CSV — skipping.")
-        return None
+        print(f"[{experiment}] only one config present ({configs}); device "
+              "comparison needs a CPU CSV and a GPU CSV — skipping.")
+        return []
+    dash, mark = _config_styles(configs)
 
-    names = monitors or sorted(df["monitor_name"].unique())
-    ncol = min(3, len(names))
-    nrow = (len(names) + ncol - 1) // ncol
-    fig, axes = plt.subplots(nrow, ncol, figsize=(5.2 * ncol, 3.8 * nrow),
-                             squeeze=False)
-    for i, monitor in enumerate(names):
-        ax = axes[i // ncol][i % ncol]
+    names = monitors or _ordered_monitors(df)
+    outs = []
+    seen: dict[str, str] = {}
+    for monitor in names:
+        label, color = style_for(monitor, seen)
         sub = df[df["monitor_name"] == monitor]
-        for cfg, g in sub.groupby("config"):
-            g = g.sort_values(xcol)
-            ax.errorbar(g[xcol], g["us_per_cell"], yerr=g["us_err"],
-                        marker="o", capsize=3, label=cfg)
-        ax.set_title(monitor, fontsize=10)
+        if sub.empty:
+            continue
+        fig, ax = _new_ax(figsize=(6.5, 4.4))
+        for cfg in sorted(sub["config"].unique()):
+            g = sub[sub["config"] == cfg].sort_values(xcol)
+            ax.errorbar(g[xcol], g["us_per_cell"], yerr=g["us_err"], marker=mark[cfg],
+                        ms=6, lw=2, capsize=3, color=color, ls=dash[cfg], label=cfg)
+        ax.set_yscale("log")
+        if logx:
+            ax.set_xscale("log", base=2)
+            ax.set_xticks(sorted(sub[xcol].unique()))
+            ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Time per cell (µs)")
-        ax.set_yscale("log")
-        if experiment in ("exp3",):
-            ax.set_xscale("log", base=2)
-            ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
-        ax.legend(fontsize=8)
-        ax.grid(True, which="both", ls="--", alpha=0.4)
-    for j in range(len(names), nrow * ncol):      # hide unused axes
-        axes[j // ncol][j % ncol].axis("off")
+        ax.set_title(f"{experiment} — {label}: CPU vs GPU")
+        safe = label.replace(" ", "_").replace("(", "").replace(")", "")
+        outs.append(_save(fig, ax, out_dir / f"{experiment}_device_{safe}.png"))
+    return outs
 
-    fig.suptitle(f"{experiment} — CPU vs GPU per monitor", y=1.01)
-    out = out or RESULTS_DIR / f"{experiment}_device_comparison.png"
-    fig.tight_layout()
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {out}")
-    return out
+
+def plot_device_speedup(csv_paths, experiment: str,
+                        out_dir: Path | None = None) -> list[Path]:
+    """One file: GPU speed-up (CPU time / GPU time) per monitor vs the x-axis.
+
+    Answers "how much does the GPU actually buy each paradigm?" directly — the
+    interesting comparison that falls out of running the same sweep on both.
+    Needs both a CPU and a GPU CSV.
+    """
+    df, xcol, xlabel, logx = _prep_device_df(csv_paths, experiment)
+    out_dir = out_dir or RESULTS_DIR
+    gpu_cfgs = [c for c in df["config"].unique() if c != "CPU"]
+    if "CPU" not in set(df["config"]) or not gpu_cfgs:
+        print(f"[{experiment}] need both a CPU CSV and a GPU CSV for the "
+              "device-speedup plot — skipping.")
+        return []
+    gpu_cfg = sorted(gpu_cfgs)[0]
+
+    fig, ax = _new_ax(figsize=(7.0, 4.6))
+    seen: dict[str, str] = {}
+    for monitor in _ordered_monitors(df):
+        label, color = style_for(monitor, seen)
+        cpu = (df[(df["monitor_name"] == monitor) & (df["config"] == "CPU")]
+               .set_index(xcol)["mean_s_per_cell"])
+        gpu = (df[(df["monitor_name"] == monitor) & (df["config"] == gpu_cfg)]
+               .set_index(xcol)["mean_s_per_cell"])
+        common = sorted(set(cpu.index) & set(gpu.index))
+        if not common:
+            continue
+        ratio = [cpu[x] / gpu[x] for x in common]
+        ax.plot(common, ratio, marker="o", ms=6, lw=2, color=color, label=label)
+    ax.axhline(1.0, color="gray", ls=":", label="parity (GPU = CPU)")
+    ax.set_yscale("log", base=2)
+    if logx:
+        ax.set_xscale("log", base=2)
+        ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(f"Speedup  CPU time / {gpu_cfg} time")
+    ax.set_title(f"{experiment} — GPU speedup per monitor")
+    return [_save(fig, ax, out_dir / f"{experiment}_device_speedup.png")]
 
 
 # ---------------------------------------------------------------------------
 # Capability Exp A — accuracy + calibration vs perceptual noise
 # ---------------------------------------------------------------------------
 
+# Fixed colours for the three uncertainty series (reuse the paradigm palette:
+# Symbolic = blue, DeepDFA-factored = green; the two soft read-outs are the same
+# monitor, so raw = green and norm = vermillion to tell them apart).
+_UNC_STYLE = {
+    "sym":  ("Symbolic (threshold)",   "#0072B2", "s", "-"),
+    "raw":  ("DeepDFA soft (raw)",     "#009E73", "o", "-"),
+    "norm": ("DeepDFA soft (norm)",    "#D55E00", "^", "--"),
+}
+# Colours for per-formula lines (distinct from the paradigm palette).
+_FORMULA_COLORS = ["#E69F00", "#56B4E9", "#CC79A7", "#000000"]
+
 
 def plot_uncertainty(csv_paths=None, out_dir: Path | None = None,
                      rep_eps: float = 0.4) -> list[Path]:
-    """Accuracy + calibration figures for Capability Exp A, from the CSV.
+    """Capability Exp A figures, one file per plot.
 
-    Everything except the reliability-diagram panel is driven purely by the CSV
-    columns (``read_once`` tells us which formula is non-read-once, so we never
-    import the formula registry). The reliability panel needs the raw per-trace
-    scores, which are not stored in the CSV, so it is recomputed from the monitor
-    — lazily imported and skipped with a note if torch/MONA are unavailable.
+    Accuracy: one file per (noise model, formula). Calibration: reliability,
+    ECE, and the two non-read-once defect quantities (split — no dual axis) as
+    separate files. Everything but the reliability diagram is CSV-driven; the
+    reliability panel recomputes raw scores from the monitor (lazy import).
     """
     csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty.csv"
     frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
@@ -436,122 +494,105 @@ def plot_uncertainty(csv_paths=None, out_dir: Path | None = None,
     out_dir = out_dir or RESULTS_DIR
     N_BINS = 10
 
-    # Stable formula ordering from the CSV; keep the read_once flag alongside.
     fmeta = (df[["formula", "read_once"]].drop_duplicates()
              .set_index("formula")["read_once"].to_dict())
     formula_names = list(fmeta)
     noise_names = sorted(df["noise"].unique())
+    fcolor = {f: _FORMULA_COLORS[i % len(_FORMULA_COLORS)]
+              for i, f in enumerate(formula_names)}
+    outs = []
 
-    # --- Figure 1: verdict accuracy vs eps (rows = noise, cols = formula) ---
-    fig, axes = plt.subplots(
-        len(noise_names), len(formula_names),
-        figsize=(4.6 * len(formula_names), 3.6 * len(noise_names)), squeeze=False,
-    )
-    for r, noise_name in enumerate(noise_names):
-        for c, fname in enumerate(formula_names):
-            ax = axes[r][c]
+    # --- accuracy vs eps: one file per (noise, formula) ---
+    for noise_name in noise_names:
+        for fname in formula_names:
             g = df[(df["formula"] == fname) & (df["noise"] == noise_name)]
             g = g.sort_values("eps")
             if g.empty:
-                ax.axis("off")
                 continue
-            ax.plot(g["eps"], g["sym_acc"], marker="s", label="Symbolic (threshold)")
-            ax.plot(g["eps"], g["raw_acc"], marker="o", label="DeepDFA soft (raw)")
-            ax.plot(g["eps"], g["norm_acc"], marker="^", ls="--",
-                    label="DeepDFA soft (norm)")
+            fig, ax = _new_ax(figsize=(6.0, 4.2))
+            for key, col in [("sym", "sym_acc"), ("raw", "raw_acc"),
+                             ("norm", "norm_acc")]:
+                lab, color, marker, ls = _UNC_STYLE[key]
+                ax.plot(g["eps"], g[col], marker=marker, ms=6, lw=2, ls=ls,
+                        color=color, label=lab)
             rate = float(g["pos_rate"].iloc[0])
-            ax.axhline(max(rate, 1.0 - rate), color="gray", ls=":", alpha=0.6,
+            ax.axhline(max(rate, 1.0 - rate), color="gray", ls=":", alpha=0.7,
                        label="majority-class baseline")
             ax.set_ylim(0.45, 1.02)
             ro = "read-once" if fmeta[fname] else "NON-read-once"
-            ax.set_title(f"{fname}  ({ro})")
             ax.set_xlabel("noise level ε")
-            if c == 0:
-                ax.set_ylabel(f"{noise_name} noise\nverdict accuracy")
-            ax.grid(True, ls="--", alpha=0.4)
-            if r == 0 and c == 0:
-                ax.legend(fontsize=8)
-    fig.suptitle("Capability Exp A — verdict accuracy vs perceptual noise", y=1.02)
-    fig.tight_layout()
-    acc_path = out_dir / "exp_uncertainty_accuracy.png"
-    fig.savefig(acc_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {acc_path}")
+            ax.set_ylabel("verdict accuracy")
+            ax.set_title(f"Accuracy vs {noise_name} noise — {fname} ({ro})")
+            fname_out = f"exp_uncertainty_accuracy_{noise_name}_{fname}.png"
+            outs.append(_save(fig, ax, out_dir / fname_out))
 
-    # The non-read-once formula the calibration figure focuses on.
     non_read_once = [n for n, ro in fmeta.items() if not ro]
     majority = non_read_once[0] if non_read_once else formula_names[0]
 
-    fig, (axr, axe, axd) = plt.subplots(1, 3, figsize=(16, 4.6))
-
-    # (a) Reliability diagram — recomputed from the monitor (raw scores are not
-    # in the CSV). Needs torch/MONA; degrade to a note if unavailable.
+    # --- reliability diagram (recomputed; graceful if deps missing) ---
+    fig, ax = _new_ax(figsize=(5.6, 5.2))
     try:
         reliability = _reliability_bins(df, majority, rep_eps, N_BINS)
-        axr.plot([0, 1], [0, 1], color="gray", ls=":", label="perfectly calibrated")
-        for xs, ys, lab, ece, style in reliability:
-            axr.plot(xs, ys, style, label=f"{lab} (ECE={ece:.3f})")
-        axr.legend(fontsize=8)
+        ax.plot([0, 1], [0, 1], color="gray", ls=":", label="perfectly calibrated")
+        for xs, ys, key, ece in reliability:
+            lab, color, marker, _ = _UNC_STYLE[key]
+            ls = "-" if key == "raw" else "--"
+            ax.plot(xs, ys, marker=marker, ms=6, lw=2, ls=ls, color=color,
+                    label=f"{key} (ECE={ece:.3f})")
+        legend = True
     except ImportError:
-        axr.text(0.5, 0.5, "reliability panel needs the monitor\n(raw scores not "
-                 "stored in the CSV)", ha="center", va="center",
-                 transform=axr.transAxes, fontsize=9, color="0.4")
-    axr.set_xlabel("mean predicted confidence")
-    axr.set_ylabel("empirical accuracy")
-    axr.set_title(f"Reliability — {majority} (non-read-once)\nBeta ε={rep_eps}")
-    axr.set_xlim(0, 1)
-    axr.set_ylim(0, 1)
-    axr.grid(True, ls="--", alpha=0.4)
+        ax.text(0.5, 0.5, "reliability panel needs the monitor\n(raw scores not "
+                "stored in the CSV)", ha="center", va="center",
+                transform=ax.transAxes, fontsize=9, color="0.4")
+        legend = False
+    ax.set_xlabel("mean predicted confidence")
+    ax.set_ylabel("empirical accuracy")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_title(f"Reliability — {majority} (non-read-once), Beta ε={rep_eps}")
+    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_reliability.png",
+                      legend=legend))
 
-    # (b) ECE vs eps (Beta) — straight from the CSV.
+    # --- ECE vs eps (Beta), per formula ---
+    fig, ax = _new_ax(figsize=(6.5, 4.4))
     for fname in formula_names:
         g = df[(df["formula"] == fname) & (df["noise"] == "beta")].sort_values("eps")
         if g.empty:
             continue
         tag = "read-once" if fmeta[fname] else "NON-read-once"
-        axe.plot(g["eps"], g["raw_ece"], marker="o", label=f"{fname} raw ({tag})")
+        ax.plot(g["eps"], g["raw_ece"], marker="o", ms=6, lw=2, color=fcolor[fname],
+                label=f"{fname} raw ({tag})")
         if not fmeta[fname]:
-            axe.plot(g["eps"], g["norm_ece"], marker="^", ls="--",
-                     label=f"{fname} norm")
-    axe.set_xlabel("noise level ε")
-    axe.set_ylabel("Expected Calibration Error")
-    axe.set_title("ECE vs noise (Beta)\nonly the soft paradigm emits a confidence")
-    axe.legend(fontsize=8)
-    axe.grid(True, ls="--", alpha=0.4)
+            ax.plot(g["eps"], g["norm_ece"], marker="^", ms=6, lw=2, ls="--",
+                    color=fcolor[fname], label=f"{fname} norm")
+    ax.set_xlabel("noise level ε")
+    ax.set_ylabel("Expected Calibration Error")
+    ax.set_title("ECE vs noise (Beta) — only the soft paradigm emits a confidence")
+    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_ece.png"))
 
-    # (c) Non-read-once defect — straight from the CSV.
+    # --- non-read-once defect: split into two single-axis files (no twinx) ---
     g = df[(df["formula"] == majority) & (df["noise"] == "beta")].sort_values("eps")
-    axd.plot(g["eps"], g["raw_max_score"], marker="o", color="tab:red",
-             label="raw max score")
-    axd.axhline(1.0, color="gray", ls=":", label="valid-probability ceiling")
-    axd2 = axd.twinx()
-    axd2.plot(g["eps"], g["raw_frac_over1"], marker="s", color="tab:purple",
-              label="fraction of scores > 1")
-    axd2.set_ylabel("fraction of traces with raw score > 1", color="tab:purple")
-    axd.set_xlabel("noise level ε")
-    axd.set_ylabel("raw acceptance score (max)", color="tab:red")
-    axd.set_title(f"Non-read-once defect — {majority}\nraw rows not stochastic")
-    axd.legend(fontsize=8, loc="upper left")
-    axd2.legend(fontsize=8, loc="lower right")
-    axd.grid(True, ls="--", alpha=0.4)
+    fig, ax = _new_ax(figsize=(6.0, 4.2))
+    ax.plot(g["eps"], g["raw_max_score"], marker="o", ms=6, lw=2, color="#D55E00",
+            label="raw max acceptance score")
+    ax.axhline(1.0, color="gray", ls=":", label="valid-probability ceiling")
+    ax.set_xlabel("noise level ε")
+    ax.set_ylabel("raw acceptance score (max)")
+    ax.set_title(f"Non-read-once defect — {majority}: raw score exceeds 1")
+    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_defect_maxscore.png"))
 
-    fig.suptitle("Capability Exp A — calibration (symbolic cannot emit a confidence)",
-                 y=1.03)
-    fig.tight_layout()
-    cal_path = out_dir / "exp_uncertainty_calibration.png"
-    fig.savefig(cal_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved: {cal_path}")
-    return [acc_path, cal_path]
+    fig, ax = _new_ax(figsize=(6.0, 4.2))
+    ax.plot(g["eps"], g["raw_frac_over1"], marker="s", ms=6, lw=2, color="#CC79A7",
+            label="fraction of traces with raw score > 1")
+    ax.set_xlabel("noise level ε")
+    ax.set_ylabel("fraction of traces with raw score > 1")
+    ax.set_title(f"Non-read-once defect — {majority}: overshoot prevalence")
+    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_defect_fracover1.png"))
+    return outs
 
 
 def _reliability_bins(df: pd.DataFrame, formula_name: str, rep_eps: float, n_bins: int):
-    """Recompute reliability-curve points for the majority formula at rep_eps.
-
-    Raw scores are not stored in the CSV, so this re-runs the soft monitor on a
-    fresh corrupted trace set. Lazily imports the heavy stack; raises ImportError
-    if unavailable so the caller can degrade gracefully.
-    """
+    """Recompute reliability-curve points; lazy heavy imports, raises ImportError."""
     from src.benchmarks.calibration import (
         expected_calibration_error,
         reliability_curve,
@@ -572,12 +613,12 @@ def _reliability_bins(df: pd.DataFrame, formula_name: str, rep_eps: float, n_bin
     norm = np.asarray(dd.batch_acceptance_probability(soft, normalize=True))
 
     out = []
-    for scores, lab, style in [(raw, "raw", "o-"), (norm, "normalized", "^--")]:
+    for scores, key in [(raw, "raw"), (norm, "norm")]:
         bins = reliability_curve(scores, labels, n_bins)
         xs = [b.mean_confidence for b in bins if b.count]
         ys = [b.accuracy for b in bins if b.count]
         ece = expected_calibration_error(scores, labels, n_bins)
-        out.append((xs, ys, lab, ece, style))
+        out.append((xs, ys, key, ece))
     return out
 
 
