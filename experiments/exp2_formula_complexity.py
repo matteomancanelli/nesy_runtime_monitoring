@@ -119,7 +119,7 @@ with tqdm(total=total, desc="exp2") as pbar:
                 pbar.update()
                 continue
             key = result_key(
-                monitor_cls.__name__, formula.name, TRACE_LENGTH, N_TRACES, DEVICE
+                monitor_cls.__name__, formula.name, TRACE_LENGTH, N_TRACES
             )
             if key in completed:
                 pbar.set_postfix(

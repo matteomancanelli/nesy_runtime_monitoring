@@ -38,6 +38,11 @@ class RuleRunnerMonitor(Monitor):
     ) -> "RuleRunnerMonitor":
         return cls(CILPRunner.from_formula(formula, device=device))
 
+    @property
+    def effective_device(self) -> str:
+        """Device the CILP weight matrices actually live / compute on."""
+        return "cuda" if self._runner._device.type == "cuda" else "cpu"
+
     def step(self, obs: Observation) -> Verdict:
         return self._runner.step(obs)
 

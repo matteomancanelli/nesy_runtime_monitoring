@@ -1,19 +1,19 @@
 monitor_name,formula_name,n_leaves,trace_length,n_traces,n_repeats,mean_s_per_cell,std_s_per_cell,device,early_termination,gpu_name
-SymbolicDFAMonitor,ijcnn_n2,2,5000,100,7,4.2608890342840567e-07,1.5471769664438895e-07,cuda,False,Tesla T4
-SymbolicDFAMonitor,ijcnn_n4,4,5000,100,7,3.130980079998023e-07,1.0090841225068737e-08,cuda,False,Tesla T4
-SymbolicDFAMonitor,ijcnn_n8,8,5000,100,7,3.1667661599996274e-07,1.3966474197168733e-08,cuda,False,Tesla T4
-SymbolicDFAMonitor,ijcnn_n16,16,5000,100,7,3.134579754284589e-07,1.1232673391899403e-08,cuda,False,Tesla T4
-SymbolicDFAMonitor,ijcnn_n32,32,5000,100,7,3.1704333628554843e-07,1.4446942760462798e-08,cuda,False,Tesla T4
+SymbolicDFAMonitor,ijcnn_n2,2,5000,100,7,4.2608890342840567e-07,1.5471769664438895e-07,cpu,False,
+SymbolicDFAMonitor,ijcnn_n4,4,5000,100,7,3.130980079998023e-07,1.0090841225068737e-08,cpu,False,
+SymbolicDFAMonitor,ijcnn_n8,8,5000,100,7,3.1667661599996274e-07,1.3966474197168733e-08,cpu,False,
+SymbolicDFAMonitor,ijcnn_n16,16,5000,100,7,3.134579754284589e-07,1.1232673391899403e-08,cpu,False,
+SymbolicDFAMonitor,ijcnn_n32,32,5000,100,7,3.1704333628554843e-07,1.4446942760462798e-08,cpu,False,
 RuleRunnerMonitor,ijcnn_n2,2,5000,100,7,1.1041674842857122e-05,9.838876797408202e-07,cuda,False,Tesla T4
 RuleRunnerMonitor,ijcnn_n4,4,5000,100,7,1.1156557607999794e-05,7.591648395597457e-07,cuda,False,Tesla T4
 RuleRunnerMonitor,ijcnn_n8,8,5000,100,7,1.2008728740285734e-05,8.707065658712117e-07,cuda,False,Tesla T4
 RuleRunnerMonitor,ijcnn_n16,16,5000,100,7,1.3602145313142632e-05,8.446322294126539e-07,cuda,False,Tesla T4
 RuleRunnerMonitor,ijcnn_n32,32,5000,100,7,1.6460047915428605e-05,1.342818450569263e-06,cuda,False,Tesla T4
-StructuredRuleRunnerMonitor,ijcnn_n2,2,5000,100,7,5.05590359999977e-07,2.214578324362788e-08,cuda,False,Tesla T4
-StructuredRuleRunnerMonitor,ijcnn_n4,4,5000,100,7,9.950410148571142e-07,2.4704017893574085e-08,cuda,False,Tesla T4
-StructuredRuleRunnerMonitor,ijcnn_n8,8,5000,100,7,1.116296399999945e-06,1.9702926353007146e-08,cuda,False,Tesla T4
-StructuredRuleRunnerMonitor,ijcnn_n16,16,5000,100,7,2.186244593142874e-06,3.2780199184626446e-07,cuda,False,Tesla T4
-StructuredRuleRunnerMonitor,ijcnn_n32,32,5000,100,7,4.436822922285371e-06,4.852092002879508e-07,cuda,False,Tesla T4
+StructuredRuleRunnerMonitor,ijcnn_n2,2,5000,100,7,5.05590359999977e-07,2.214578324362788e-08,cpu,False,
+StructuredRuleRunnerMonitor,ijcnn_n4,4,5000,100,7,9.950410148571142e-07,2.4704017893574085e-08,cpu,False,
+StructuredRuleRunnerMonitor,ijcnn_n8,8,5000,100,7,1.116296399999945e-06,1.9702926353007146e-08,cpu,False,
+StructuredRuleRunnerMonitor,ijcnn_n16,16,5000,100,7,2.186244593142874e-06,3.2780199184626446e-07,cpu,False,
+StructuredRuleRunnerMonitor,ijcnn_n32,32,5000,100,7,4.436822922285371e-06,4.852092002879508e-07,cpu,False,
 DeepDFAMonitorFactored,ijcnn_n2,2,5000,100,7,2.729273218571637e-06,1.5702825621036264e-07,cuda,False,Tesla T4
 DeepDFAMonitorFactored,ijcnn_n4,4,5000,100,7,3.2431158102863267e-06,5.241595502554128e-07,cuda,False,Tesla T4
 DeepDFAMonitorFactored,ijcnn_n8,8,5000,100,7,3.589193369714329e-06,6.40942603283613e-07,cuda,False,Tesla T4

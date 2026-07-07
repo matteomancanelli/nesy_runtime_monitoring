@@ -109,7 +109,14 @@ def config_label(device: str, gpu_name: str | float) -> str:
 
 
 def load_timing(csv_paths: str | Path | list) -> pd.DataFrame:
-    """Load and concatenate one or more timing CSVs, adding derived columns."""
+    """Load and concatenate one or more timing CSVs, adding derived columns.
+
+    ``config`` is derived from the *truthful* (device, gpu_name) each monitor
+    actually ran on. Because a CPU-only monitor (symbolic, structured) reports
+    the same "CPU" config in both a CPU-run CSV and a GPU-run CSV, merging the
+    two would duplicate its curve; rows sharing (monitor, formula, trace_length,
+    n_traces, config) are therefore averaged so each curve appears once.
+    """
     frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
     if not frames:
         raise FileNotFoundError(f"no timing CSVs found among {csv_paths}")
@@ -118,7 +125,12 @@ def load_timing(csv_paths: str | Path | list) -> pd.DataFrame:
         df["device"] = "cpu"
     if "gpu_name" not in df:
         df["gpu_name"] = ""
+    df["gpu_name"] = df["gpu_name"].fillna("")
     df["config"] = [config_label(d, g) for d, g in zip(df["device"], df["gpu_name"])]
+    # Collapse duplicate measurements of the same (monitor, cell, config).
+    keys = ["monitor_name", "formula_name", "trace_length", "n_traces", "config"]
+    num = ["mean_s_per_cell", "std_s_per_cell", "n_leaves"]
+    df = (df.groupby(keys, as_index=False)[num].mean())
     df["mean_s_per_trace"] = df["mean_s_per_cell"] * df["trace_length"]
     df["std_s_per_trace"] = df["std_s_per_cell"] * df["trace_length"]
     df["us_per_cell"] = df["mean_s_per_cell"] * 1e6

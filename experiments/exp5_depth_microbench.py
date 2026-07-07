@@ -127,7 +127,7 @@ with tqdm(total=total, desc="exp5") as pbar:
         for depth in DEPTHS:
             formula = nested_x(BASE_FORMULA, depth)
             key = result_key(
-                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE, DEVICE
+                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE
             )
             if key in completed:
                 pbar.set_postfix(

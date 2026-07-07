@@ -93,14 +93,22 @@ def time_monitor(
 
     monitor = monitor_cls.compile(formula.formula, device=device)
 
+    # Record the device the monitor ACTUALLY computes on, not the one requested.
+    # The symbolic DFA walk and the structured RuleRunner are pure Python and
+    # ignore `device` (there is no tensor op to place on a GPU), so stamping the
+    # requested "cuda" for them would make the CSV claim a GPU run that never
+    # happened. `effective_device` reports the truth per monitor.
+    effective_device = monitor.effective_device
+
     # CUDA kernel launches are asynchronous, so time.perf_counter() would stop
     # before the GPU finishes unless we synchronize. We sync ONCE around the
     # whole timed region (after the full batch_run), never per cell (Phase 0.3
     # measurement hygiene) — a per-cell sync would serialize the batched path
-    # and inflate the very GPU advantage Exp 3 is meant to measure.
-    cuda_sync = device == "cuda" and torch.cuda.is_available()
-    # Stamp the GPU model so results from different machines (laptop vs Colab vs
-    # server) are attributable and comparable. Empty on CPU.
+    # and inflate the very GPU advantage Exp 3 is meant to measure. Only the
+    # monitors that truly run on CUDA are synced (symbolic never touches it).
+    cuda_sync = effective_device == "cuda" and torch.cuda.is_available()
+    # Stamp the GPU model so results from different machines are attributable and
+    # comparable. Empty unless this monitor actually ran on a GPU.
     gpu_name = torch.cuda.get_device_name() if cuda_sync else ""
 
     # warm-up: prime caches without contributing to measurements
@@ -128,7 +136,7 @@ def time_monitor(
         n_repeats=n_repeats,
         mean_s_per_cell=float(np.mean(per_cell)),
         std_s_per_cell=float(np.std(per_cell)),
-        device=device,
+        device=effective_device,
         early_termination=early_termination,
         gpu_name=gpu_name,
     )
@@ -150,24 +158,21 @@ def results_to_df(results: list[TimingResult]) -> pd.DataFrame:
 
 
 def result_key(
-    monitor_name: str,
-    formula_name: str,
-    trace_length: int,
-    n_traces: int,
-    device: str = "cpu",
-) -> tuple[str, str, int, int, str]:
+    monitor_name: str, formula_name: str, trace_length: int, n_traces: int
+) -> tuple[str, str, int, int]:
     """Canonical identity of one timed cell, used for resume de-duplication.
 
-    Within any single experiment this key is unique: exp1 varies trace_length,
-    exp2 varies formula_name, exp3 varies n_traces; the rest are fixed. ``device``
-    IS part of the key so a CPU and a CUDA measurement of the same cell coexist
-    in one CSV rather than the second being skipped as "already done" — this is
-    what lets us accumulate a CPU run and a GPU run into the same file and then
-    draw the CPU-vs-GPU comparison plots. (Other config knobs like n_repeats are
-    deliberately not part of the key — changing them mid-grid and resuming would
-    mix settings; delete the CSV to recompute from scratch in that case.)
+    Within any single experiment/run this 4-tuple is unique: exp1 varies
+    trace_length, exp2 varies formula_name, exp3 varies n_traces; the rest are
+    fixed. Device is deliberately NOT in the key: a monitor's *effective* device
+    (what the CSV records) can differ from the requested one (symbolic always
+    runs on the CPU), so keying on the requested device would make those monitors
+    never register as complete and duplicate on resume. CPU-vs-GPU comparison
+    uses one CSV per run (see results/README.md), which the plotters merge — not
+    a single accumulating file. (Config knobs like n_repeats are likewise not in
+    the key; delete the CSV to recompute from scratch if they change.)
     """
-    return (monitor_name, formula_name, int(trace_length), int(n_traces), str(device))
+    return (monitor_name, formula_name, int(trace_length), int(n_traces))
 
 
 def append_result(result: TimingResult, csv_path: str | Path) -> None:
@@ -205,22 +210,17 @@ def reset_if_stale(csv_path: str | Path, early_termination: bool) -> None:
         path.unlink()
 
 
-def load_completed(csv_path: str | Path) -> set[tuple[str, str, int, int, str]]:
+def load_completed(csv_path: str | Path) -> set[tuple[str, str, int, int]]:
     """Return the set of result_key()s already present in csv_path.
 
     Empty if the file does not exist. Used to skip cells computed by a prior
-    (possibly interrupted) run so experiments resume where they left off. The
-    device is read from each row (defaulting to "cpu" for legacy CSVs without
-    the column) so a resumed run on a different device is treated as new work.
+    (possibly interrupted) run so experiments resume where they left off.
     """
     path = Path(csv_path)
     if not path.exists():
         return set()
     prior = pd.read_csv(path)
     return {
-        result_key(
-            r.monitor_name, r.formula_name, r.trace_length, r.n_traces,
-            getattr(r, "device", "cpu"),
-        )
+        result_key(r.monitor_name, r.formula_name, r.trace_length, r.n_traces)
         for r in prior.itertuples(index=False)
     }

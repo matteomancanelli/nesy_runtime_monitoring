@@ -111,7 +111,7 @@ with tqdm(total=total, desc="exp6") as pbar:
     for monitor_cls in MONITORS:
         for formula in FORMULAS:
             key = result_key(
-                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE, DEVICE
+                monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE
             )
             if key in completed:
                 pbar.set_postfix(monitor=monitor_cls.__name__, q=formula.n_leaves,

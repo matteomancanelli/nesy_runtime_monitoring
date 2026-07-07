@@ -35,18 +35,25 @@ mean_s_per_cell, std_s_per_cell, device, early_termination, gpu_name`
 - Per-cell cost = `total_wall_time / (n_traces × trace_length)`; time-per-trace
   = `mean_s_per_cell × trace_length`.
 
-### Provenance / accumulating runs
+### Truthful device labeling
 
-The resume key includes `device`, so a **CPU run and a GPU run of the same cell
-coexist** in one CSV instead of the second being skipped. Two workflows both
-work:
+Each row's `device`/`gpu_name` record the device the monitor **actually**
+computed on, not the one requested. The symbolic DFA walk and the structured
+RuleRunner are pure Python and always run on the CPU — they stamp `cpu` even in
+a GPU run (there is no tensor op to place on a GPU), so a CSV never claims a GPU
+run that did not happen.
 
-1. **One accumulating CSV.** Run the script on the CPU runtime, then on the GPU
-   runtime, pointing at the same file — you end up with both `device` values in
-   one CSV.
-2. **One CSV per run** (what we usually do on Colab). Download each run and keep
-   them side by side, e.g. `exp3_batch_size_cpu.csv`, `exp3_batch_size_t4.csv`.
-   The plot functions accept a *list* of CSVs and merge them.
+### CPU vs GPU: one CSV per run
+
+Keep **one CSV per run** (the Colab workflow): run the whole sweep on the CPU
+runtime, download it as e.g. `exp3_batch_size_cpu.csv`; run again on the GPU
+runtime, download `exp3_batch_size_t4.csv`. The plot functions accept a *list*
+of CSVs and merge them, splitting curves by the truthful `(device, gpu_name)`.
+CPU-only monitors that appear in both files (same truthful `cpu` config) are
+de-duplicated (their measurements averaged) so each curve is drawn once. Do
+**not** point two runs at the same CSV file: the resume logic keys on
+`(monitor, formula, trace_length, n_traces)` — not device — so the second run
+would skip every already-present cell.
 
 ## Figures
 

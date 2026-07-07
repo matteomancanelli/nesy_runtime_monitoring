@@ -54,6 +54,20 @@ class Monitor(ABC):
     def reset(self) -> None:
         """Reset to the initial configuration for monitoring a fresh trace."""
 
+    @property
+    def effective_device(self) -> str:
+        """Canonical device this monitor ACTUALLY computes on: "cpu" or "cuda".
+
+        The timing harness stamps THIS into the results, never the requested
+        device, so a CSV can never claim a GPU run for a monitor that ran on the
+        CPU. Pure-Python paradigms (the symbolic DFA walk, the structured
+        RuleRunner) always compute on the CPU regardless of the device passed to
+        ``compile`` — there is no tensor op to place on a GPU — so they keep this
+        default. The tensor monitors (DeepDFA, the CILP RuleRunner) override it
+        to report the device their weights actually live on.
+        """
+        return "cpu"
+
     def run(
         self, trace: Iterable[Observation], early_termination: bool = True
     ) -> Verdict:

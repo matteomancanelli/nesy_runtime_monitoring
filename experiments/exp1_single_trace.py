@@ -75,7 +75,7 @@ total = len(MONITORS) * len(TRACE_LENGTHS)
 with tqdm(total=total, desc="exp1") as pbar:
     for monitor_cls in MONITORS:
         for tl in TRACE_LENGTHS:
-            key = result_key(monitor_cls.__name__, FORMULA.name, tl, N_TRACES, DEVICE)
+            key = result_key(monitor_cls.__name__, FORMULA.name, tl, N_TRACES)
             if key in completed:
                 pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl, skip=True)
                 pbar.update()

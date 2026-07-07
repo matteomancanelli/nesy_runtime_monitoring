@@ -100,7 +100,7 @@ with tqdm(total=total, desc="exp3") as pbar:
     for monitor_cls in MONITORS:
         for batch_size in BATCH_SIZES:
             key = result_key(
-                monitor_cls.__name__, FORMULA.name, TRACE_LENGTH, batch_size, DEVICE
+                monitor_cls.__name__, FORMULA.name, TRACE_LENGTH, batch_size
             )
             if key in completed:
                 pbar.set_postfix(

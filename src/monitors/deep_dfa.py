@@ -51,6 +51,7 @@ Two representations of the same transition function are provided:
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Iterable
 
 import numpy as np
@@ -372,6 +373,11 @@ class DeepDFAMonitor(Monitor):
         self._q = self._dt.mu.clone()
         self._decided = None
 
+    @property
+    def effective_device(self) -> str:
+        """Device the transition tensor actually lives / computes on."""
+        return "cuda" if self._dt.device.type == "cuda" else "cpu"
+
     def _advance(self, q: torch.Tensor, obs: Observation) -> torch.Tensor:
         dt = self._dt
         if dt.mode == "dense":
@@ -511,7 +517,17 @@ class DeepDFAMonitor(Monitor):
         if est_bytes > SCAN_MEM_LIMIT_BYTES:
             # Too big to materialize the whole prefix stack; the sequential loop
             # is O(1)-memory in L. (A chunked scan would bound this; left for
-            # later — the point here is to measure the scan where it fits.)
+            # later — the point here is to measure the scan where it fits.) Warn
+            # loudly so a benchmark never *silently* reports the sequential path
+            # under the "scan" label (e.g. Exp 6 at very large |Q|).
+            warnings.warn(
+                f"DeepDFAMonitorScan: prefix stack ~{est_bytes / 1e9:.1f} GB exceeds "
+                f"SCAN_MEM_LIMIT_BYTES ({SCAN_MEM_LIMIT_BYTES / 1e9:.1f} GB) at "
+                f"|Q|={dt.n_states}, L={L}, B={B}; falling back to the SEQUENTIAL "
+                f"loop — this measurement is NOT the scan.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
             return super().batch_run(traces, early_termination=early_termination)
         states = self._scan_states(trace_list, lengths, L, B)
         return [self._verdict_from_path(states[b], lengths[b]) for b in range(B)]
