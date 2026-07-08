@@ -1,0 +1,21 @@
+\section{Conclusion and Future Work}
+
+In this paper ...
+
+\subsection{Transformers}
+
+\subsection{Specification Adaptation}
+
+\subsection{Process Model Repair}
+
+% =====================================================================
+% SIGNPOST DRAFT — Symbolic (decision-diagram) transition representation.
+% Currently inert: to include it in the paper, delete the \iffalse and \fi
+% lines below. See docs/decision_diagram_transition_representation.md for
+% the full rationale, the possible standalone contribution, and next steps.
+% =====================================================================
+\iffalse
+\subsection{Symbolic Transition Representations via Decision Diagrams}
+
+A structural limitation this paper documents rather than resolves is DeepDFA's alphabet blow-up (Section~\ref{sec:deepdfa-alphabet}) and the attendant loss of row-stochasticity of the soft transition on non-read-once guards (Section~\ref{sec:deepdfa-soft}). Both point to the same missing ingredient: a transition representation that is compact, exact, and differentiable at once. A promising direction is to represent the transition function symbolically with (reduced, ordered) binary decision diagrams, or their sentential-decision-diagram generalization, as is done for scalability in symbolic \ltlf synthesis \cite{LTL2DFA1} and the LydiaSyft toolchain \cite{lydiasyft2025}, rather than by the disjoint-cube cover of our factored mode (Section~\ref{sec:deepdfa-factored}), which lacks the subfunction sharing a decision diagram provides. Because such a diagram is deterministic and decomposable, the soft transition $M(\mathbf{p}_t)$ becomes an exact weighted model count computable in a single pass linear in the diagram size --- for arbitrary guards, not only read-once ones --- which restores calibration by construction and connects runtime monitoring to the tractable-inference machinery of neuro-symbolic AI \cite{darwiche2002knowledge,pseudosemantic_loss,NesyA}. The apparent tension with GPU batching dissolves if the diagram is used at compile time to emit a \emph{fixed} arithmetic circuit for the guard probabilities, which is then evaluated densely and in batch: the diagram compresses the alphabet axis while the runtime hot loop remains a small, regular matrix product. We leave the design and evaluation of such a hybrid monitor --- exact and compact at runtime, differentiable for adaptation --- to future work.
+\fi

@@ -1,9 +1,25 @@
 \begin{thebibliography}{10}
 
+\bibitem{bacchus2000using}
+Fahiem Bacchus and Froduald Kabanza.
+\newblock Using temporal logics to express search control knowledge for
+  planning.
+\newblock {\em Artificial Intelligence}, 116(1-2):123--191, 2000.
+
 \bibitem{monitorability_LTL}
 Andreas Bauer, Martin Leucker, and Christian Schallhart.
 \newblock Runtime verification for {LTL} and {TLTL}.
 \newblock {\em {ACM} Trans. Softw. Eng. Methodol.}, 20(4):14:1--14:64, 2011.
+
+\bibitem{LTL2DFA3}
+Giuseppe {De Giacomo} and Marco Favorito.
+\newblock Compositional approach to translate {LTL}f/{LDL}f into deterministic
+  finite automata.
+\newblock In Susanne Biundo, Minh Do, Robert Goldman, Michael Katz, Qiang Yang,
+  and Hankz~Hankui Zhuo, editors, {\em Proceedings of the Thirty-First
+  International Conference on Automated Planning and Scheduling, {ICAPS} 2021,
+  Guangzhou, China (virtual), August 2-13, 2021}, pages 122--130. {AAAI} Press,
+  2021.
 
 \bibitem{LTLf}
 Giuseppe {De Giacomo} and Moshe~Y. Vardi.
@@ -17,11 +33,33 @@ Francesco Fuggitti.
 \newblock Ltlf2dfa.
 \newblock {\em Zenodo}, 2019.
 
+\bibitem{gumb_sftmx_1}
+Eric Jang, Shixiang Gu, and Ben Poole.
+\newblock Categorical reparameterization with gumbel-softmax.
+\newblock In {\em 5th International Conference on Learning Representations,
+  {ICLR} 2017, Toulon, France, April 24-26, 2017, Conference Track
+  Proceedings}. OpenReview.net, 2017.
+
 \bibitem{lichtenstein1985glory}
 Orna Lichtenstein, Amir Pnueli, and Lenore Zuck.
 \newblock The glory of the past.
 \newblock In {\em Workshop on Logic of Programs}, pages 196--218. Springer,
   1985.
+
+\bibitem{gumb_sftmx_2}
+Chris~J. Maddison, Andriy Mnih, and Yee~Whye Teh.
+\newblock The concrete distribution: {A} continuous relaxation of discrete
+  random variables.
+\newblock In {\em 5th International Conference on Learning Representations,
+  {ICLR} 2017, Toulon, France, April 24-26, 2017, Conference Track
+  Proceedings}. OpenReview.net, 2017.
+
+\bibitem{NesyA}
+Nikolaos Manginas, George Paliouras, and Luc~De Raedt.
+\newblock Nesya: Neurosymbolic automata.
+\newblock In {\em Proceedings of the Thirty-Fourth International Joint
+  Conference on Artificial Intelligence, {IJCAI} 2025, Montreal, Canada, August
+  16-22, 2025}, pages 5950--5958. ijcai.org, 2025.
 
 \bibitem{manna1995temporal}
 Zohar Manna and Amir Pnueli.
@@ -67,12 +105,5 @@ Elena Umili and Roberto Capobianco.
   Intelligence, 19-24 October 2024, Santiago de Compostela, Spain - Including
   13th Conference on Prestigious Applications of Intelligent Systems {(PAIS}
   2024)}, pages 1051--1058, 2024.
-
-\bibitem{LTL2DFA1}
-Shufang Zhu, Lucas~M. Tabajara, Jianwen Li, Geguang Pu, and Moshe~Y. Vardi.
-\newblock Symbolic {LTL}f synthesis.
-\newblock In Carles Sierra, editor, {\em Proceedings of the Twenty-Sixth
-  International Joint Conference on Artificial Intelligence, {IJCAI} 2017,
-  Melbourne, Australia, August 19-25, 2017}, pages 1362--1369. ijcai.org, 2017.
 
 \end{thebibliography}

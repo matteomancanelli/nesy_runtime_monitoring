@@ -48,9 +48,12 @@ an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$),
 \noindent
 We say that $\boldsymbol{\sigma}$ satisfies $\phi$, written $\boldsymbol{\sigma} \models \varphi$, if $\boldsymbol{\sigma}, 0 \models \varphi$. A formula $\varphi$ is satisfiable if it is true wrt some trace $\boldsymbol{\sigma}$, and is valid, if it is true wrt every trace $\boldsymbol{\sigma}$.
 
-Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \cite{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
-Additionally, we recursively define the extended transition function over traces $\delta^*: Q \times (2^\Sigma)^* \rightarrow Q$ as:
+\subsection{Symbolic Monitoring}
+\label{sec:symbolic}
 
+\paragraph{Deterministic Finite Automata.}
+Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \cite{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
+We also define the extended transition function over traces $\delta^*: Q \times (2^\Sigma)^* \rightarrow Q$ recursively as:
 \begin{equation}
 %\[
 \begin{array}{l}
@@ -68,4 +71,11 @@ We have that $\varphi$ and $A_\varphi$ are equivalent because, for any trace $\b
 %\]
 \end{equation}
 
+We can rely on the use of DFAs for several reasoning tasks, like model checking, planning and synthesis. In particular, monitoring formula $\varphi$ becomes a deterministic walk over the automaton $A_\varphi$: the monitor keeps a single current state $q$, initialized to $q_0$, and on observing the time point $\sigma_t \in 2^\Sigma$ it advances $q \leftarrow \delta(q, \sigma_t)$. Because the automaton is fixed and deterministic, each step costs a single transition lookup, independent of the trace seen so far and of the size of $\varphi$. In the following, DFA-based monitoring will serve as the exact baseline against which the neuro-symbolic paradigms will be measured.
 
+%as implemented by \texttt{ltlf2dfa} \cite{fuggitti-ltlf2dfa}.
+%the automaton encodes the specification exactly and admits no learning or adaptation.
+
+\paragraph{Verdicts and early termination.}
+Online monitoring requires a three-valued runtime semantics \cite{monitorability_LTL}: at each step the monitor emits \textsc{satisfy}, \textsc{violate}, or \textsc{undecided}, the last meaning that the observed prefix can still be extended into both an accepting and a non-accepting continuation. A definite verdict can be issued as soon as the outcome is settled regardless of the future, which corresponds to two structural properties of the current state, both precomputed once by backward reachability over $A_\varphi$. A state is a \emph{trap} if no accepting state is reachable from it: reaching a trap means $\varphi$ is permanently violated, so the monitor halts with \textsc{violate}. Dually, a state is an \emph{accepting sink} if every state reachable from it (including itself) is accepting: the monitor halts with \textsc{satisfy}. With trap and sink sets materialized at compile time, the per-step verdict reduces to two set-membership tests on top of the transition lookup. As long as the current state is neither, the verdict is \textsc{undecided} and monitoring continues.
+Some specifications never reach a trap or a sink, so \textsc{step} returns \textsc{undecided} for the entire trace. An example is the response pattern $G(a \rightarrow Fb)$, which can always be satisfied by a later $b$ and always be rescued from violation, hence has neither an accepting sink nor a trap. For these the verdict is only binary at the end of the trace, and the monitor reports a final verdict by testing acceptance of the state reached, i.e.\ \textsc{satisfy} iff $\delta^*(q_0, \boldsymbol{\sigma}) \in F$ and \textsc{violate} otherwise.
