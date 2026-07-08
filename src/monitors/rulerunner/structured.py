@@ -235,11 +235,25 @@ class StructuredCILPRunner:
 class StructuredRuleRunnerMonitor(Monitor):
     """`Monitor`-ABC adapter over `StructuredCILPRunner`.
 
-    The structured (IJCNN 2014 Fig. 5) variant of the RuleRunner network, slotted
+    The structured (IJCNN 2015 Fig. 5) variant of the RuleRunner network, slotted
     into the `Monitor` harness as a second RuleRunner data point alongside
-    `RuleRunnerMonitor` (CILP). It is **CPU/sequential** — it has no cross-trace
-    batching, so its time-per-trace is flat in batch size (the deliberate
-    contrast in Exp 3); per cell it is lightweight (no batched matmuls).
+    `RuleRunnerMonitor` (CILP).
+
+    **CPU/single-trace in THIS implementation — not a fundamental limit.** The
+    per-node subnetworks are torch tensors and matmuls, so this monitor could be
+    placed on a GPU and batched across traces exactly like `CILPRunner.batch_run`
+    does (thread a device through, `.to(device)` the weights, add a leading batch
+    dimension to the activation vector). We simply have not implemented that: the
+    monitor keeps its tensors on the CPU and processes one trace at a time, which
+    is why its `effective_device` is `cpu` and its Exp 3 time-per-trace is flat
+    in batch size. The choice was deliberate (a "no cross-trace batching" contrast
+    to the batched flat CILP curve), but it is a choice, not an inherent property.
+    Caveat if we do batch it: the per-cell evaluation is a *sequential sweep over
+    parse-tree nodes* (each a tiny matmul), so it issues more, smaller kernels per
+    cell than the flat encoding's `depth+1` whole-network passes — likely *less*
+    GPU-friendly, not more, unless the independent same-level sibling nodes are
+    also fused (the tree-parallelism IJCNN 2015 intends, which this naive sweep
+    does not exploit).
     """
 
     def __init__(self, runner: StructuredCILPRunner) -> None:
@@ -249,8 +263,9 @@ class StructuredRuleRunnerMonitor(Monitor):
     def compile(
         cls, formula: str, device: str = "cpu"
     ) -> "StructuredRuleRunnerMonitor":
-        # ``device`` is accepted for Monitor-interface parity (the harness passes
-        # it to every monitor) but ignored: the structured runner is CPU-only.
+        # ``device`` is accepted for Monitor-interface parity but not yet used:
+        # this implementation keeps the subnetworks on the CPU and runs one trace
+        # at a time (see the class docstring — a choice, not a fundamental limit).
         return cls(StructuredCILPRunner.from_formula(formula))
 
     def step(self, obs: Observation) -> Verdict:
