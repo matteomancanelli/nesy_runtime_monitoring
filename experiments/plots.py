@@ -654,6 +654,81 @@ def _reliability_bins(df: pd.DataFrame, formula_name: str, rep_eps: float, n_bin
     return out
 
 
+def plot_uncertainty_sharpness(csv_paths=None,
+                               out_dir: Path | None = None) -> list[Path]:
+    """Verdict accuracy vs perceptor sharpness (Beta concentration), one file per
+    formula. Shows whether the soft marginal beats thresholding as the perceptor
+    fuzzes (low concentration = fuzzy = the regime where softness should win)."""
+    csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty_sharpness.csv"
+    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
+    if not frames:
+        raise FileNotFoundError(f"no sharpness CSV among {csv_paths}")
+    df = pd.concat(frames, ignore_index=True)
+    out_dir = out_dir or RESULTS_DIR
+    outs = []
+    for fname, g in df.groupby("formula"):
+        g = g.sort_values("concentration")
+        ro = "read-once" if bool(g["read_once"].iloc[0]) else "NON-read-once"
+        eps = float(g["eps"].iloc[0])
+        fig, ax = _new_ax(figsize=(6.2, 4.4))
+        for key, col in [("sym", "sym_acc"), ("raw", "raw_acc"), ("norm", "norm_acc")]:
+            lab, color, marker, ls = _UNC_STYLE[key]
+            ax.plot(g["concentration"], g[col], marker=marker, ms=6, lw=2, ls=ls,
+                    color=color, label=lab)
+        ax.set_xscale("log", base=2)
+        ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
+        ax.set_xlabel("perceptor sharpness (Beta concentration) — higher = sharper")
+        ax.set_ylabel("verdict accuracy")
+        ax.set_title(f"Accuracy vs perceptor sharpness — {fname} ({ro}), ε={eps}")
+        outs.append(_save(fig, ax, out_dir / f"exp_uncertainty_sharpness_{fname}.png"))
+    return outs
+
+
+def plot_uncertainty_riskcoverage(csv_paths=None,
+                                  out_dir: Path | None = None) -> list[Path]:
+    """Risk–coverage (selective prediction), one file per formula: DeepDFA's
+    accuracy as it abstains on its least-confident verdicts, vs symbolic's single
+    no-abstention point. The confidence knob is the capability symbolic lacks."""
+    csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty_riskcoverage.csv"
+    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
+    if not frames:
+        raise FileNotFoundError(f"no risk-coverage CSV among {csv_paths}")
+    df = pd.concat(frames, ignore_index=True)
+    out_dir = out_dir or RESULTS_DIR
+    _, soft_color, _, _ = _UNC_STYLE["norm"]
+    _, sym_color, _, _ = _UNC_STYLE["sym"]
+    outs = []
+    for fname, g in df.groupby("formula"):
+        eps = float(g["eps"].iloc[0])
+        soft = g[g["monitor"] == "DeepDFA soft (norm)"].sort_values("coverage")
+        sym = g[g["monitor"] == "Symbolic (no abstention)"]
+        fig, ax = _new_ax(figsize=(6.2, 4.4))
+        ax.plot(soft["coverage"], soft["accuracy"], marker="o", ms=5, lw=2,
+                color=soft_color, label="DeepDFA soft (abstains on low confidence)")
+        if not sym.empty:
+            ax.axhline(float(sym["accuracy"].iloc[0]), color=sym_color, ls="--",
+                       lw=2, label="Symbolic (no confidence → no abstention)")
+        ax.set_xlabel("coverage (fraction of traces the monitor commits to)")
+        ax.set_ylabel("accuracy on the covered subset")
+        ax.set_title(f"Selective prediction — {fname}, Beta ε={eps}")
+        ax.set_xlim(0, 1.02)
+        outs.append(_save(
+            fig, ax, out_dir / f"exp_uncertainty_riskcoverage_{fname}.png"))
+    return outs
+
+
+def _plot_uncertainty_all(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    """CLI entry: the core figures + the sharpness and risk-coverage figures,
+    each skipped with a note if its CSV is absent."""
+    outs = plot_uncertainty(csv_paths, out_dir)
+    for fn in (plot_uncertainty_sharpness, plot_uncertainty_riskcoverage):
+        try:
+            outs += fn(None, out_dir)
+        except FileNotFoundError as e:
+            print(f"[uncertainty] skipped: {e}")
+    return outs
+
+
 # ---------------------------------------------------------------------------
 # CLI: regenerate figures from the CSVs currently in results/
 # ---------------------------------------------------------------------------
@@ -664,7 +739,7 @@ _PLOTTERS = {
     "exp3": plot_exp3,
     "exp5": plot_exp5,
     "exp6": plot_exp6,
-    "uncertainty": plot_uncertainty,
+    "uncertainty": _plot_uncertainty_all,
 }
 
 

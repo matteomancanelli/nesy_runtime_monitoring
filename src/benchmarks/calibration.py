@@ -204,3 +204,47 @@ def roc_auc(probs: Sequence[float], labels: Sequence[bool | Verdict]) -> float:
         return float("nan")
     ranks = rankdata(p)
     return float((ranks[y].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+
+
+# ---------------------------------------------------------------------------
+# Selective prediction (risk–coverage) — what the confidence is FOR
+# ---------------------------------------------------------------------------
+
+
+def confidence_from_score(scores: Sequence[float]) -> np.ndarray:
+    """Binary-verdict confidence in [0, 1] from an acceptance score.
+
+    Distance of the acceptance probability from the 0.5 decision boundary,
+    scaled so that 0.5 -> 0 (maximum uncertainty) and 0 or 1 -> 1 (certain).
+    This is the quantity the symbolic monitor fundamentally cannot emit.
+    """
+    s = np.clip(np.asarray(scores, dtype=float), 0.0, 1.0)
+    return np.abs(s - 0.5) * 2.0
+
+
+def risk_coverage_curve(
+    scores: Sequence[float],
+    labels: Sequence[bool | Verdict],
+    n_points: int = 21,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Selective-prediction accuracy as a function of coverage.
+
+    Rank predictions by confidence (``confidence_from_score``); at each coverage
+    fraction keep the most-confident that fraction of traces and report accuracy
+    on the kept subset. Returns ``(coverage, accuracy)`` over ``n_points``
+    coverages in (0, 1]. A well-calibrated monitor abstaining on its least-
+    confident verdicts should trace a curve that RISES as coverage shrinks — the
+    knob the symbolic monitor (no confidence) does not have.
+    """
+    p, y = _as_probs_labels(scores, labels)
+    n = p.size
+    pred = p >= 0.5
+    correct = (pred == y)
+    order = np.argsort(-confidence_from_score(p))  # most confident first
+    correct_sorted = correct[order]
+    coverages = np.linspace(1.0 / n, 1.0, n_points)
+    accs = np.empty_like(coverages)
+    for i, cov in enumerate(coverages):
+        k = max(1, int(round(cov * n)))
+        accs[i] = float(correct_sorted[:k].mean())
+    return coverages, accs

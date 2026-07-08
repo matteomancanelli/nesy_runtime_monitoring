@@ -63,6 +63,7 @@ from tqdm import tqdm
 from src.benchmarks.calibration import (
     brier_score,
     expected_calibration_error,
+    risk_coverage_curve,
     roc_auc,
     verdict_accuracy,
 )
@@ -107,9 +108,17 @@ NOISE_MODELS: dict[str, "callable[[float], NoiseModel]"] = {
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Perceptor-sharpness sweep (does soft propagation beat thresholding as the
+# perceptor gets fuzzier?). The soft marginal is the Bayes-optimal verdict;
+# threshold-then-walk is a plug-in that discards magnitude, so the gap should
+# widen as the Beta concentration (sharpness) drops. Fixed ε = REP_EPS.
+CONCENTRATION_SWEEP = (1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0)
+
 RESULTS_DIR = ROOT / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 CSV_PATH = RESULTS_DIR / "exp_uncertainty.csv"
+SHARPNESS_CSV = RESULTS_DIR / "exp_uncertainty_sharpness.csv"
+RC_CSV = RESULTS_DIR / "exp_uncertainty_riskcoverage.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +221,77 @@ def evaluate(
 
 
 # ---------------------------------------------------------------------------
+# Perceptor-sharpness sweep: verdict accuracy vs Beta concentration at fixed ε.
+# Shows the regime where the soft marginal (Bayes-optimal) beats thresholding.
+# ---------------------------------------------------------------------------
+
+
+def evaluate_sharpness(
+    formula: BenchmarkFormula,
+    concentration: float,
+    eps: float,
+    crisp: list,
+    labels: list[Verdict],
+) -> dict:
+    sym = SymbolicDFAMonitor.compile(formula.formula)
+    dd = DeepDFAMonitorFactored.compile(formula.formula, device=DEVICE)
+    acc_sym, acc_raw, acc_norm = [], [], []
+    for s in range(N_NOISE_SEEDS):
+        soft = BetaNoise(eps, concentration=concentration).corrupt_all(
+            crisp, np.random.default_rng(1_000 + s)
+        )
+        acc_sym.append(
+            verdict_accuracy([sym.run(threshold_trace(t)) for t in soft], labels)
+        )
+        raw = np.asarray(dd.batch_acceptance_probability(soft, normalize=False))
+        norm = np.asarray(dd.batch_acceptance_probability(soft, normalize=True))
+        acc_raw.append(verdict_accuracy(_verdicts(raw), labels))
+        acc_norm.append(verdict_accuracy(_verdicts(norm), labels))
+    return {
+        "formula": formula.name,
+        "read_once": formula.read_once,
+        "concentration": concentration,
+        "eps": eps,
+        "sym_acc": float(np.mean(acc_sym)),
+        "raw_acc": float(np.mean(acc_raw)),
+        "norm_acc": float(np.mean(acc_norm)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Risk–coverage: use DeepDFA's confidence to abstain on the least-certain
+# verdicts. Symbolic emits no confidence, so it is a single operating point.
+# ---------------------------------------------------------------------------
+
+
+def risk_coverage_rows(
+    formula: BenchmarkFormula,
+    eps: float,
+    crisp: list,
+    labels: list[Verdict],
+) -> list[dict]:
+    sym = SymbolicDFAMonitor.compile(formula.formula)
+    dd = DeepDFAMonitorFactored.compile(formula.formula, device=DEVICE)
+    soft = BetaNoise(eps, concentration=BETA_CONCENTRATION).corrupt_all(
+        crisp, np.random.default_rng(1_000)
+    )
+    norm = np.asarray(dd.batch_acceptance_probability(soft, normalize=True))
+    cov, acc = risk_coverage_curve(norm, labels)
+    sym_acc = verdict_accuracy([sym.run(threshold_trace(t)) for t in soft], labels)
+    rows = [
+        {"formula": formula.name, "monitor": "DeepDFA soft (norm)",
+         "eps": eps, "coverage": float(c), "accuracy": float(a)}
+        for c, a in zip(cov, acc)
+    ]
+    # Symbolic cannot abstain — a single point at full coverage.
+    rows.append({
+        "formula": formula.name, "monitor": "Symbolic (no abstention)",
+        "eps": eps, "coverage": 1.0, "accuracy": float(sym_acc),
+    })
+    return rows
+
+
+# ---------------------------------------------------------------------------
 # Run the sweep (resumable: skip (formula, noise, eps) rows already on disk)
 # ---------------------------------------------------------------------------
 
@@ -276,9 +356,37 @@ print(f"Saved: {CSV_PATH}")
 # without re-running the sweep).
 # ---------------------------------------------------------------------------
 
-from experiments.plots import plot_uncertainty  # noqa: E402
+from experiments.plots import (  # noqa: E402
+    plot_uncertainty,
+    plot_uncertainty_riskcoverage,
+    plot_uncertainty_sharpness,
+)
 
 plot_uncertainty(CSV_PATH)
+
+# ---------------------------------------------------------------------------
+# Perceptor-sharpness sweep + risk–coverage (the capability the confidence
+# ENABLES). Both reuse the clean traces/labels; each writes its own CSV.
+# ---------------------------------------------------------------------------
+
+sharp_rows = []
+for f in CALIBRATION_SUITE:
+    for conc in CONCENTRATION_SWEEP:
+        sharp_rows.append(evaluate_sharpness(
+            f, conc, REP_EPS, clean[f.name], labels_by_formula[f.name]
+        ))
+pd.DataFrame(sharp_rows).to_csv(SHARPNESS_CSV, index=False)
+print(f"Saved: {SHARPNESS_CSV}")
+plot_uncertainty_sharpness(SHARPNESS_CSV)
+
+rc_rows = []
+for f in CALIBRATION_SUITE:
+    rc_rows.extend(risk_coverage_rows(
+        f, REP_EPS, clean[f.name], labels_by_formula[f.name]
+    ))
+pd.DataFrame(rc_rows).to_csv(RC_CSV, index=False)
+print(f"Saved: {RC_CSV}")
+plot_uncertainty_riskcoverage(RC_CSV)
 
 # ---------------------------------------------------------------------------
 # Console summary

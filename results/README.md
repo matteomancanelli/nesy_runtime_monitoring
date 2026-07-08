@@ -20,6 +20,8 @@ no Docker in this project.
 | `exp5_depth_microbench.csv` | within-step cost vs nested-X depth | depth (from `formula_name`) |
 | `exp6_state_scaling.csv` | per-cell cost vs automaton size `|Q|` (bounded response) | `n_leaves` (holds the measured `|Q|`) |
 | `exp_uncertainty.csv` | accuracy + calibration vs perceptual noise | `eps` |
+| `exp_uncertainty_sharpness.csv` | verdict accuracy vs perceptor sharpness (fixed ε) | `concentration` |
+| `exp_uncertainty_riskcoverage.csv` | selective-prediction accuracy vs coverage (fixed ε) | `coverage` |
 
 ## Experiment × parameter × plot matrix
 
@@ -37,6 +39,8 @@ separate CSVs and overlaid at plot time (§ *CPU vs GPU*). CPU-only monitors
 | **exp5** parse-tree depth | nested-X depth ∈ {0…10} | `ijcnn_n8`, batch=1, len=500 | Symbolic, RuleRunner(flat/structured), DeepDFA dense, factored | `exp5_depth.png` |
 | **exp6** automaton size | `|Q|` (deadlines {2,4,8,16,32,64}) | bounded response, batch=256, len=500 | Symbolic, DeepDFA dense, **scan**, factored | `exp6_state_scaling.png` |
 | **exp_uncertainty** noise | `ε` ∈ [0,0.8] × noise {beta, bitflip} × formula {majority3, response, ijcnn_n4} | N=3000 traces, 3 seeds | Symbolic-threshold, DeepDFA soft (raw), DeepDFA soft (norm) | `exp_uncertainty_accuracy_{noise}_{formula}.png` (6), `exp_uncertainty_reliability.png`, `exp_uncertainty_ece.png`, `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png` |
+| **⤷ sharpness** | Beta `concentration` ∈ {1…64} | ε=0.4, same formulas | Symbolic-threshold, DeepDFA soft (raw/norm) | `exp_uncertainty_sharpness_{formula}.png` (3) |
+| **⤷ risk–coverage** | `coverage` ∈ (0,1] | ε=0.4, Beta, same formulas | DeepDFA soft (abstains) vs Symbolic (single point) | `exp_uncertainty_riskcoverage_{formula}.png` (3) |
 
 **Cross-cutting CPU-vs-GPU plots** (any timing experiment, given both a CPU CSV
 and a GPU CSV):
@@ -121,7 +125,8 @@ Files written (per experiment):
 - exp6 → `exp6_state_scaling.png`
 - uncertainty → `exp_uncertainty_accuracy_{noise}_{formula}.png` (one per cell),
   `exp_uncertainty_reliability.png`, `exp_uncertainty_ece.png`,
-  `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png`
+  `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png`,
+  `exp_uncertainty_sharpness_{formula}.png`, `exp_uncertainty_riskcoverage_{formula}.png`
 - device comparison → `{exp}_device_{Monitor}.png`, `{exp}_device_speedup.png`
 
 The analytic memory-wall panel (exp2) and the reliability diagram (uncertainty)

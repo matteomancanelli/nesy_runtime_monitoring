@@ -19,9 +19,11 @@ import pytest
 
 from src.benchmarks.calibration import (
     brier_score,
+    confidence_from_score,
     expected_calibration_error,
     max_calibration_error,
     reliability_curve,
+    risk_coverage_curve,
     roc_auc,
     verdict_accuracy,
     verdict_labels,
@@ -222,3 +224,36 @@ def test_read_once_reference_soft_readout_is_exact():
     p_any = 1.0 - np.prod([1.0 - pv[a] for a in ijcnn.atoms[1:]])
     exact = p0 * p_any
     assert soft == pytest.approx(exact, abs=1e-6)
+
+
+# ----------------- selective prediction (risk–coverage) -----------------
+
+
+def test_confidence_from_score():
+    # 0.5 -> 0 (max uncertainty); 0 and 1 -> 1 (certain); symmetric around 0.5
+    c = confidence_from_score([0.5, 0.0, 1.0, 0.75, 0.25])
+    assert np.allclose(c, [0.0, 1.0, 1.0, 0.5, 0.5])
+
+
+def test_risk_coverage_curve_rises_when_confidence_ranks_correctness():
+    # Construct scores where high-confidence (far from 0.5) predictions are
+    # correct and low-confidence (near 0.5) ones are wrong: abstaining on the
+    # least-confident must not lower accuracy on the covered subset.
+    y = np.array([True] * 50 + [False] * 50)
+    scores = np.where(y, 0.95, 0.05).astype(float)  # all correct, high confidence
+    # make 20 near-boundary predictions wrong (low confidence)
+    scores[:10] = 0.49   # true labels predicted False (wrong), low confidence
+    scores[50:60] = 0.51  # false labels predicted True (wrong), low confidence
+    cov, acc = risk_coverage_curve(scores, y, n_points=11)
+    assert cov[-1] == pytest.approx(1.0)
+    # full-coverage accuracy = 80/100; high-confidence subset should be ~perfect
+    assert acc[-1] == pytest.approx(0.8, abs=1e-6)
+    assert acc[0] >= acc[-1]  # abstaining on low confidence never hurts here
+    assert acc[0] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_risk_coverage_accepts_verdict_labels():
+    scores = np.array([0.9, 0.1, 0.6, 0.4])
+    labels = [Verdict.SATISFY, Verdict.VIOLATE, Verdict.SATISFY, Verdict.VIOLATE]
+    cov, acc = risk_coverage_curve(scores, labels, n_points=4)
+    assert acc[-1] == pytest.approx(1.0)  # all four predicted correctly
