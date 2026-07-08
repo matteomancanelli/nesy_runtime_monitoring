@@ -28,8 +28,9 @@ no Docker in this project.
 Every experiment fixes all parameters but one (the swept axis) and runs the same
 `MONITORS` list. Each timing experiment can be run on **CPU** or **GPU (cuda)**
 — pass `device` via the auto-selected `DEVICE` — and the two runs are kept as
-separate CSVs and overlaid at plot time (§ *CPU vs GPU*). CPU-only monitors
-(Symbolic, RuleRunner-structured) always record `cpu` in either run.
+separate CSVs and overlaid at plot time (§ *CPU vs GPU*). The symbolic DFA walk
+is pure Python and always records `cpu` in either run; the tensor monitors
+(both RuleRunner variants and every DeepDFA mode) record the device they ran on.
 
 | Exp | Swept axis (values) | Fixed params | Monitors | Output plots (one file each) |
 |---|---|---|---|---|
@@ -68,10 +69,11 @@ mean_s_per_cell, std_s_per_cell, device, early_termination, gpu_name`
 ### Truthful device labeling
 
 Each row's `device`/`gpu_name` record the device the monitor **actually**
-computed on, not the one requested. The symbolic DFA walk and the structured
-RuleRunner are pure Python and always run on the CPU — they stamp `cpu` even in
-a GPU run (there is no tensor op to place on a GPU), so a CSV never claims a GPU
-run that did not happen.
+computed on, not the one requested. The symbolic DFA walk is pure Python and
+always runs on the CPU — it stamps `cpu` even in a GPU run (there is no tensor op
+to place on a GPU), so a CSV never claims a GPU run that did not happen. The
+tensor monitors (both RuleRunner variants — flat CILP and structured — and every
+DeepDFA mode) stamp the device their weights actually compute on.
 
 ### CPU vs GPU: one CSV per run
 

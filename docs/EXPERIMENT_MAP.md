@@ -45,7 +45,7 @@ around; the extra variants are within-paradigm reference lines.
 |---|---|---|---|---|---|
 | **1** ([exp1](../experiments/exp1_single_trace.py)) | trace length 1k–10k | `G(a→Fb)` (no trap/sink) | DeepDFA-**dense** | all **flat** (constant per-cell) | RR not flat → per-call overhead; not a narrative risk (per-cell-constant is the claim) |
 | **2** ([exp2](../experiments/exp2_formula_complexity.py)) | formula breadth n=2..32 | DeepDFA-**factored** (all n) + **dense** (n≤16) + analytic memory-wall panel | Sym flat; RR ~linear in depth; **dense walls out at 2ⁿ**, factored flat | factored not flat → residual O(n²) mask reduction (genuine — annotate); dense doesn't wall → raise `DENSE_MAX_LEAVES` |
-| **3** ([exp3](../experiments/exp3_batch_size.py)) | batch size 1–1024 | DeepDFA-**dense** (batching showcase); Structured-RR is the no-batching contrast | lead = absolute time/trace; **does batched DeepDFA win? — honest open question** | DeepDFA doesn't win even on Colab → "GPU advantage needs larger automata/HW"; demote speedup panel |
+| **3** ([exp3](../experiments/exp3_batch_size.py)) | batch size 1–1024 | DeepDFA-**dense** (batching showcase); both RuleRunner variants (CILP + Structured) now batch cross-trace on the selected device | lead = absolute time/trace; **does batched DeepDFA win? — honest open question** | DeepDFA doesn't win even on Colab → "GPU advantage needs larger automata/HW"; demote speedup panel |
 | **5** ([exp5](../experiments/exp5_depth_microbench.py)) | nested-X depth 0–10 | DeepDFA-**dense** | Sym/DeepDFA flat; **RR (both) linear in depth** | RR flat → raise `TRACE_LENGTH` (overhead burying signal); DeepDFA grows → nested-X inflates `\|Q\|`, note it |
 
 **Two kinds of parallelism — keep framed separately:**
@@ -81,11 +81,20 @@ Reusable subclasses `DeepDFAMonitorDense` / `DeepDFAMonitorFactored` live in
 - `RuleRunnerMonitor` (CILP, batched CPU/CUDA) — used in **all** experiments.
 - `StructuredRuleRunnerMonitor` ([structured.py](../src/monitors/rulerunner/structured.py),
   the Fig-5 variant) — now **also in all experiments** (exported from the
-  package; its `compile` accepts and ignores `device`). It is **CPU/sequential**:
-  cheap per cell (~3 µs) but no cross-trace batching, so in exp3 its
-  time-per-trace stays *flat* in batch size — the deliberate "no batching"
-  contrast. This gives the base-vs-structured comparison mirroring IJCNN 2014's
-  base/sparse/gpu family (we have base + structured, not sparse).
+  package). It is **device-aware and cross-trace batched** (`compile(device=)`
+  places the per-node subnetworks on CPU/CUDA; `batch_run` runs a batched
+  per-node sweep over the trace axis, `effective_device` reports the truth),
+  mirroring `CILPRunner.batch_run` — the point of the Fig-5 variant is that the
+  per-node network is meant to run like a network, in parallel, on a GPU. The
+  base-vs-structured comparison mirrors IJCNN 2014's base/sparse/gpu family (we
+  have base + structured, not sparse). **Caveat:** only the *cross-trace* axis is
+  parallelised; within a cell it sweeps parse-tree nodes sequentially (a parent
+  reads its children), issuing many small matmuls per cell — likely *less*
+  GPU-friendly per cell than the flat CILP encoding's `depth+1` whole-network
+  passes, unless independent same-level sibling nodes are fused (the tree
+  parallelism IJCNN 2015 intends, which this naive sweep does not yet do). So
+  exp3 now contrasts *two batched RuleRunner encodings* (flat vs per-node), not
+  batched-vs-unbatched.
 
 ---
 

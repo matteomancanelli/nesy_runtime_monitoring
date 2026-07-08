@@ -53,9 +53,11 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # fair, vectorised comparison isolates that architectural difference rather
 # than Python per-trace overhead.
 # DeepDFAMonitor is dense (the batching showcase); DeepDFAMonitorFactored is a
-# reference line. StructuredRuleRunnerMonitor is CPU/sequential — it CANNOT
-# batch cross-trace, so its time-per-trace stays flat as batch grows; that is a
-# deliberate contrast for this experiment, not a defect (docs/EXPERIMENT_MAP.md).
+# reference line. StructuredRuleRunnerMonitor now also batches cross-trace on the
+# selected device (device-aware batch_run, a batched per-node sweep), so its
+# time-per-trace responds to batch size like the flat CILP curve; the per-cell
+# cost differs because it sweeps one small matmul per parse-tree node rather than
+# depth+1 whole-network passes (docs/EXPERIMENT_MAP.md).
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
