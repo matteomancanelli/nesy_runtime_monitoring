@@ -22,6 +22,8 @@ no Docker in this project.
 | `exp_uncertainty.csv` | accuracy + calibration vs perceptual noise | `eps` |
 | `exp_uncertainty_sharpness.csv` | verdict accuracy vs perceptor sharpness (fixed ε) | `concentration` |
 | `exp_uncertainty_riskcoverage.csv` | selective-prediction accuracy vs coverage (fixed ε) | `coverage` |
+| `exp7_divergence.csv` | soft over-count vs exact marginal (non-read-once) | `p` (per formula) |
+| `exp7_stateblowup.csv` | per-cell cost vs state blowup `|Q|=2ᵏ+1` | `n_leaves` (holds the measured `|Q|`) |
 
 ## Experiment × parameter × plot matrix
 
@@ -30,18 +32,33 @@ Every experiment fixes all parameters but one (the swept axis) and runs the same
 — pass `device` via the auto-selected `DEVICE` — and the two runs are kept as
 separate CSVs and overlaid at plot time (§ *CPU vs GPU*). The symbolic DFA walk
 is pure Python and always records `cpu` in either run; the tensor monitors
-(both RuleRunner variants and every DeepDFA mode) record the device they ran on.
+(all four RuleRunner variants — original flat/structured + progression
+flat/structured — and every DeepDFA mode) record the device they ran on.
 
 | Exp | Swept axis (values) | Fixed params | Monitors | Output plots (one file each) |
 |---|---|---|---|---|
-| **exp1** trace length | `trace_length` ∈ 1k…10k | `G(a→Fb)`, n_traces=100 | Symbolic, RuleRunner(flat), RuleRunner(structured), DeepDFA dense, factored, **scan** | `exp1_time_per_cell.png` |
-| **exp2** formula size | `n_leaves` ∈ {2,4,8,16,32} | IJCNN family, len=5000, n_traces=100 | Symbolic, RuleRunner(flat/structured), DeepDFA factored, dense (≤16 leaves) | `exp2_time_per_cell.png`, `exp2_time_per_cell_per_leaf.png`, `exp2_memory_wall.png` |
-| **exp3** batch size | `n_traces` ∈ {1,2,…,1024} | `ijcnn_n8`, len=1000 | Symbolic, RuleRunner(flat/structured), DeepDFA dense, factored, **scan** | `exp3_time_per_trace.png`, `exp3_speedup.png` |
-| **exp5** parse-tree depth | nested-X depth ∈ {0…10} | `ijcnn_n8`, batch=1, len=500 | Symbolic, RuleRunner(flat/structured), DeepDFA dense, factored | `exp5_depth.png` |
-| **exp6** automaton size | `|Q|` (deadlines {2,4,8,16,32,64}) | bounded response, batch=256, len=500 | Symbolic, DeepDFA dense, **scan**, factored | `exp6_state_scaling.png` |
+| **exp1** trace length | `trace_length` ∈ 1k…10k | `G(a→Fb)`, n_traces=100 | Symbolic, RuleRunner(flat/structured), **Progression RR(flat/structured)**, DeepDFA dense, factored, **scan** | `exp1_time_per_cell.png` |
+| **exp2** formula size | `n_leaves` ∈ {2,4,8,16,32} | IJCNN family, len=5000, n_traces=100 | Symbolic, RuleRunner(flat/structured), **Progression RR(flat/structured) (≤16 leaves)**, DeepDFA factored, dense (≤16 leaves) | `exp2_time_per_cell.png`, `exp2_time_per_cell_per_leaf.png`, `exp2_memory_wall.png` |
+| **exp3** batch size | `n_traces` ∈ {1,2,…,1024} | `ijcnn_n8`, len=1000 | Symbolic, RuleRunner(flat/structured), **Progression RR(flat/structured)**, DeepDFA dense, factored, **scan** | `exp3_time_per_trace.png`, `exp3_speedup.png` |
+| **exp5** parse-tree depth | nested-X depth ∈ {0…10} | `ijcnn_n8`, batch=1, len=500 | Symbolic, RuleRunner(flat/structured), **Progression RR(flat/structured)**, DeepDFA dense, factored | `exp5_depth.png` |
+| **exp6** automaton size | `|Q|` (deadlines {2,4,8,16,32,64}) | bounded response, batch=256, len=500 | Symbolic, RuleRunner(flat/structured), **Progression RR(flat/structured)**, DeepDFA dense, **scan**, factored | `exp6_state_scaling.png` |
 | **exp_uncertainty** noise | `ε` ∈ [0,0.8] × noise {beta, bitflip} × formula {majority3, response, ijcnn_n4} | N=3000 traces, 3 seeds | Symbolic-threshold, DeepDFA soft (raw), DeepDFA soft (norm) | `exp_uncertainty_accuracy_{noise}_{formula}.png` (6), `exp_uncertainty_reliability.png`, `exp_uncertainty_ece.png`, `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png` |
 | **⤷ sharpness** | Beta `concentration` ∈ {1…64} | ε=0.4, same formulas | Symbolic-threshold, DeepDFA soft (raw/norm) | `exp_uncertainty_sharpness_{formula}.png` (3) |
 | **⤷ risk–coverage** | `coverage` ∈ (0,1] | ε=0.4, Beta, same formulas | DeepDFA soft (abstains) vs Symbolic (single point) | `exp_uncertainty_riskcoverage_{formula}.png` (3) |
+| **exp7** divergence (P1) | shared `p` ∈ (0,1) | `NON_READ_ONCE_SUITE` (majority3, atleast{2of4,2of5,3of5}, alt_response) | DeepDFA soft (raw/norm) vs exact marginal | `exp7_divergence_vs_p.png`, `exp7_divergence_vs_size.png` |
+| **exp7** state blowup (P2) | `|Q|=2ᵏ+1` (k∈{2,4,6,8,10}) | `F(a&Xᵏb)`, batch=64, len=500 | Symbolic, DeepDFA dense, factored | `exp7_stateblowup_time.png`, `exp7_stateblowup_memory.png` (analytic) |
+
+The **Progression RuleRunner** pair (the corrected paradigm 2 — verdict-exact on
+all LTLf, incl. the nested-temporal formulas where the original RR is wrong) runs
+in every timing experiment alongside the original RR. ⚠ Its eager construction
+enumerates `2^k` observations per residual, so it shares DeepDFA-dense's `2^|AP|`
+alphabet wall — hence the **≤16-leaf cap in exp2** (same cap as dense).
+
+**Cost of correctness** (the paradigm-2 paper number): `correctness_cost_table` /
+`plot_correctness_cost` (`python experiments/plots.py correctness`, default input
+`exp2_formula_complexity.csv`) report the corrected/original per-cell-time
+**ratio** on the flat IJCNN family (where the original RR is also correct, so the
+ratio isolates encoding cost, not the verdict fix). Output: `correctness_cost.png`.
 
 **Cross-cutting CPU-vs-GPU plots** (any timing experiment, given both a CPU CSV
 and a GPU CSV):
@@ -72,8 +89,9 @@ Each row's `device`/`gpu_name` record the device the monitor **actually**
 computed on, not the one requested. The symbolic DFA walk is pure Python and
 always runs on the CPU — it stamps `cpu` even in a GPU run (there is no tensor op
 to place on a GPU), so a CSV never claims a GPU run that did not happen. The
-tensor monitors (both RuleRunner variants — flat CILP and structured — and every
-DeepDFA mode) stamp the device their weights actually compute on.
+tensor monitors (all four RuleRunner variants — original flat/structured CILP +
+progression flat/structured — and every DeepDFA mode) stamp the device their
+weights actually compute on.
 
 ### CPU vs GPU: one CSV per run
 
@@ -125,10 +143,13 @@ Files written (per experiment):
 - exp3 → `exp3_time_per_trace.png`, `exp3_speedup.png`
 - exp5 → `exp5_depth.png`
 - exp6 → `exp6_state_scaling.png`
+- correctness → `correctness_cost.png` (progression vs original RuleRunner)
 - uncertainty → `exp_uncertainty_accuracy_{noise}_{formula}.png` (one per cell),
   `exp_uncertainty_reliability.png`, `exp_uncertainty_ece.png`,
   `exp_uncertainty_defect_maxscore.png`, `exp_uncertainty_defect_fracover1.png`,
   `exp_uncertainty_sharpness_{formula}.png`, `exp_uncertainty_riskcoverage_{formula}.png`
+- exp7 → `exp7_divergence_vs_p.png`, `exp7_divergence_vs_size.png`,
+  `exp7_stateblowup_time.png`, `exp7_stateblowup_memory.png`
 - device comparison → `{exp}_device_{Monitor}.png`, `{exp}_device_speedup.png`
 
 The analytic memory-wall panel (exp2) and the reliability diagram (uncertainty)

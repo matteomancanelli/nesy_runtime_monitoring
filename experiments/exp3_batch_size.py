@@ -39,6 +39,10 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,
 )
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -58,10 +62,15 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # time-per-trace responds to batch size like the flat CILP curve; the per-cell
 # cost differs because it sweeps one small matmul per parse-tree node rather than
 # depth+1 whole-network passes (docs/EXPERIMENT_MAP.md).
+# The Progression RR pair is the corrected paradigm 2; on the flat ijcnn_n8
+# family (n=8 -> 2^8=256, well within the alphabet cap) it is verdict-exact, so
+# its batched throughput vs the original RR is the cost-of-correctness number.
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
     StructuredRuleRunnerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     DeepDFAMonitor,
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,   # parallel prefix-scan variant of dense DeepDFA

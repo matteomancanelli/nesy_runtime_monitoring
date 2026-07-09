@@ -37,9 +37,12 @@ each script; the device auto-selects `cuda` when available; `EARLY_TERMINATION`
 is OFF (Phase 0.1) for the per-cell-cost figures.
 
 Every experiment now runs the **full monitor set**: Symbolic, RuleRunner-CILP,
-RuleRunner-Structured, DeepDFA-dense, DeepDFA-factored (exp2 caps dense at
-n≤16). The `modes` column below names the *primary* curve(s) each is designed
-around; the extra variants are within-paradigm reference lines.
+RuleRunner-Structured, **Progression-RR-flat, Progression-RR-Structured**
+(the corrected paradigm 2, §"Progression RuleRunner" below), DeepDFA-dense,
+DeepDFA-factored (exp2 caps dense **and both progression monitors** at n≤16 —
+they share the 2^|AP| alphabet wall). The `modes` column below names the
+*primary* curve(s) each is designed around; the extra variants are
+within-paradigm reference lines.
 
 | Exp | Axis (x) | Formula | Primary modes | Expect | If it disappoints |
 |---|---|---|---|---|---|
@@ -47,6 +50,7 @@ around; the extra variants are within-paradigm reference lines.
 | **2** ([exp2](../experiments/exp2_formula_complexity.py)) | formula breadth n=2..32 | DeepDFA-**factored** (all n) + **dense** (n≤16) + analytic memory-wall panel | Sym flat; RR ~linear in depth; **dense walls out at 2ⁿ**, factored flat | factored not flat → residual O(n²) mask reduction (genuine — annotate); dense doesn't wall → raise `DENSE_MAX_LEAVES` |
 | **3** ([exp3](../experiments/exp3_batch_size.py)) | batch size 1–1024 | DeepDFA-**dense** (batching showcase); both RuleRunner variants (CILP + Structured) now batch cross-trace on the selected device | lead = absolute time/trace; **does batched DeepDFA win? — honest open question** | DeepDFA doesn't win even on Colab → "GPU advantage needs larger automata/HW"; demote speedup panel |
 | **5** ([exp5](../experiments/exp5_depth_microbench.py)) | nested-X depth 0–10 | DeepDFA-**dense** | Sym/DeepDFA flat; **RR (both) linear in depth** | RR flat → raise `TRACE_LENGTH` (overhead burying signal); DeepDFA grows → nested-X inflates `\|Q\|`, note it |
+| **7** ([exp7](../experiments/exp7_richer_family.py)) | *P1:* guard atom-multiplicity · *P2:* state count `\|Q\|=2ᵏ+1` | *P1:* `NON_READ_ONCE_SUITE` (soft) · *P2:* `STATE_BLOWUP_SUITE` (Sym + DeepDFA) | *P1:* soft over-count **grows** with non-read-once-ness · *P2:* Sym per-cell flat, DeepDFA O(\|Q\|²) → both wall | P1 flat → threshold family not diverging (check MONA didn't factor); P2 Sym not flat → check early-term off. **Not purely timing** — P1 is a soft-divergence measurement (no GPU needed), P2 has a timing panel + analytic memory wall |
 
 **Two kinds of parallelism — keep framed separately:**
 - **Within-step** (rules / matmul atoms fire within one cell): Exp 2 (breadth) + Exp 5 (depth).
@@ -96,6 +100,42 @@ Reusable subclasses `DeepDFAMonitorDense` / `DeepDFAMonitorFactored` live in
   exp3 now contrasts *two batched RuleRunner encodings* (flat vs per-node), not
   batched-vs-unbatched.
 
+### Progression RuleRunner — the corrected paradigm 2 ([progression/](../src/monitors/progression/))
+
+The original RuleRunner conflates concurrent instances of a subformula
+reinstalled from different temporal contexts (the **nested-temporal limitation**
+— wrong verdicts on `F(a&Xb)`, `G(a→Fb)`, `G(a→Xb)` and the whole bounded-response
+family). The **progression-based** reformulation (latex/3_rulerunner.tex §3.3)
+carries *residual formulae* obtained by formula progression and is **sound and
+complete on all LTLf** (matches SymbolicDFA on the full sweep, no xfails). Two
+neural encodings mirror the original pair, both wired into **all** timing
+experiments (exp1/2/3/5/6):
+
+- `ProgressionRuleRunnerMonitor` (**flat**, `flat.py`) — one hidden per
+  (residual-state, guard-symbol) transition; multi-hot-root carried state;
+  batched CPU/CUDA. The throughput competitor. **Flat per cell** — depth/|Q| are
+  absorbed into the residual state count (contrast: original RR pays `depth+1`
+  within-step passes), visible in exp5 (nested-X) and exp6 (bounded-response).
+- `ProgressionRuleRunnerStructuredMonitor` (**structured**, `structured.py`) —
+  one CILP subnet per closure node `C_φ`, bottom-up eval sweep; the
+  **local-learning** substrate (Paper B). CPU/GPU + batched are implementation
+  choices, not fundamentals. Its per-cell eval sweeps the closure, which grows
+  with depth (contrast to flat).
+
+**Cost of correctness (the paper number).** `plots.correctness_cost_table` /
+`plot_correctness_cost` report the corrected/original per-cell-time **ratio**
+(default: exp2's flat IJCNN family, where the *original* RR is also correct, so
+the ratio isolates the encoding's throughput cost, not the verdict fix). >1 =
+the fix is slower; the corrected monitor is the honest paradigm-2 curve.
+
+⚠ **Progression's own alphabet wall.** The eager residual construction
+enumerates `2^k` observations per residual (`k` = that residual's guard atoms),
+so the progression monitors share DeepDFA-dense's `2^|AP|` wall on the IJCNN
+family — capped at `DENSE_MAX_LEAVES` in exp2 for the same reason. This is dual
+to the original RR's nested-temporal *representational* limit: the fix trades a
+representational failure for an alphabet-size cost (a clean three-way-heel story
+alongside symbolic state-blowup and DeepDFA-dense).
+
 ---
 
 ## 3. The full comparison space (the "n-D map")
@@ -104,7 +144,7 @@ Every experiment is a point in this space. The axes are orthogonal; most are
 free to sweep without new code.
 
 - **A. Paradigm** — Symbolic / RuleRunner / DeepDFA.
-- **B. Within-paradigm variant** — DeepDFA {dense, factored, soft}; RuleRunner {CILP, structured}.
+- **B. Within-paradigm variant** — DeepDFA {dense, factored, soft}; RuleRunner {CILP, structured} × {original, progression-corrected}.
 - **C. Workload stressor** — trace length · formula breadth (`2^{\|AP\|}`) · parse-tree depth · batch size · state count `\|Q\|`.
 - **D. Measurement mode** — `early_termination` on/off (flag exists) · crisp vs soft input. The soft harness is being built piece by piece: corruption models + oracle ([noise.py](../src/benchmarks/noise.py), Phase 1.1 ✅), DeepDFA soft-run readout (Phase 1.2 ✅, factored-only), and accuracy/calibration metrics ([calibration.py](../src/benchmarks/calibration.py), Phase 1.3 ✅ — ECE/reliability/Brier/AUC, numpy+scipy). The timing `runner.py` does not transfer. ⚠ Calibration on the read-once IJCNN family is a hollow identity (`soft_matrix` is exact there) — the `CALIBRATION_SUITE` therefore leads with the **non-read-once** `majority3` (`F((a&b)|(b&c)|(a&c))`, verified un-factored by MONA; soft over-counts ~0.086) so the claim is empirical, with read-once references as the contrast. Wired into [exp_uncertainty.py](../experiments/exp_uncertainty.py) (Phase 1.4 ✅): accuracy-vs-ε + reliability/ECE figures. **Findings:** soft is *competitive, not dominant* on the hard verdict (thresholding the unbiased Beta mean is near Bayes-optimal; identical to symbolic under bitflip) — the capability is the *calibrated confidence*, which symbolic cannot emit; and the raw soft score is *not a valid probability* on non-read-once guards (>1), needing normalization.
 - **E. Hardware** — cpu / local-cuda / Colab-cuda / Docker-server (same code).
@@ -134,7 +174,9 @@ free to sweep without new code.
 | early-termination ON vs OFF (data-dependent) | 🟢 FREE (toggle `EARLY_TERMINATION`) |
 | local vs Colab vs server hardware | 🟢 FREE (run same script; stamped by `gpu_name`) |
 | cpu vs cuda for same monitor | 🟢 FREE (toggle `DEVICE`) |
-| state-blowup family (Sym + DeepDFA shared weakness) | 🟠 small new code (new formulas) |
+| state-blowup family (Sym + DeepDFA shared weakness) | ✅ addressed ([exp7](../experiments/exp7_richer_family.py) P2, Phase 3.3): `STATE_BLOWUP_SUITE` `F(a&Xᵏb)` |Q|=2ᵏ+1; Sym per-cell flat, DeepDFA O(|Q|²) + analytic memory wall |
+| non-read-once soft divergence as a *curve* | ✅ addressed ([exp7](../experiments/exp7_richer_family.py) P1, Phase 3.3): threshold family, over-count monotone in atom multiplicity vs exact marginal |
+| Declare/BPM constraint templates | ✅ addressed (`DECLARE_SUITE`, Phase 3.3): 7 patterns, diverse trap/sink, incl. non-read-once `alt_response` |
 | soft-input accuracy / calibration (Capability A) | ✅ addressed ([exp_uncertainty.py](../experiments/exp_uncertainty.py), Phase 1.1–1.4): accuracy-vs-ε + reliability/ECE, raw vs normalized soft readout, non-read-once defect |
 | adaptation (Capability B) | 🔴 new code (Phase 2) |
 

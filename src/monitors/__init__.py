@@ -5,6 +5,7 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,
 )
+from src.monitors.progression import ProgressionRuleRunnerMonitor
 from src.monitors.rulerunner import RuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -13,6 +14,7 @@ __all__ = [
     "Verdict",
     "SymbolicDFAMonitor",
     "RuleRunnerMonitor",
+    "ProgressionRuleRunnerMonitor",
     "DeepDFAMonitor",
     "DeepDFAMonitorDense",
     "DeepDFAMonitorFactored",

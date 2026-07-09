@@ -16,6 +16,7 @@ TRACE_LENGTH_SUITE — fixed formulas for the trace-length scaling
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 
 
 @dataclass(frozen=True)
@@ -180,4 +181,109 @@ def bounded_response(k: int) -> BenchmarkFormula:
 
 STATE_SCALING_SUITE: tuple[BenchmarkFormula, ...] = tuple(
     bounded_response(k) for k in STATE_SCALING_DEADLINES
+)
+
+
+# ---------------------------------------------------------------------------
+# Richer benchmark family (Phase 3.3)
+# ---------------------------------------------------------------------------
+#
+# The IJCNN family is a poor instrument: it early-terminates, and its guards are
+# read-once after MONA factoring (so DeepDFA's soft_matrix is *exact*, hiding the
+# paradigm divergence the capability story rests on). These three families each
+# target a gap. All read_once flags below are the values MONA actually produces,
+# verified against `characterize.guard_read_once` in tests/test_richer_formulas.py.
+
+
+# --- (A) Declare / BPM constraint templates --------------------------------
+#
+# Standard process-mining patterns: realistic, and with diverse trap/sink
+# structure (unlike the IJCNN family, which is uniformly sink-terminating).
+# `alt_response` is notable — a *real* constraint that MONA keeps non-read-once
+# (each of a, b appears twice on the alternation guard), so it doubles as the
+# realistic anchor of NON_READ_ONCE_SUITE below.
+
+DECLARE_SUITE: tuple[BenchmarkFormula, ...] = (
+    BenchmarkFormula("response", "G(a -> F(b))", ("a", "b"), 2),
+    BenchmarkFormula("chain_response", "G(a -> X(b))", ("a", "b"), 2),
+    BenchmarkFormula("precedence", "(!b) U a | G(!b)", ("a", "b"), 2),
+    BenchmarkFormula(
+        "alt_response", "G(a -> X(!a U b))", ("a", "b"), 2, read_once=False
+    ),
+    BenchmarkFormula("resp_existence", "F(a) -> F(b)", ("a", "b"), 2),
+    BenchmarkFormula("not_coexistence", "!(F(a) & F(b))", ("a", "b"), 2),
+    BenchmarkFormula("chain_precedence", "G(X(b) -> a)", ("a", "b"), 2),
+)
+
+
+# --- (B) Non-read-once family: the divergence instrument -------------------
+#
+# "At least k of n atoms true" — F( OR over all k-subsets S of (AND_{i in S} a_i) ).
+# Each atom recurs C(n-1, k-1) times in the disjunction, so MONA keeps the guard
+# non-read-once and DeepDFA's independence-assuming soft product OVER-counts the
+# true marginal by a margin that grows with the family. This turns the single
+# `majority3` data point into a *curve* over formula size (the Exp 7 finding).
+
+
+def at_least_k_of_n(k: int, n: int) -> BenchmarkFormula:
+    """F( OR_{|S|=k} AND_{i in S} a_i ) — "at least k of n atoms true"."""
+    if not 1 <= k <= n:
+        raise ValueError(f"require 1 <= k <= n, got k={k}, n={n}")
+    atoms = tuple(_atom(i) for i in range(n))
+    disjuncts = [
+        "(" + " & ".join(atoms[i] for i in subset) + ")"
+        for subset in combinations(range(n), k)
+    ]
+    return BenchmarkFormula(
+        name=f"atleast{k}of{n}",
+        formula="F(" + " | ".join(disjuncts) + ")",
+        atoms=atoms,
+        n_leaves=n,
+        read_once=False,
+    )
+
+
+# majority3 (2-of-3) is defined once as _MAJORITY3 (CALIBRATION_SUITE) and reused
+# here so the two suites cannot drift. The larger threshold points and the
+# realistic `alt_response` anchor complete the divergence sweep.
+_ALT_RESPONSE = DECLARE_SUITE[3]
+
+NON_READ_ONCE_SUITE: tuple[BenchmarkFormula, ...] = (
+    _MAJORITY3,
+    at_least_k_of_n(2, 4),
+    at_least_k_of_n(2, 5),
+    at_least_k_of_n(3, 5),
+    _ALT_RESPONSE,
+)
+
+
+# --- (C) State-blowup family: exponential |Q|, tiny alphabet ---------------
+#
+# "a holds and b holds exactly k steps later" — F(a & X^k b). The minimal DFA
+# must track a sliding window of the last k observations, so |Q| = 2^k + 1 while
+# |AP| = 2 stays fixed (dense alphabet 2^|AP| = 4). This is a *genuine
+# exponential* state blowup, distinct from STATE_SCALING_SUITE's bounded_response
+# (which is only LINEAR in k — a deadline knob). It exposes symbolic's storage /
+# compile wall AND DeepDFA-dense's |Q|^2 tensor wall simultaneously (a shared
+# weakness — good for the neutrality mandate). n_leaves is overwritten with the
+# measured |Q| by Exp 7, mirroring STATE_SCALING_SUITE.
+
+STATE_BLOWUP_DEPTHS: tuple[int, ...] = (2, 4, 6, 8, 10)
+
+
+def kth_from_last(k: int) -> BenchmarkFormula:
+    """F(a & X^k b) — a now, b exactly k steps later; |Q| = 2^k + 1."""
+    if k < 1:
+        raise ValueError(f"k must be >= 1, got {k}")
+    consequent = "X(" * k + "b" + ")" * k
+    return BenchmarkFormula(
+        name=f"kthlast_k{k}",
+        formula=f"F(a & {consequent})",
+        atoms=("a", "b"),
+        n_leaves=k,  # depth; Exp 7 overwrites this with the measured |Q|
+    )
+
+
+STATE_BLOWUP_SUITE: tuple[BenchmarkFormula, ...] = tuple(
+    kth_from_last(k) for k in STATE_BLOWUP_DEPTHS
 )

@@ -22,9 +22,13 @@ Three DeepDFA variants are compared so the regimes are visible:
     and loses at large |Q|, the opposite regime; included to make that explicit).
   - factored: the cube-mask crisp path.
 
-RuleRunner is omitted here: bounded response nests X under -> under G, hitting
-its nested-temporal limitation (verdicts untrusted), and it is not the focus of
-the state-scaling question.
+RuleRunner: bounded response nests X under -> under G, so the ORIGINAL RuleRunner
+hits its nested-temporal limitation (verdicts untrusted — kept only for the
+throughput comparison, timing stays well-defined). The Progression RR pair is
+verdict-exact on this family and directly relevant to the |Q| story: its residual
+closure grows with |Q|, so progression-flat is a second "scales with |Q|"
+paradigm-2 curve (flat per cell — depth/|Q| absorbed into the state count),
+while the original RR pays depth+1 within-step passes that grow with the deadline.
 
 Run on a GPU (Colab) for the intended measurement — the overhead story is a
 GPU/launch-latency effect.
@@ -58,6 +62,11 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,
 )
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
+from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 # ---------------------------------------------------------------------------
@@ -66,6 +75,10 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 MONITORS = [
     SymbolicDFAMonitor,
+    RuleRunnerMonitor,
+    StructuredRuleRunnerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     DeepDFAMonitorDense,
     DeepDFAMonitorScan,
     DeepDFAMonitorFactored,

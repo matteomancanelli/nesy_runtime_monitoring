@@ -64,6 +64,12 @@ MONITOR_STYLE: dict[str, tuple[str, str]] = {
     "SymbolicDFAMonitor":          ("Symbolic DFA",           "#0072B2"),  # blue
     "RuleRunnerMonitor":           ("RuleRunner (flat)",      "#E69F00"),  # orange
     "StructuredRuleRunnerMonitor": ("RuleRunner (structured)", "#CC79A7"),  # purple
+    # Progression-based (corrected) RuleRunner — the two remaining Okabe–Ito
+    # hues (black, yellow) so the corrected pair reads distinctly from the
+    # original pair.
+    "ProgressionRuleRunnerMonitor":           ("Progression RR (flat)", "#000000"),
+    "ProgressionRuleRunnerStructuredMonitor": (
+        "Progression RR (structured)", "#F0E442"),
     "DeepDFAMonitor":              ("DeepDFA (dense)",        "#D55E00"),  # vermillion
     "DeepDFAMonitorDense":         ("DeepDFA (dense)",        "#D55E00"),
     "DeepDFAMonitorFactored":      ("DeepDFA (factored)",     "#009E73"),  # green
@@ -71,11 +77,13 @@ MONITOR_STYLE: dict[str, tuple[str, str]] = {
 }
 # Draw order for legends (canonical, not alphabetical).
 _MONITOR_ORDER = [
-    "SymbolicDFAMonitor", "RuleRunnerMonitor", "StructuredRuleRunnerMonitor",
+    "SymbolicDFAMonitor",
+    "RuleRunnerMonitor", "StructuredRuleRunnerMonitor",
+    "ProgressionRuleRunnerMonitor", "ProgressionRuleRunnerStructuredMonitor",
     "DeepDFAMonitor", "DeepDFAMonitorDense", "DeepDFAMonitorFactored",
     "DeepDFAMonitorScan",
 ]
-_FALLBACK_COLORS = ["#56B4E9", "#000000", "#999999", "#F0E442"]
+_FALLBACK_COLORS = ["#56B4E9", "#999999", "#000000", "#F0E442"]
 
 
 def style_for(monitor: str, seen: dict[str, str] | None = None) -> tuple[str, str]:
@@ -730,6 +738,232 @@ def _plot_uncertainty_all(csv_paths=None, out_dir: Path | None = None) -> list[P
 
 
 # ---------------------------------------------------------------------------
+# Cost of correctness: corrected (progression) RR vs the original (WRONG on
+# nested-temporal) RR — the paper number for "does the fix cost throughput?".
+# ---------------------------------------------------------------------------
+
+# Which corrected monitor is the fix for which original one.
+_CORRECTNESS_PAIRS = [
+    ("RuleRunnerMonitor", "ProgressionRuleRunnerMonitor", "flat"),
+    ("StructuredRuleRunnerMonitor", "ProgressionRuleRunnerStructuredMonitor",
+     "structured"),
+]
+
+
+def correctness_cost_table(csv_paths, xcol: str = "n_leaves") -> pd.DataFrame:
+    """Per-cell-cost ratio corrected/original for each RR encoding, per config.
+
+    A ratio > 1 means the correctness fix is slower (the price of handling
+    nested-temporal correctly); < 1 means it is actually faster. Returned tidy
+    (one row per encoding × config × x) and also printed as a compact summary.
+    """
+    df = load_timing(csv_paths)
+    rows = []
+    for orig, corr, enc in _CORRECTNESS_PAIRS:
+        for cfg in sorted(df["config"].unique()):
+            o = (df[(df["monitor_name"] == orig) & (df["config"] == cfg)]
+                 .set_index(xcol)["mean_s_per_cell"])
+            c = (df[(df["monitor_name"] == corr) & (df["config"] == cfg)]
+                 .set_index(xcol)["mean_s_per_cell"])
+            for x in sorted(set(o.index) & set(c.index)):
+                rows.append({"encoding": enc, "config": cfg, xcol: x,
+                             "orig_us": o[x] * 1e6, "corr_us": c[x] * 1e6,
+                             "ratio": c[x] / o[x]})
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        print("\nCost of correctness — corrected/original per-cell time ratio")
+        print("(>1 = fix is slower; the price of nested-temporal correctness)")
+        summary = (out.groupby(["encoding", "config"])["ratio"]
+                   .agg(["min", "median", "max"]).round(2))
+        print(summary.to_string())
+    return out
+
+
+def plot_correctness_cost(csv_paths=None, out_dir: Path | None = None,
+                          xcol: str = "n_leaves",
+                          xlabel: str = "Leaves (atoms)") -> list[Path]:
+    """Figure + table for the correctness-cost comparison (default: exp2, the
+    flat IJCNN family where the ORIGINAL RR is also correct, so the ratio
+    isolates the encoding's throughput cost rather than conflating it with the
+    verdict fix). Draws corrected-vs-original per-cell time (log-y) with the
+    ratio annotated; colours follow the canonical monitor palette."""
+    csv_paths = csv_paths or RESULTS_DIR / "exp2_formula_complexity.csv"
+    df = load_timing(csv_paths)
+    out_dir = out_dir or RESULTS_DIR
+    correctness_cost_table(csv_paths, xcol)  # prints the summary numbers
+
+    fig, ax = _new_ax(figsize=(7.0, 4.6))
+    seen: dict[str, str] = {}
+    configs = sorted(df["config"].unique())
+    multi = len(configs) > 1
+    dash, _ = _config_styles(configs)
+    for orig, corr, _enc in _CORRECTNESS_PAIRS:
+        for monitor in (orig, corr):
+            if monitor not in set(df["monitor_name"]):
+                continue
+            label, color = style_for(monitor, seen)
+            for cfg in sorted(df.loc[df["monitor_name"] == monitor,
+                                     "config"].unique()):
+                g = (df[(df["monitor_name"] == monitor) & (df["config"] == cfg)]
+                     .sort_values(xcol))
+                lbl = f"{label} — {cfg}" if multi else label
+                ax.errorbar(g[xcol], g["us_per_cell"], yerr=g["us_err"],
+                            marker="o", ms=6, lw=2, capsize=3, color=color,
+                            ls=dash[cfg], label=lbl)
+    ax.set_yscale("log")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Avg time per cell (µs)")
+    ax.set_title("Cost of correctness — original vs progression RuleRunner")
+    return [_save(fig, ax, out_dir / "correctness_cost.png")]
+
+
+# ---------------------------------------------------------------------------
+# Exp 7 — richer family: probabilistic divergence + state-blowup neutrality
+# ---------------------------------------------------------------------------
+
+
+def plot_exp7_divergence(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    """Non-read-once soft over-count: the finding as a curve.
+
+    (1) over-count vs input probability p (one line per formula, showing the
+        shape and that larger families diverge more), and (2) the aggregate
+        max over-count vs atom multiplicity (the headline "divergence grows").
+    """
+    csv_paths = csv_paths or RESULTS_DIR / "exp7_divergence.csv"
+    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
+    if not frames:
+        raise FileNotFoundError(f"no exp7 divergence CSV among {csv_paths}")
+    df = pd.concat(frames, ignore_index=True)
+    out_dir = out_dir or RESULTS_DIR
+    outs = []
+    order = df.drop_duplicates("formula").sort_values(["multiplicity", "formula"])
+    formulas = list(order["formula"])
+    cmap = plt.cm.viridis(np.linspace(0.05, 0.9, len(formulas)))
+
+    # (1) over-count vs p
+    fig, ax = _new_ax()
+    for color, fname in zip(cmap, formulas):
+        g = df[df["formula"] == fname].sort_values("p")
+        mult = int(g["multiplicity"].iloc[0])
+        ax.plot(g["p"], g["gap_raw"], marker="o", ms=4, lw=2, color=color,
+                label=f"{fname} (mult={mult})")
+    ax.axhline(0.0, color="gray", ls=":", lw=1)
+    ax.set_xlabel("shared per-atom probability p")
+    ax.set_ylabel("soft over-count  (soft_raw − exact marginal)")
+    ax.set_title("Exp 7 — soft acceptance over-counts on non-read-once guards")
+    outs.append(_save(fig, ax, out_dir / "exp7_divergence_vs_p.png"))
+
+    # (2) aggregate max over-count vs multiplicity. The parametric threshold
+    # family (majority3 = 2-of-3, atleast*) is the connected curve; the realistic
+    # Declare anchor alt_response is a *standalone* point (same multiplicity as
+    # majority3 but structurally different — its independence error nearly
+    # cancels over a trace, an honest structure-dependence, not on the trend).
+    agg = (
+        df.groupby(["formula", "multiplicity"])
+        .agg(max_gap_raw=("gap_raw", "max"),
+             max_abs_gap_norm=("gap_norm", lambda s: s.abs().max()))
+        .reset_index()
+    )
+    is_threshold = agg["formula"].str.startswith(("majority", "atleast"))
+    thr = agg[is_threshold].sort_values("multiplicity")
+    anchor = agg[~is_threshold]
+
+    fig, ax = _new_ax()
+    ax.plot(thr["multiplicity"], thr["max_gap_raw"], marker="o", ms=8, lw=2,
+            color="#D55E00", label="threshold family — raw score")
+    ax.plot(thr["multiplicity"], thr["max_abs_gap_norm"], marker="^", ms=7, lw=2,
+            ls="--", color="#009E73", label="threshold family — normalized")
+    for _, r in thr.iterrows():
+        ax.annotate(r["formula"], (r["multiplicity"], r["max_gap_raw"]),
+                    textcoords="offset points", xytext=(6, 4), fontsize=7)
+    for _, r in anchor.iterrows():
+        ax.plot(r["multiplicity"], r["max_gap_raw"], marker="*", ms=15,
+                color="#0072B2",
+                label=f"{r['formula']} (realistic Declare anchor)")
+        ax.annotate(r["formula"], (r["multiplicity"], r["max_gap_raw"]),
+                    textcoords="offset points", xytext=(6, -12), fontsize=7)
+    ax.axhline(0.0, color="gray", ls=":", lw=1)
+    ax.set_xlabel("max atom multiplicity in guard (non-read-once-ness)")
+    ax.set_ylabel("max |over-count| over p")
+    ax.set_title("Exp 7 — divergence grows with non-read-once-ness")
+    outs.append(_save(fig, ax, out_dir / "exp7_divergence_vs_size.png"))
+    return outs
+
+
+def _state_blowup_curves(q_values: list[int]) -> dict[str, list[float]]:
+    """Analytic sizes (GB) vs |Q| for the F(a & X^k b) family (|AP| = 2 ⇒ 2^|AP|=4).
+
+    Symbolic must store the DFA (|Q| states × 4-symbol transition table); DeepDFA
+    dense is |Q|²·2^|AP| floats; factored keeps |Q|² cube masks. All explode with
+    |Q| = 2^k — the shared state-blowup weakness (symbolic's linear-in-|Q| table
+    walls out later than DeepDFA's |Q|² tensor, an honest asymmetry).
+    """
+    alphabet = 4  # 2^|AP|, |AP| = 2
+    sym = [q * alphabet * FLOAT_BYTES / 1e9 for q in q_values]
+    dense = [q * q * alphabet * FLOAT_BYTES / 1e9 for q in q_values]
+    factored = [q * q * FLOAT_BYTES / 1e9 for q in q_values]
+    return {"symbolic": sym, "dense": dense, "factored": factored}
+
+
+def plot_exp7_stateblowup(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    """State-blowup neutrality: per-cell time vs |Q| (measured) + the analytic
+    size wall. Symbolic stays ~flat per cell but must store 2^k states; DeepDFA's
+    O(|Q|²) step rises — the blowup hits both, differently."""
+    csv_paths = csv_paths or RESULTS_DIR / "exp7_stateblowup.csv"
+    df = load_timing(csv_paths)
+    out_dir = out_dir or RESULTS_DIR
+    outs = []
+
+    # (1) measured per-cell time vs |Q|
+    fig, ax = _new_ax()
+    _draw_timing(ax, df, "n_leaves")
+    ax.set_xscale("log", base=2)
+    ax.set_xlabel("automaton states $|Q| = 2^k + 1$")
+    ax.set_ylabel("Avg time per cell (µs)")
+    ax.set_title("Exp 7 — per-cell cost vs state blowup")
+    outs.append(_save(fig, ax, out_dir / "exp7_stateblowup_time.png"))
+
+    # (2) analytic size wall — extrapolated past the compiled range (|Q| = 2^k+1
+    # is exact without MONA) so the 4 GB crossing is visible; the measured range
+    # is marked. DeepDFA-dense walls out at |Q| ~ 16k (k~14) purely from state
+    # count, even though the alphabet is tiny.
+    max_compiled_q = max(int(q) for q in df["n_leaves"].unique())
+    q_values = [2**k + 1 for k in range(2, 19)]
+    curves = _state_blowup_curves(q_values)
+    _, sym_c = MONITOR_STYLE["SymbolicDFAMonitor"]
+    _, dense_c = MONITOR_STYLE["DeepDFAMonitorDense"]
+    _, fact_c = MONITOR_STYLE["DeepDFAMonitorFactored"]
+    fig, ax = _new_ax()
+    ax.plot(q_values, curves["dense"], marker="o", ms=5, lw=2, color=dense_c,
+            label="DeepDFA (dense)  $|Q|^2\\,2^{|AP|}$")
+    ax.plot(q_values, curves["factored"], marker="^", ms=5, lw=2, color=fact_c,
+            label="DeepDFA (factored)  $|Q|^2$ masks")
+    ax.plot(q_values, curves["symbolic"], marker="s", ms=5, lw=2, color=sym_c,
+            label="Symbolic DFA transition table")
+    ax.axhline(4.0, color="gray", ls=":", label="4 GB VRAM")
+    ax.axvline(max_compiled_q, color="0.5", ls="--", alpha=0.6,
+               label=f"measured up to |Q|={max_compiled_q}")
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.set_xlabel("automaton states $|Q| = 2^k + 1$")
+    ax.set_ylabel("representation size (GB)")
+    ax.set_title("Exp 7 — state-blowup wall (shared by symbolic & DeepDFA)")
+    outs.append(_save(fig, ax, out_dir / "exp7_stateblowup_memory.png"))
+    return outs
+
+
+def _plot_exp7_all(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
+    """CLI entry: both exp7 panels, each skipped with a note if its CSV is absent."""
+    outs: list[Path] = []
+    for fn in (plot_exp7_divergence, plot_exp7_stateblowup):
+        try:
+            outs += fn(None, out_dir)
+        except FileNotFoundError as e:
+            print(f"[exp7] skipped: {e}")
+    return outs
+
+
+# ---------------------------------------------------------------------------
 # CLI: regenerate figures from the CSVs currently in results/
 # ---------------------------------------------------------------------------
 
@@ -739,7 +973,9 @@ _PLOTTERS = {
     "exp3": plot_exp3,
     "exp5": plot_exp5,
     "exp6": plot_exp6,
+    "exp7": _plot_exp7_all,
     "uncertainty": _plot_uncertainty_all,
+    "correctness": plot_correctness_cost,
 }
 
 

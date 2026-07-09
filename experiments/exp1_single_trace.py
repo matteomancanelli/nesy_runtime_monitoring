@@ -30,6 +30,10 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,
 )
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -40,10 +44,15 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # G(a -> F b) has 2 atoms, so DeepDFA's dense 2^|AP| alphabet is tiny (4).
 # DeepDFAMonitor is the dense default; DeepDFAMonitorFactored and the structured
 # RuleRunner are added as within-paradigm reference lines (see docs/EXPERIMENT_MAP.md).
+# G(a->F b) is nested-temporal, so the ORIGINAL RuleRunner's verdicts are wrong
+# here (timing stays fair — no trap/sink, so early termination never fires); the
+# Progression RR pair is the corrected paradigm 2 and is verdict-exact.
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
     StructuredRuleRunnerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     DeepDFAMonitor,
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,   # parallel prefix-scan — long trace is its best case

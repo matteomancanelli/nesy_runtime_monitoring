@@ -34,6 +34,10 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorDense,
     DeepDFAMonitorFactored,
 )
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -66,14 +70,29 @@ DENSE_MAX_LEAVES = 16
 
 # RuleRunnerMonitor (CILP) + StructuredRuleRunnerMonitor (Fig. 5 variant) give
 # the intra-RuleRunner comparison from IJCNN 2014 alongside the symbolic and
-# DeepDFA baselines (see docs/EXPERIMENT_MAP.md).
+# DeepDFA baselines (see docs/EXPERIMENT_MAP.md). The Progression RR pair is the
+# corrected paradigm 2 — verdict-exact on this (flat) family too, so the ratio
+# vs the original RR is a fair cost-of-correctness number. NOTE: progression's
+# eager construction enumerates 2^|AP| observations per residual, so it shares
+# DeepDFA-dense's alphabet wall and is capped at DENSE_MAX_LEAVES for the same
+# reason (symbolic / original RR / factored have no such wall and scale to n=32).
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
     StructuredRuleRunnerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     DeepDFAMonitorFactored,
     DeepDFAMonitorDense,
 ]
+
+# Monitors that materialize / enumerate the 2^|AP| alphabet and so must be
+# skipped past the dense feasibility cap (the alphabet-blowup finding).
+_ALPHABET_WALL = (
+    DeepDFAMonitorDense,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
 
 TRACE_LENGTH = 5_000
 N_TRACES     = 100
@@ -107,12 +126,12 @@ total = len(MONITORS) * len(IJCNN_SUITE)
 with tqdm(total=total, desc="exp2") as pbar:
     for monitor_cls in MONITORS:
         for formula in IJCNN_SUITE:
-            # Dense materializes 2^|AP| symbols — infeasible past the cap.
-            dense_oom = (
-                monitor_cls is DeepDFAMonitorDense
+            # Dense/progression enumerate 2^|AP| symbols — infeasible past the cap.
+            alphabet_oom = (
+                monitor_cls in _ALPHABET_WALL
                 and formula.n_leaves > DENSE_MAX_LEAVES
             )
-            if dense_oom:
+            if alphabet_oom:
                 pbar.set_postfix(
                     monitor=monitor_cls.__name__, n=formula.n_leaves, skip="OOM"
                 )

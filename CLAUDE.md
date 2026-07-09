@@ -104,7 +104,11 @@ Pursue opportunistically; these are the "unexpected directions."
 
 - **3.1 — Probabilistic three-valued LTLf monitoring (theory).** Formalize what it *means* to monitor a probabilistic trace: marginal acceptance probability (DeepDFA soft state) vs most-likely-path verdict (Viterbi) vs distribution over verdicts. Each paradigm naturally computes a different quantity; pinning down which is "correct" for safety monitoring is a paradigm-neutral theoretical contribution and a candidate true novelty.
 - **3.2 — A fourth / hybrid paradigm.** The empty matrix cell: exact+fast at runtime *and* differentiable for adaptation. Candidates: differentiable read-once guard circuits over the minimal DFA (sidesteps both the 2^|AP| blowup and the speed penalty — may be latent in the factored path), or straight-through symbolic (crisp at inference, relaxed only during adaptation).
-- **3.3 — Richer benchmark family.** The IJCNN `◇` family is a poor instrument (early-terminates; read-once guards make the soft path *exact*, hiding real divergence). Add Declare/BPM patterns, non-read-once-guard formulas (where soft paradigms provably diverge — a finding), and a state-blowup family (exposes symbolic's *and* DeepDFA's shared weakness — good for neutrality).
+- **3.3 — Richer benchmark family. ✅ done (Exp 7; GPU re-run for final numbers pending).** The IJCNN `◇` family is a poor instrument (early-terminates; read-once guards make the soft path *exact*, hiding real divergence). Three families added to [formulas.py](src/benchmarks/formulas.py), each verified against MONA's actual output by [characterize.py](src/benchmarks/characterize.py) (`guard_read_once` counts atom occurrences per guard; `exact_marginal`/`exact_marginal_trace` brute-force the true probabilistic acceptance) — [tests/test_richer_formulas.py](tests/test_richer_formulas.py) (40 tests):
+  - **`DECLARE_SUITE`** — 7 Declare/BPM templates with diverse trap/sink structure (legitimacy). `alt_response` `G(a→X(¬a U b))` is a *real* constraint MONA keeps **non-read-once** (the realistic anchor).
+  - **`NON_READ_ONCE_SUITE`** — `at_least_k_of_n(k,n)` threshold family (atom multiplicity 2→3→4→6) + `alt_response`. `majority3` is the *shared object* from `CALIBRATION_SUITE` (no drift).
+  - **`STATE_BLOWUP_SUITE`** — `kth_from_last(k)` = `F(a & Xᵏb)`, **genuinely exponential** |Q|=2ᵏ+1 with |AP|=2. Distinct from `STATE_SCALING_SUITE` (`bounded_response`, only *linear* in k).
+  - **Two findings (Exp 7, [exp7_richer_family.py](experiments/exp7_richer_family.py), [docs/richer_benchmark_findings.md](docs/richer_benchmark_findings.md)):** (1) the soft over-count `soft_raw − exact_marginal` is **monotone in atom multiplicity** (majority3 +0.09 → atleast3of5 +0.245; zero on read-once refs), and normalization restores [0,1] but not calibration — the empirical grounding for the Phase 3.1 theory question; `alt_response` barely diverges (non-read-once is necessary-not-sufficient — honest structure-dependence). (2) state blowup is a **shared** weakness: symbolic per-cell stays flat (~0.3µs) while DeepDFA rises O(|Q|²) to ~40µs at |Q|=1025, and the analytic memory wall shows DeepDFA `|Q|²` crossing 4GB at k≈14 while symbolic's linear table walls out later. Completes the honest three-heel table.
 - **3.4 — (Paper B seed) End-to-end backprop through the monitor into a perceptor.** A toy where a spec-violation loss trains a perception network — the real NeSy dream.
 
 ### Phase 4 — Writing 🟡 (trails experiments; LaTeX in `latex/`)
@@ -135,13 +139,22 @@ nesy_runtime_monitoring/
 │   │   │   ├── rules.py       ✅ Per-operator templates + RuleSystem builder
 │   │   │   ├── engine.py      ✅ Symbolic executor (Algorithm 2 of IJCNN 2014)
 │   │   │   ├── cilp.py        ✅ CILP encoding to torch network
-│   │   │   └── monitor.py     ✅ Monitor-interface wrapper (RuleRunnerMonitor)
+│   │   │   ├── monitor.py     ✅ Monitor-interface wrapper (RuleRunnerMonitor)
+│   │   │   └── structured.py  ✅ Per-node CILP (StructuredRuleRunnerMonitor, IJCNN 2015 Fig. 5)
+│   │   ├── progression/       ✅ Paradigm 2 CORRECTED — progression-based RuleRunner (see § Progression below)
+│   │   │   ├── formula.py     ✅ Internal AST + sympy Boolean simplify (residuals w/ TRUE/FALSE)
+│   │   │   ├── progression.py ✅ prog / last / holds_empty (Bacchus–Kabanza progression)
+│   │   │   ├── engine.py      ✅ Lazy pure-Python reference oracle (ProgressionEngine)
+│   │   │   ├── eager.py       ✅ Eager residual-DFA (ProgressionDFA, cost-of-correctness metrics, table oracle)
+│   │   │   ├── flat.py        ✅ Flat CILP net (ProgressionRuleRunnerMonitor) — THE experiment monitor
+│   │   │   └── structured.py  ✅ Per-closure-node CILP (ProgressionRuleRunnerStructuredMonitor)
 │   │   └── deep_dfa.py        ✅ Paradigm 3 — differentiable transition tensor (dense + factored)
 │   ├── adaptation/
 │   │   └── poc.py             🔲 Proof-of-concept gradient adaptation (Phase 2)
 │   └── benchmarks/
 │       ├── __init__.py
-│       ├── formulas.py        ✅ Benchmark formula registry (IJCNN suite + trace-length suite)
+│       ├── formulas.py        ✅ Benchmark formula registry (IJCNN + trace-length + calibration + state-scaling + Declare/non-read-once/state-blowup suites, Phase 3.3)
+│       ├── characterize.py    ✅ guard_read_once + exact_marginal(_trace) — verify family properties vs MONA (Phase 3.3)
 │       ├── noise.py           ✅ Corruption models (BitFlip/Beta) + oracle for Capability Exp A (Phase 1.1)
 │       ├── calibration.py     ✅ Accuracy + calibration metrics (ECE/reliability/Brier/AUC) for Capability Exp A (Phase 1.3)
 │       └── runner.py          ✅ Timing harness (time_monitor, random_traces, results_to_df)
@@ -152,6 +165,7 @@ nesy_runtime_monitoring/
 │   ├── exp5_depth_microbench.py ✅ Within-step depth micro-benchmark (nested-X, Phase 0.5)
 │   ├── exp6_state_scaling.py  ✅ State-space scaling (|Q|) — larger-automata direction (Phase 0.6)
 │   ├── exp_uncertainty.py     ✅ Capability Exp A — accuracy/calibration vs noise (Phase 1.4)
+│   ├── exp7_richer_family.py  ✅ Richer family — soft-divergence curve + state-blowup neutrality (Phase 3.3)
 │   ├── plots.py               ✅ All plotting, decoupled from the runs (CSV→PNG; log-y timing panels; CPU-vs-GPU overlays + per-monitor device-comparison figure)
 │   └── exp4_adaptation.py     🔲 PoC adaptation (Phase 2)
 ├── tests/
@@ -162,11 +176,16 @@ nesy_runtime_monitoring/
 │   ├── test_rulerunner_engine.py           ✅ Engine + equivalence sweep (37 tests, 3 xfail)
 │   ├── test_rulerunner_cilp.py             ✅ CILP + equivalence vs engine + vs DFA (45 tests, 3 xfail)
 │   ├── test_rulerunner_monitor.py          ✅ Monitor-ABC plumbing (6 tests)
+│   ├── test_progression.py                 ✅ Lazy engine vs SymbolicDFA — full sweep incl. nested-temporal, no xfails
+│   ├── test_progression_eager.py           ✅ Eager residual-DFA + metrics + alphabet cap
+│   ├── test_progression_flat.py            ✅ Flat CILP == eager/lazy/DFA + batch==sequential
+│   ├── test_progression_structured.py      ✅ Structured per-node == flat/eager/lazy/DFA + batch (59 tests)
 │   ├── test_deep_dfa.py                    ✅ DeepDFA dense+factored, batch, soft matrix (115 tests)
 │   ├── test_deep_dfa_scan.py               ✅ Parallel prefix-scan == sequential == symbolic (Phase 0.6)
 │   ├── test_noise.py                       ✅ Corruption models + oracle (Phase 1.1, 21 tests)
 │   ├── test_soft_readout.py                ✅ DeepDFA soft acceptance-prob readout + threshold baseline (Phase 1.2, 10 tests)
-│   └── test_calibration.py                 ✅ Accuracy/calibration metrics + non-read-once soft-path check (Phase 1.3, 21 tests)
+│   ├── test_calibration.py                 ✅ Accuracy/calibration metrics + non-read-once soft-path check (Phase 1.3, 21 tests)
+│   └── test_richer_formulas.py             ✅ Richer families + guard_read_once/exact_marginal, verified vs MONA (Phase 3.3, 40 tests)
 ├── results/                   ✅ CSV + PNG outputs from exp1/2/3 (symbolic DFA only so far)
 └── papers/                    Reference papers and planning notes
 ```
@@ -355,6 +374,10 @@ This makes Exp 3 a *fair* comparison: vectorised RuleRunner vs vectorised DeepDF
 ### Remaining work
 
 All five steps of paradigm 2 are done. The CILP→torch translation in step 3 also positions us for **Paper B's adaptation experiment** (deferred): the same network can be reused with `tanh` activation instead of `sign` to make it differentiable, and a learning loss on misclassified traces can adapt the weights.
+
+### Paradigm 2, CORRECTED — the progression-based RuleRunner (`src/monitors/progression/`)
+
+The nested-temporal limitation above is a ceiling of the *one-literal-per-subformula* encoding, **not** of RuleRunner's rule-based idea. The **progression-based reformulation** (latex/3_rulerunner.tex §3.3, [docs/rulerunner_progression_analysis.md](docs/rulerunner_progression_analysis.md)) carries the *residual formula* (a multi-hot set of active roots) obtained by formula progression, freshly re-derived each cell, so concurrent instances never share a slot. It is **sound and complete on all LTLf** — matches `SymbolicDFAMonitor` on the full sweep including `F(a&Xb)`, `G(a→Fb)`, `G(a→Xb)`, **no xfails**. Implemented as a lazy oracle (`ProgressionEngine`), an eager residual-DFA + table oracle (`build_progression_dfa`/`ProgressionRuleRunnerEagerMonitor`, carrying the cost-of-correctness metrics `n_states`/`n_roots`/`n_closure`), and two neural monitors mirroring the original pair: **`ProgressionRuleRunnerMonitor`** (flat CILP, multi-hot roots, batched CPU/CUDA — the experiment monitor) and **`ProgressionRuleRunnerStructuredMonitor`** (one CILP subnet per closure node `C_φ` — the local-learning substrate for Paper B). Both are wired into every timing experiment (exp1/2/3/5/6). **Cost of correctness** is quantified by `plots.correctness_cost_table`/`plot_correctness_cost` (corrected/original per-cell ratio). **The price:** the residual closure can grow to DFA size, and the eager construction enumerates the `2^|AP|` alphabet — progression's *own* wall (dual to this representational limit; capped like DeepDFA-dense at `DENSE_MAX_LEAVES` in exp2). The original RuleRunner is kept alongside in the experiments for the before/after throughput comparison. The old encoding's 3 `xfail(strict=True)` markers stay (they test the OLD encoding); the progression monitors pass all three.
 
 ## Paradigm 3 (DeepDFA) — implementation notes
 

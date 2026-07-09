@@ -251,11 +251,28 @@ compile-time-static rule set / network that *defines* RuleRunner in all three
 papers. So within the approach as published, the limitation is a genuine
 architectural ceiling, not an implementation bug.
 
+**Implemented fix — the progression RuleRunner ([src/monitors/progression/](../src/monitors/progression/)).**
+The instance-scoping problem is exactly what **formula progression** solves: the
+carried state is the *residual formula* (a set of active roots), which is
+freshly re-derived each cell, so concurrent instances never share a slot. It is
+**sound and complete on all LTLf** — the three formulas below match SymbolicDFA
+with **no xfails** — realized as `ProgressionRuleRunnerMonitor` (flat CILP,
+multi-hot roots) and `ProgressionRuleRunnerStructuredMonitor` (per-closure-node,
+the local-learning substrate), both wired into every timing experiment. The
+architectural price is that the residual closure can grow to the DFA size and
+the eager construction enumerates the `2^|AP|` alphabet (progression's own wall,
+dual to this representational limit) — see
+[rulerunner_progression_analysis.md](rulerunner_progression_analysis.md) and the
+Progression subsection of [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md). So the paper
+tells a *before/after* story: the original encoding hits this ceiling; the
+progression reformulation clears it, at a quantified throughput/alphabet cost.
+
 ## 10. Status in this project
 
-- **Accepted and documented**, not worked around. Three formulas are pinned as
-  `xfail(strict=True)` in the equivalence sweeps
-  (`F(a∧X b)`, `G(a→F b)`, `G(a→X b)`).
+- **The ORIGINAL encoding's limitation is accepted and documented**, not worked
+  around; the **progression reformulation fixes it** (above). Three formulas are
+  pinned as `xfail(strict=True)` in the *original* RuleRunner equivalence sweeps
+  (`F(a∧X b)`, `G(a→F b)`, `G(a→X b)`); the progression monitors pass all three.
 - **Does not affect the experiments:** Exps 2/3 use the flat IJCNN family
   (correct); Exp 1 uses `G(a→F b)`, chosen because it has no trap/sink so *early
   termination never fires* and the per-cell **timing** is well-defined

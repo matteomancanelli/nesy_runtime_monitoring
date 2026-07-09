@@ -55,6 +55,10 @@ from src.benchmarks.runner import (
     time_monitor,
 )
 from src.monitors.deep_dfa import DeepDFAMonitor, DeepDFAMonitorFactored
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
 from src.monitors.rulerunner import RuleRunnerMonitor, StructuredRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
@@ -65,11 +69,16 @@ from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 # Depth is the within-step axis: RuleRunner (CILP) runs depth+1 convergence
 # passes per cell; the structured RuleRunner is the second within-step data
 # point; DeepDFA (dense + factored) and Symbolic stay flat (one matmul / one
-# lookup regardless of depth). See docs/EXPERIMENT_MAP.md.
+# lookup regardless of depth). See docs/EXPERIMENT_MAP.md. The Progression RR
+# pair contrasts the two encodings' depth behaviour: progression-flat absorbs
+# depth into the residual state count -> flat per cell (like DeepDFA), while
+# progression-structured sweeps the residual closure, which grows with depth.
 MONITORS = [
     SymbolicDFAMonitor,
     RuleRunnerMonitor,
     StructuredRuleRunnerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     DeepDFAMonitor,
     DeepDFAMonitorFactored,
 ]
