@@ -170,11 +170,11 @@ Now, we can prove that the repaired construction of RuleRunner is sound and comp
 
 \begin{theorem}
 \label{thm:rulerunner-progression-correct}
-Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite non-empty trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
+Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite  trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
 \end{theorem}
 
 \begin{proof}
-Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite non-empty trace. For $0\leq t<T$, let $\Sigma_t$ be the active root set before reading cell $\sigma_t$, that is, after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed. Let
+Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite  trace. For $0\leq t<T$, let $\Sigma_t$ be the active root set before reading cell $\sigma_t$, that is, after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed. Let
 \[
     \rho_t = \bigwedge_{\chi\in\Sigma_t}\chi
 \]
@@ -184,14 +184,14 @@ be the residual it denotes. By construction,
 \]
 and therefore $\rho_0$ is equivalent to $\varphi$.
 
-We first use the defining property of progression. For every formula $\chi$, every non-final cell $s$, and every non-empty finite continuation $\boldsymbol{\tau}$,
+We first use the defining property of progression. For every formula $\chi$, every non-final cell $s$, and every  finite continuation $\boldsymbol{\tau}$,
 \begin{equation}
 \label{eq:progression-step}
     s\cdot\boldsymbol{\tau}\models\chi
     \quad\Longleftrightarrow\quad
     \boldsymbol{\tau}\models\mathsf{prog}(\chi,s).
 \end{equation}
-This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, since $\boldsymbol{\tau}$ is non-empty, $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}\models\chi$, which is exactly the clause $\mathsf{prog}(X\chi,s)=\chi$. The weak-next case is identical on non-final cells. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
+This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, since $\boldsymbol{\tau}$ is , $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}\models\chi$, which is exactly the clause $\mathsf{prog}(X\chi,s)=\chi$. The weak-next case is identical on non-final cells. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
 \[
     \boldsymbol{\tau}\models
     \mathsf{prog}(\chi_2,s)\lor
@@ -206,7 +206,7 @@ We now prove the residual invariant:
     \quad\Longleftrightarrow\quad
     \boldsymbol{\tau}\models\rho_t
 \end{equation}
-for every $0\leq t<T$ and every non-empty finite continuation $\boldsymbol{\tau}$.
+for every $0\leq t<T$ and every  finite continuation $\boldsymbol{\tau}$.
 
 For $t=0$, the claim holds because $\rho_0$ is equivalent to $\varphi$. Assume it holds for some $t<T-1$. By the reactivation rule,
 \[
@@ -222,7 +222,7 @@ Since $\rho_t=\bigwedge_{\chi\in\Sigma_t}\chi$ and progression distributes over 
     \equiv
     \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr).
 \]
-Therefore, for every non-empty continuation $\boldsymbol{\tau}$,
+Therefore, for every  continuation $\boldsymbol{\tau}$,
 \[
 \begin{array}{rcl}
 \sigma_0\cdots\sigma_t\cdot\boldsymbol{\tau}\models\varphi

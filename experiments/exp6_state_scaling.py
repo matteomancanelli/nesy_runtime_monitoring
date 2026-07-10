@@ -84,10 +84,33 @@ MONITORS = [
     DeepDFAMonitorFactored,
 ]
 
+# Progression's own wall (the dual of DeepDFA-dense's 2^|AP| wall in exp2, and
+# the "price" CLAUDE.md flags for the corrected paradigm 2). On this family the
+# *residual* closure is wildly non-canonical: `simplify` does not collapse
+# progression-equivalent residuals, so the residual DFA explodes even though the
+# minimal DFA grows linearly. Measured (deadline k -> residual n_states vs
+# minimal |Q|):  k=8 -> 38 vs 10 | k=10 -> 711 vs 12 | k=12 -> 3776 vs 14 |
+# k=14 -> 16064 vs 16.  Build time follows: 2 s, 10 s, 33 s, 191 s — roughly 5x
+# per +2 in k, so k=16 is ~20 min and k=18 ~90 min, PER progression monitor. The
+# cost is one sympy `simplify_logic`/POSform per residual (58 s of the 93 s at
+# k=12), all inside `compile`, before a single cell is timed.
+#
+# Capping at |Q| <= 14 (k <= 12) keeps six points per progression curve and the
+# whole experiment near ~20 min. Past the cap the two progression monitors are
+# skipped, exactly as DeepDFAMonitorDense is skipped past DENSE_MAX_LEAVES in
+# exp2 — the wall is a *finding* to report, not a bug to hide. The symbolic /
+# original-RR / DeepDFA curves still span the full |Q| = 4..20 sweep.
+PROGRESSION_MAX_Q = 14
+
+_CLOSURE_WALL = (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
+
 TRACE_LENGTH = 500
 BATCH_SIZE   = 256          # fixed batch; |Q| is the swept axis
 N_REPEATS    = 5
-N_WARMUP     = 3
+N_WARMUP     = 1
 SEED         = 42
 EARLY_TERMINATION = False   # per-cell cost (Phase 0.1)
 
@@ -123,6 +146,18 @@ total = len(MONITORS) * len(FORMULAS)
 with tqdm(total=total, desc="exp6") as pbar:
     for monitor_cls in MONITORS:
         for formula in FORMULAS:
+            # Progression's own wall — see PROGRESSION_MAX_Q above.
+            closure_wall = (
+                monitor_cls in _CLOSURE_WALL
+                and formula.n_leaves > PROGRESSION_MAX_Q
+            )
+            if closure_wall:
+                pbar.set_postfix(
+                    monitor=monitor_cls.__name__, q=formula.n_leaves,
+                    skip="closure",
+                )
+                pbar.update()
+                continue
             key = result_key(
                 monitor_cls.__name__, formula.name, TRACE_LENGTH, BATCH_SIZE
             )
@@ -133,7 +168,9 @@ with tqdm(total=total, desc="exp6") as pbar:
                 continue
             # label BEFORE the call: one time_monitor can run for minutes and the
             # bar only advances after it returns.
-            pbar.set_postfix(monitor=monitor_cls.__name__, q=formula.n_leaves, run="...")
+            pbar.set_postfix(
+                monitor=monitor_cls.__name__, q=formula.n_leaves, run="..."
+            )
             r = time_monitor(
                 monitor_cls, formula,
                 trace_length=TRACE_LENGTH,

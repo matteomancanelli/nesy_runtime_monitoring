@@ -36,6 +36,7 @@ i.e. the price the corrected monitor pays for handling nested temporal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
@@ -98,9 +99,18 @@ def _postorder(f: Formula, seen: dict[str, Formula], out: list[Formula]) -> None
     out.append(f)
 
 
+@lru_cache(maxsize=None)
 def build_progression_dfa(
     formula: str, max_guard_atoms: int = MAX_GUARD_ATOMS
 ) -> ProgressionDFA:
+    """Eagerly construct the residual DFA by BFS over formula progression.
+
+    Cached: the flat and structured progression monitors each build this from
+    the same formula string, and on deep formulas the BFS is the dominant cost
+    of the whole experiment (the per-residual `simplify` is a sympy POSform
+    call). `ProgressionDFA` is frozen and holds only immutable tuples, so a
+    shared instance is safe.
+    """
     phi = simplify(from_node(parse(formula)))
     atoms = tuple(sorted(atoms_of(phi)))
 
