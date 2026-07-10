@@ -8,8 +8,8 @@ A RuleRunner system is a tuple $\langle S,R_E,R_R \rangle$, where $S$ is the sta
 
 \begin{itemize}
     \item The sate $S$ contains observations, active rules, and truth evaluations. $R[\phi]$ denotes an active rule, while $[\phi]V$  denotes a 3-values truth evaluation, with $V \in \{T, F, ?\}$.
-    \item Evaluation rules are used to compute the truth value of a formula $\phi$ under verification, given the truth values of its direct subformulae $\psi_i$. They have the form $R[\phi],[\psi_1]V,...,[\psi_n]V \rightarrow [\phi]V$. For instance, $R[a \lor b], [a]T \rightarrow [a \lor b]T$, because the disjuction is evaluated to \emph{true} if one of the two disjuncts is true.
-    \item Reactivation rules are used when a formula $\phi$ is evaluated to undecided, i.e. $[\phi]?$, in which case that formula and its subformulae are scheduled to be monitored again at the next time point of the trace. They have the form $[\phi]? \rightarrow R[\phi],R[\psi_1],...,R[\psi_n]$. For instance, $[\Diamond b]? \rightarrow R[b],R[\Diamond b]$, because if $\Diamond b$ is undecided, we need to re-evaluate $b$ and $\Diamond b$ at the next step.
+    \item Evaluation rules are used to compute the truth value of a formula $\phi$ under verification, given the truth values of its direct subformulas $\psi_i$. They have the form $R[\phi],[\psi_1]V,...,[\psi_n]V \rightarrow [\phi]V$. For instance, $R[a \lor b], [a]T \rightarrow [a \lor b]T$, because the disjuction is evaluated to \emph{true} if one of the two disjuncts is true.
+    \item Reactivation rules are used when a formula $\phi$ is evaluated to undecided, i.e. $[\phi]?$, in which case that formula and its subformulas are scheduled to be monitored again at the next time point of the trace. They have the form $[\phi]? \rightarrow R[\phi],R[\psi_1],...,R[\psi_n]$. For instance, $[\Diamond b]? \rightarrow R[b],R[\Diamond b]$, because if $\Diamond b$ is undecided, we need to re-evaluate $b$ and $\Diamond b$ at the next step.
 \end{itemize}
 
 %\noindent
@@ -20,11 +20,11 @@ Both active rules and truth evaluations can be enriched by a \emph{qualifier}, s
 
 %$\mathsf{B}$ (both operands), and $\mathsf{L}$/$\mathsf{R}$ (only the left/right operand, after the other has been settled to its pinning value); the next operator switches to a monitoring mode $\mathsf{M}$ that mirrors its operand one time point later.
 
-Verification of a trace against a formula proceeds iteratively. At the beginning of each iteration (corresponding to the monitoring of a time point), the state $S$ contains a set of rule names corresponding to the subformulae to be checked at that time point. First, the procedure includes observations of the current time point in the state $S$ and fires the evaluation rules repeatedly incrementing the state itself until it reaches a fixpoint. In practice, this means computing the truth values of all subformulae of $\phi$ in a bottom-up way, from simple atoms to $\phi$ itself (see Figure ...). If the root evaluates to true (resp. false), the monitor halts with verdict \textsc{satisfy} (resp.\ \textsc{violate}). Otherwise, the reactivation rules are fired, and the result constitute the state of the next iteration. Note that in this case the state is not expanded, but replaced by the result of reactivation rules. This is used to flush all the previous truth evaluation, which are to be computed from scratch at the new time point. The procedure terminates with a decided verdict because of special END-triggered evaluation rules, that returns either true or false if we consumed the whole trace.
+Verification of a trace against a formula proceeds iteratively. At the beginning of each iteration (corresponding to the monitoring of a time point), the state $S$ contains a set of rule names corresponding to the subformulas to be checked at that time point. First, the procedure includes observations of the current time point in the state $S$ and fires the evaluation rules repeatedly incrementing the state itself until it reaches a fixpoint. In practice, this means computing the truth values of all subformulas $sub(\phi)$ of $\phi$ in a bottom-up way, from simple atoms to $\phi$ itself (see Figure ...). If the root evaluates to true (resp. false), the monitor halts with verdict \textsc{satisfy} (resp.\ \textsc{violate}). Otherwise, the reactivation rules are fired, and the result constitute the state of the next iteration. Note that in this case the state is not expanded, but replaced by the result of reactivation rules. This is used to flush all the previous truth evaluation, which are to be computed from scratch at the new time point. The procedure terminates with a decided verdict because of special END-triggered evaluation rules, that returns either true or false if we consumed the whole trace.
 A RuleRunner system can be translated in a logic program, which in turn can be encoded in a Recurrent Neural Network with a single hidden layer, s.t. each evaluation and reactivation rule is a mapping from the input layer to the output one. For a detailed description of RuleRunner and verification algorithm see \cite{perotti2014neural,perotti2015runtime}.
 
-The rule system underlies two behaviorally-equivalent neural encodings, both of which we evaluate in Section~\ref{sec:experiments}. In the \emph{flat} encoding \cite{perotti2014neural}, the whole rule set is compiled into a single recurrent network following the standard CILP translation \cite{}: one hidden unit per rule, weights realizing each Horn clause, and the fixpoint of the evaluation phase recovered by iterating the forward pass until the fixpoint is met.
-%Because it is a single pair of weight matrices, the flat encoding vectorizes naturally over traces, i.e. the per-step evaluation and reactivation steps become matrix--matrix products over a whole batch.
+The rule system underlies two behaviorally-equivalent neural encodings, both of which we evaluate in Section~\ref{sec:experiments}. In the \emph{flat} encoding \cite{perotti2014neural}, the whole rule set is compiled into a single recurrent network following the standard CILP translation \cite{}: one hidden unit per rule, weights realizing each Horn clause, and the fixpoint of the evaluation phase recovered by iterating the forward pass until the fixpoint is met. 
+%Because it is a single pair of weight matrices, the flat encoding vectorizes naturally over traces, i.e. the per-step evaluation and reactivation steps become matrix--matrix products over a whole batch. 
 In the \emph{structured} encoding \cite{perotti2015neural}, the same rules are instead laid out as one CILP subnetwork per parse-tree node, wired according to the syntax of $\varphi$. This modular form is the substrate for \emph{local learning}: because parameters are attached to syntactically-local subnetworks, adaptation can be confined to the subtree responsible for a misclassification rather than diffused across a monolithic network.
 
 
@@ -84,157 +84,199 @@ $t$ & $\sigma_t$ & evaluation & reactivation\\
 The divergence stems from RuleRunner's single shared state, which keeps exactly one truth register per syntactic subformula.
 The decisive step is the $F$ reactivation. At every time point, an $F$ that remains undecided reinstalls a fresh $R[Xb]$ that will defer again, while the previous time point's deferral is still resolving via $R[Xb]M$. As mentioned previously, the state is a single flat set of truth evaluations and rule names with no position index. A reinstalling operator can place, into that one set, a freshly-deferred instance of a subformula while a prior instance of the same subformula is still resolving. The two instances are indistinguishable, and the next evaluation pass conflates them, possibly holding contradictory values for one subformula at once. In other words, the reactivation phase does not preserve the single-instance-per-subformula invariant across the whole formula.
 
-This is a structural consequence of the one-literal-per-subformula encoding, and does not depend on the encoding of RuleRunner or on the implementation artifacts.
+This is a structural consequence of the one-literal-per-subformula encoding, and does not depend on the encoding of RuleRunner or on the implementation artifacts. 
 %The automata-based paradigms (Section~\ref{sec:symbolic} and Section~\ref{sec:deepdfa}) do not suffer from it, since a single canonical state machine never conflates concurrent obligations.
 The conflation cannot be repaired at the output layer. Consider $\varphi_b$ again, the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ (ground truth \textsc{violate}) and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$ (ground truth \textsc{satisfy}) for $\varphi_b$. After the second time point both present the \emph{identical} conflicted register $[Xb] = \{F, ?\}$, yet the correct resolutions are opposite: $\boldsymbol{\sigma}_A$ needs the $F$ to win, $\boldsymbol{\sigma}_B$ needs the $?$ to win. Any monitor whose decision is a function of the shared register alone must answer identically on both, so no priority order over the register can be correct on both traces.
 
 
-\subsection{A Progression-Based Reformulation of RuleRunner}
+\subsection{Progression-Based Reactivation}
 \label{sec:rulerunner-progression}
 
-The counterexample of Section~\ref{sec:rulerunner-limitation} should not be read as a failure of the RuleRunner idea as a whole. It isolates a more precise problem: the original construction carries information across time using registers addressed only by the syntactic subformulae of the input formula. The local evaluation rules are not the source of the error --- given the truth values of the direct subformulae at one time point, the extended truth tables compute the intended three-valued result. What fails is the cross-step reactivation phase: when the same subformula is reinstalled from different temporal contexts, its distinct residual meanings are written into the same register.
+The counterexample of Section~\ref{sec:rulerunner-limitation} should not be read as a failure of the RuleRunner idea as a whole. It isolates a more precise problem: the original construction carries information across time using registers addressed only by the syntactic subformulas of the input formula. The local evaluation rules are not the source of the error. Given the values of the direct subformulas at one time point, the extended truth tables compute the intended three-valued result. What fails is the reactivation phase: when the same subformula is reinstalled from different temporal contexts, the distinct residual meanings of that subformula are written into the same register.
 
-The repair we propose keeps the two ingredients that make RuleRunner distinctive: the two-phase evaluation/reactivation cycle, and the possibility of translating the resulting rule system into a recurrent CILP-style network. It leaves the evaluation rules $R_E$ untouched and replaces the reactivation rules $R_R$ with a carry addressed by \emph{residual meaning}, not by subformula name. Concretely, instead of carrying truth registers for subformulae of the original input formula, the repaired monitor carries residual formulae obtained by \emph{formula progression} \cite{bacchus2000using}. The monitor still uses formula-indexed registers, but the relevant formulae are now drawn from the residual closure of $\varphi$, not only from its original parse tree. We call the result a sound and complete monitor: it issues \textsc{satisfy} (resp.\ \textsc{violate}) at a prefix only when every finite continuation satisfies (resp.\ violates) $\varphi$, and at end-of-trace \textsc{satisfy} iff $\boldsymbol\sigma \models \varphi$.
+The repair we consider keeps the two ingredients that make RuleRunner distinctive: a rule-based evaluation/reactivation cycle, and the possibility of translating the resulting rule system into a recurrent CILP-style network. The change is in what is carried across time. Instead of carrying only truth registers for subformulas of the original input formula, the repaired monitor carries residual formulas obtained by progression \cite{emerson90,bacchus&kabanza98}. The monitor still uses formula registers, and these registers are still associated with syntactic formulas; however, the relevant formulas are now taken from the residual closure of the input formula, not only from its original parse tree.
 
-\paragraph{Progression as the reactivation mechanism.}
-Formula progression gives a principled account of ``what remains to be checked after reading one observation''. Given a formula $\chi$ and a cell $s \in 2^\Sigma$, let $\mathsf{prog}(\chi, s)$ denote the formula that must hold on the remaining suffix once $s$ has been consumed. For \emph{non-final} cells it is characterized by
+\paragraph{RuleRunner, fixed.}
+Formula progression gives a principled account of what remains to be checked after reading one observation. Given $\varphi$ and $s\in 2^\calP$, let $\mathsf{prog}(\varphi,s)$ denote the formula that has to hold on the remaining suffix after $s$ has been consumed, such that for every finite continuation $\boldsymbol{\sigma}$, the following holds: 
 \[
-    s \cdot \boldsymbol{\tau} \models \chi
-    \quad\Longleftrightarrow\quad
-    \boldsymbol{\tau} \models \mathsf{prog}(\chi, s),
+s\cdot\boldsymbol{\sigma}\models\varphi
+\quad\Longleftrightarrow\quad
+\boldsymbol{\sigma}\models\mathsf{prog}(\varphi,s),
 \]
-for every non-empty finite continuation $\boldsymbol{\tau}$. The operator is defined recursively and followed by Boolean simplification:
+\noindent
+Formally, formula progression is defined recursively as follows:
 \[
 \begin{array}{rcl}
-\mathsf{prog}(a, s) &=& \top \text{ if } a \in s, \text{ and } \bot \text{ otherwise},\\[1mm]
-\mathsf{prog}(\lnot\chi, s) &=& \lnot\,\mathsf{prog}(\chi, s),\\[1mm]
-\mathsf{prog}(\chi_1 \land \chi_2, s) &=& \mathsf{prog}(\chi_1, s) \land \mathsf{prog}(\chi_2, s),\\[1mm]
-\mathsf{prog}(\chi_1 \lor \chi_2, s) &=& \mathsf{prog}(\chi_1, s) \lor \mathsf{prog}(\chi_2, s),\\[1mm]
-\mathsf{prog}(X\chi, s) &=& \chi,\\[1mm]
-\mathsf{prog}(\chi_1 U \chi_2, s) &=& \mathsf{prog}(\chi_2, s) \lor \big(\mathsf{prog}(\chi_1, s) \land (\chi_1 U \chi_2)\big),
+\mathsf{prog}(a,s) &=& \top \text{ if } a\in s,\text{ and } \bot \text{ otherwise},\\
+\mathsf{prog}(\varphi_1\land\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_1,s)\land\mathsf{prog}(\varphi_2,s),\\
+\mathsf{prog}(\varphi_1\lor\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_1,s)\lor\mathsf{prog}(\varphi_2,s),\\
+\mathsf{prog}(X\varphi,s) &=& \varphi \land F \top,\\
+\mathsf{prog}(\varphi_1U\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_2,s)\lor
+    \bigl(\mathsf{prog}(\varphi_1,s)\land(\varphi_1U\varphi_2)\bigr).
 \end{array}
 \]
-with derived operators following from their definitions; in particular $\mathsf{prog}(F\chi, s) = \mathsf{prog}(\chi, s) \lor F\chi$ and $\mathsf{prog}(G\chi, s) = \mathsf{prog}(\chi, s) \land G\chi$. The clause for $X$ is the non-final one: a next-obligation \emph{falls through} to its operand, so a maturing $X\chi$ becomes the fresh, top-level obligation $\chi$ carrying no residue of the operator that spawned it --- precisely the instance the shared register conflated. The finite-trace boundary is handled separately at the last cell (see below), exactly as the END-triggered rules do in the original system.
 
-\paragraph{Two levels of state.}
-The reformulation makes explicit a distinction that the original system did not need. There are now two related but different notions of state, and keeping them apart is what resolves the apparent puzzle of ``a single formula progresses to a single formula, so when does the state ever become a set?''.
+\noindent 
+We assume that every time $prog$ is computed, it is followed by a Boolean simplification. Derived operators are handled through their definitions.
 
-The first is the \emph{semantic residual state}. At time $t$ the monitor carries a finite \emph{set} $S_t$ of active residual formulae, read \emph{conjunctively}: it denotes the residual
+
+The repaired monitor carries a single \emph{residual formula} $\rho_t \in cl(\varphi)$, the formula that the remaining suffix must satisfy. It is initialized to $\rho_0 = \varphi$ and updated by progression
 \[
-    \rho_t = \bigwedge_{\chi \in S_t}\chi ,
+    \rho_{t+1} = \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr)
 \]
-with the empty conjunction denoting $\top$. Semantically the state is therefore always a \emph{single} residual $\rho_t$; the set $S_t$ is a \emph{factored representation} of it. The monitor is initialized to
+where $\mathsf{nf}$ is a semantics-preserving Boolean normalization discussed below. The verdict is read off the residual itself: $\rho_t \equiv \top$ means that every continuation satisfies $\varphi$, and the monitor halts with \textsc{satisfy}; $\rho_t \equiv \bot$ means that none does, and it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}.
+%
+As in the original system, evaluating a formula at a time point is a bottom-up computation over its parse tree. In details, the RuleRunner state $S_t$ at time $t$ holds the observations of $\sigma_t$, the active rules $R[\psi]$, and the truth evaluations $[\psi]V$ for $\psi\in sub(\rho_t)$. 
+These are exactly the registers the original system used, only instantiated over the residual rather than over $\varphi$; and, exactly as before, they are \emph{flushed} at each time point rather than carried. What is carried across time is the residual alone. 
+Note that since only the residual is progressed, the undecided subformulas $[\psi]?$ of $\rho_t$ are not reactivated as before, but flushed as every other truth evaluation.
+
+The residual is carried not as a monolithic formula but in \emph{factored} form, as the set of its top-level conjuncts:
 \[
-    S_0 = \mathsf{split}_\land\big(\mathsf{nf}(\varphi)\big),
+    \Sigma_t = \mathsf{split}_\wedge(\rho_t)
 \]
-where $\mathsf{nf}$ is a semantics-preserving Boolean normalization and $\mathsf{split}_\land$ breaks top-level conjunctions into separate elements, $\mathsf{split}_\land(\chi_1 \land \chi_2) = \mathsf{split}_\land(\chi_1) \cup \mathsf{split}_\land(\chi_2)$ and $\mathsf{split}_\land(\top) = \emptyset$, while every formula that is not a top-level conjunction is kept as a single element.
+where $\mathsf{split}_\wedge(\chi_1\land\chi_2) = \mathsf{split}_\wedge(\chi_1)\cup\mathsf{split}_\wedge(\chi_2)$, $\mathsf{split}_\wedge(\top)=\emptyset$, and any formula that is not a top-level conjunction is kept as a single element. Progression is a homomorphism for conjunction, $\mathsf{prog}(\chi_1\land\chi_2,s) = \mathsf{prog}(\chi_1,s)\land\mathsf{prog}(\chi_2,s)$, so the elements of $\Sigma_t$ may be progressed independently and re-collected, leaving the update above unchanged. 
+%Disjunctions, by contrast, are never split: a residual such as $b\lor F(a\land Xb)$ is a single element of $\Sigma_t$, because it records a correlation between an immediate requirement and a still-open eventuality that is destroyed if its two sides are carried separately.
+%
+The factorization is used to reduce the size of the system. If we carry the whole residual, the monitor would need one register per reachable residual, i.e. it would have the size of $cl(\varphi)$. Carrying the conjuncts instead makes it a \emph{multi-hot} vector over the top-level conjuncts, and the gap can be exponential. For $\varphi = F a_1 \land ... \land Fa_n$ the reachable residuals is given by all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas the top-level conjuncts are the $n$ formulas $F a_i$, giving a linear bound on the number of registers needed.  
 
-The second is the \emph{operational RuleRunner state}. To evaluate and progress the active residuals, the monitor activates their syntactic support
-\[
-    \Gamma_t = \bigcup_{\chi \in S_t}\mathsf{sub}(\chi),
-\]
-and installs ordinary RuleRunner-style support registers $R[\zeta]$ and truth registers $[\zeta]V$ for $\zeta \in \Gamma_t$, together with active-root registers $A[\chi]$ for $\chi \in S_t$. The support registers are \emph{scratch}: they are recomputed bottom-up at each time point and flushed at the next, exactly as truth evaluations are flushed in the original system. Only the active residual roots $A[\chi]$ are carried across time. This two-level view answers directly the concern that ``if the state contains only the whole formula, evaluation has no intermediate parse-tree nodes to fire on'': the intermediate nodes live in $\Gamma_t$, not in $S_t$. At $t = 0$, even though $S_0 = \{\varphi\}$, the support is $\Gamma_0 = \mathsf{sub}(\varphi)$ --- the \emph{entire} parse tree of $\varphi$ --- so the bottom-up evaluation rules have exactly the tree they need. What changed relative to the original system is only \emph{what is carried} (the residual roots) versus \emph{what is regenerated} (their support).
+To summarize, the RuleRunner two-phase schema is repaired as followed:
 
-\paragraph{When the state becomes a set, and why conjunction is split but disjunction is not.}
-Progression returns one formula, but its Boolean normal form may \emph{be} a conjunction, which $\mathsf{split}_\land$ then breaks into several roots. So the state grows into a genuine multi-element set exactly when progression produces a top-level conjunction --- which is what $G$, the left recursion of $U$, and any top-level $\land$ in $\varphi$ do, but $F$ does not. This is why the singleton example $\varphi_b = F(a \land Xb)$ is misleading: its residual $b \lor F(a \land Xb)$ is a top-level \emph{disjunction} and stays one element, whereas $\varphi = G(a \to Fb)$ oscillates between the states $\{G(a \to Fb)\}$ and $\{Fb,\ G(a \to Fb)\}$, the second arising the moment an unfulfilled $a$ opens a pending eventuality $Fb$ alongside the invariant.
-
-Splitting conjunctions is not merely cosmetic, but neither is it semantically load-bearing: since $\{\chi_1, \chi_2\}$ and $\{\chi_1 \land \chi_2\}$ denote the same residual, one \emph{could} carry $\rho_t$ as a single monolithic formula and never split. Two reasons make the factored form the right choice. First, \emph{soundness is free for $\land$}: progression is a homomorphism for conjunction, $\mathsf{prog}(\chi_1 \land \chi_2, s) = \mathsf{prog}(\chi_1, s) \land \mathsf{prog}(\chi_2, s)$, so progressing the conjuncts element-wise progresses the residual they denote. Second, it \emph{keeps the monitor RuleRunner-shaped}: each conjunct is its own register (its own CILP subnetwork), so on the flat fragment RuleRunner already handled correctly the state stays exactly as compact and local as before. The decisive asymmetry is that disjunction is \emph{never} split. A disjunctive residual such as $b \lor F(a \land Xb)$ records a \emph{correlation} --- ``either the $b$ owed by the just-seen $a$ arrives next, or the eventuality is still open'' --- that is destroyed the instant the two sides are carried independently. Storing each disjunctive obligation as one atomic element is exactly what the per-subformula valuation could not do, and what completeness requires.
-
-\paragraph{The revised two-phase cycle.}
-Each step keeps the original two-phase structure, now over the residual closure rather than the fixed parse tree of $\varphi$.
 \begin{enumerate}
-    \item \textbf{Evaluation.} The current observation $\sigma_t$ is injected, and the unchanged rules $R_E$ fire bottom-up over the support $\Gamma_t$ to a fixpoint. This is a cheap three-valued read-out: if every active root reduces to $\top$ then $\rho_t \equiv \top$ and the monitor halts with \textsc{satisfy}; if any reduces to $\bot$ it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}. Crucially, this collapse can already fire mid-trace --- a disjunct going $\top$ (or a conjunct going $\bot$) decides the root without waiting for the end --- which is why an evaluation phase is retained rather than reading the verdict off the reactivation output alone.
-    \item \textbf{Reactivation by progression.} If undecided, each active root is progressed independently through the rule schema
+    \item \textbf{Evaluation.}
+    The observation $\sigma_t$ is injected into $S_t$ and the evaluation rules $R_E$ are fired bottom-up until a fixpoint is reached, computing $[\psi]V$ for every $\psi\in sub(\rho_t)$.
+    \item \textbf{Reactivation.}
+    The residual is factorized and each top-level conjunct is progressed independently. The results are then re-collected into the new residual, i.e.,
     \[
-      R[\chi],\ \sigma_t \ \longrightarrow\ R[\,\mathsf{prog}(\chi, \sigma_t)\,] \qquad (\chi \in S_t),
+        \rho_{t+1} = \bigwedge_{\chi\in\Sigma_{t}} [\mathsf{nf}(\mathsf{prog}(\chi,\sigma_t))]
     \]
-    and the results are re-collected into the next residual and re-split:
-    \[
-        \rho_{t+1} = \mathsf{nf}\!\left(\bigwedge_{\chi \in S_t}\mathsf{prog}(\chi, \sigma_t)\right),
-        \qquad
-        S_{t+1} = \mathsf{split}_\land(\rho_{t+1}),
-    \]
-    discarding any $\top$ conjunct. This supersedes the operator-specific reinstall rules $[\psi]? \to R[\psi], R[\psi_1], \dots, R[\psi_n]$ of the original system.
+    
 \end{enumerate}
-It is essential that reactivation progresses only the active \emph{roots} $S_t$, not every undecided subformula in $\Gamma_t$. Reactivating all undecided subformulae would reintroduce the original defect: if the active residual is $b \lor F(a \land Xb)$ and $b$ holds now, the whole residual is already satisfied, and independently carrying $F(a \land Xb)$ forward merely because it is a subformula of the disjunction would resurrect the very disjunctive correlation the fix is meant to preserve. The support subformulae in $\Gamma_t$ are scratch used to \emph{compute} the progression of the roots; they carry no temporal meaning of their own.
 
-The two phases remain genuinely distinct --- a bottom-up verdict read-out and a carry update, both sets of Horn clauses --- so the reformulated system still compiles to a single-hidden-layer recurrent network, and remains differentiable under the same $\mathrm{sign} \to \tanh$ relaxation used for the adaptation setting of Section~\ref{sec:theory-cmp}. Conjunctive obligations still factor, so on the flat fragment the state is as compact as before; what does \emph{not} factor is disjunction, so the number of \emph{distinct} residual roots reachable from $\varphi$ is what governs the state size, and in the worst case it matches the size of the minimal DFA of $\varphi$ (see Section~\ref{sec:theory-cmp}).
+\paragraph{The cost of the repair.}
+One may wonder whether the new RuleRunner construction comes with a cost. Actually, it depends on how the monitor is realized. 
 
-\paragraph{Finiteness and two realizations.}
-Let $\mathcal{R}_\varphi$ be the set of all formulae that can occur as active residual roots by iterating this construction from $\varphi$, and let $\mathcal{C}_\varphi = \bigcup_{\chi \in \mathcal{R}_\varphi}\mathsf{sub}(\chi)$ be its subformula closure. Quotiented by logical equivalence, $\mathcal{R}_\varphi$ is finite --- its elements are Boolean combinations over the closure of $\varphi$ --- which yields two realizations. Run \emph{lazily}, the monitor carries the residual set and progresses-and-simplifies it on the fly, materializing only the roots actually visited on a given trace; it never constructs the full state space and can stay far smaller than it when the visited fragment is small. Run \emph{eagerly}, one precomputes the reachable $\mathcal{R}_\varphi$, $\mathcal{C}_\varphi$, and the induced transition ``residual-set $\times$ observation $\to$ residual-set'' once, obtaining a fixed, finite rule set that is again CILP-encodable and differentiable. The two are the rule-side analogue of on-the-fly versus explicit-state automaton construction; indeed, materialized eagerly and quotiented, the transition system \emph{is} an automaton equivalent to $\varphi$, progression being the standard route from \ltlf to its (alternating, then determinized) automaton \cite{LTLf,LTL2DFA3}, here assembled compositionally one operator rule at a time rather than by monolithic determinization. We use this correspondence only to place the construction; the point of keeping the rule form is not a faster monitor but the structured, formula-indexed, differentiable state it carries --- its units are attached to residual formulae and their syntactic components, rather than to anonymous DFA states.
+In the \emph{eager} realization, the residual closure $cl(\varphi)$ and its syntactic closure $sub(cl(\varphi)) = \bigcup_{\chi\in cl(\varphi)}sub(\chi)$ are computed once, and all corresponding evaluation and progression rules are compiled into a fixed finite rule system. Using the CILP translation, we can then map it to a recurrent network exactly as in the original RuleRunner approach. 
+The price is paid on two axes. The first is the closure itself, since the register set is bounded by $cl(\varphi)$, not $\varphi$ as before. The second axis comes from the progression schema, since $\mathsf{prog}(\chi,\sigma_t)$ depends on the observation.
+Compiling it into a fixed set of clauses therefore requires expanding over the observation space. In the worst case, the size of the monitor is $|cl(\varphi)| \cdot 2^{|\calP|}$. This is similar to what happens in the dense DeepDFA tensor (see Sec.~\ref{sec:deepdfa}).
 
-\paragraph{The counterexample, revisited.}
-Progression resolves the divergence of Section~\ref{sec:rulerunner-limitation}. Recall $\varphi_b = F(a \land Xb)$, write $\psi = a \land Xb$, and take the two traces $A = (\{a\}, \emptyset, \{b\})$ (ground truth \textsc{violate}) and $B = (\emptyset, \{a\}, \{b\})$ (ground truth \textsc{satisfy}) that the one-register state cannot tell apart. Since $\mathsf{prog}(F\psi, s) = \mathsf{prog}(\psi, s) \lor F\psi$, reading a non-final cell in which $a$ holds produces the residual $b \lor F\psi$, carried as a \emph{single} atomic root. The active residual roots before each cell are:
-\[
-\begin{array}{c|c|c|c|c}
-\toprule
-& \text{before }\sigma_0 & \text{before }\sigma_1 & \text{before }\sigma_2 & \text{last-cell verdict}\\
-\midrule
-A & \{F\psi\} & \{b \lor F\psi\} & \{F\psi\} & \textsc{violate}\\
-B & \{F\psi\} & \{F\psi\} & \{b \lor F\psi\} & \textsc{satisfy}\\
-\bottomrule
-\end{array}
-\]
-On $A$ the disjunctive obligation opened by the $a$ at time~$0$ appears before $\sigma_1$; at $\sigma_1$ no $b$ holds, the immediate disjunct disappears, and the residual falls back to $F\psi$. The last cell brings $\{b\}$ but no pending residual linking it to the earlier $a$, and $F\psi$ is false on the one-cell suffix: \textsc{violate}. On $B$ the same obligation is opened one time point later, so it is still live as the disjunct $b$ when $\{b\}$ arrives, the residual reduces to $\top$: \textsc{satisfy}. The decisive state is the single disjunctive root $b \lor F(a \land Xb)$ --- one atomic element of $\mathcal{R}_{\varphi_b}$ --- which occurs at \emph{different} time points on the two traces and which the one-register valuation cannot represent at all.
+In the \emph{lazy} realization, only the closure $sub(\rho_t)$ of the current residual is instantiated, one time point at a time. Neither axis is ever enumerated: the set of registers is bounded by the parse tree of $\rho_t$, that is $sub(\rho_t)$, and the progression is computed only for that particular residual against the current observation, not expanded over $2^{|\calP|}$. 
+The cost here is that we cannot encode the monitor as a recurrent network, since the rule set is no longer fixed, but dynamically generated. Conversely, we can use a \emph{sequence of distinct feedforward neural networks}, once per time step. This means that cross-trace batching is lost, since traces in a batch hold different residuals and share no weight matrix.
 
-\paragraph{Correctness.}
-We now state the correctness property. Let $\mathsf{last}(\chi, s) \in \{\top, \bot\}$ denote the truth value of $\chi$ on the one-cell trace $(s)$: atoms and Boolean connectives are evaluated as usual, and the temporal boundary cases are
-\[
-    \mathsf{last}(X\chi, s) = \bot,
-    \qquad
-    \mathsf{last}(W\chi, s) = \top,
-    \qquad
-    \mathsf{last}(\chi_1 U \chi_2, s) = \mathsf{last}(\chi_2, s),
-\]
-the finite-trace counterpart of the END-triggered rules.
+\paragraph{Soundness and Completeness.}
+Now, we can prove that the repaired construction of RuleRunner is sound and complete.
 
-\begin{theorem}[Correctness of progression-based RuleRunner]
+\begin{theorem}
 \label{thm:rulerunner-progression-correct}
-Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the eager progression-based RuleRunner monitor constructed as above. Then, for every finite non-empty trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma} \models \varphi$, and \textsc{violate} iff $\boldsymbol{\sigma} \not\models \varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
+Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite non-empty trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
 \end{theorem}
 
 \begin{proof}
-Let $\boldsymbol{\sigma} = (\sigma_0, \ldots, \sigma_{T-1})$ be a finite non-empty trace. For $0 \leq t < T$, let $S_t$ be the active residual state before reading cell $\sigma_t$, i.e.\ after the prefix $\sigma_0 \cdots \sigma_{t-1}$, and let $\rho_t = \bigwedge_{\chi \in S_t}\chi$ be the formula it denotes. By construction $S_0 = \mathsf{split}_\land(\mathsf{nf}(\varphi))$, so $\rho_0 \equiv \varphi$.
+Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite non-empty trace. For $0\leq t<T$, let $\Sigma_t$ be the active root set before reading cell $\sigma_t$, that is, after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed. Let
+\[
+    \rho_t = \bigwedge_{\chi\in\Sigma_t}\chi
+\]
+be the residual it denotes. By construction,
+\[
+    \Sigma_0=\mathsf{split}_\wedge(\mathsf{nf}(\varphi)),
+\]
+and therefore $\rho_0$ is equivalent to $\varphi$.
 
-\emph{Step property of progression.} For every formula $\chi$, non-final cell $s$, and non-empty finite continuation $\boldsymbol{\tau}$,
+We first use the defining property of progression. For every formula $\chi$, every non-final cell $s$, and every non-empty finite continuation $\boldsymbol{\tau}$,
 \begin{equation}
 \label{eq:progression-step}
-    s \cdot \boldsymbol{\tau} \models \chi
+    s\cdot\boldsymbol{\tau}\models\chi
     \quad\Longleftrightarrow\quad
-    \boldsymbol{\tau} \models \mathsf{prog}(\chi, s),
+    \boldsymbol{\tau}\models\mathsf{prog}(\chi,s).
 \end{equation}
-by structural induction on $\chi$. The atomic and Boolean cases are immediate. For $X\chi$, since $\boldsymbol{\tau}$ is non-empty, $s \cdot \boldsymbol{\tau} \models X\chi$ iff $\boldsymbol{\tau} \models \chi$, matching $\mathsf{prog}(X\chi, s) = \chi$; the weak-next case is identical on non-final cells. For $\chi_1 U \chi_2$, $s \cdot \boldsymbol{\tau} \models \chi_1 U \chi_2$ iff $\chi_2$ holds at the current cell or $\chi_1$ holds there and $\chi_1 U \chi_2$ holds on the suffix; by the induction hypothesis this is $\boldsymbol{\tau} \models \mathsf{prog}(\chi_2, s) \lor (\mathsf{prog}(\chi_1, s) \land (\chi_1 U \chi_2))$. Derived operators inherit the property from their definitions.
+This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, since $\boldsymbol{\tau}$ is non-empty, $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}\models\chi$, which is exactly the clause $\mathsf{prog}(X\chi,s)=\chi$. The weak-next case is identical on non-final cells. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
+\[
+    \boldsymbol{\tau}\models
+    \mathsf{prog}(\chi_2,s)\lor
+    \bigl(\mathsf{prog}(\chi_1,s)\land(\chi_1U\chi_2)\bigr).
+\]
+The derived operators inherit the property from their definitions.
 
-\emph{Residual invariant.} We show, for every $0 \leq t < T$ and non-empty finite continuation $\boldsymbol{\tau}$,
+We now prove the residual invariant:
 \begin{equation}
 \label{eq:rulerunner-residual-invariant}
-    \sigma_0 \cdots \sigma_{t-1} \cdot \boldsymbol{\tau} \models \varphi
+    \sigma_0\cdots\sigma_{t-1}\cdot\boldsymbol{\tau}\models\varphi
     \quad\Longleftrightarrow\quad
-    \boldsymbol{\tau} \models \rho_t .
+    \boldsymbol{\tau}\models\rho_t
 \end{equation}
-For $t = 0$ this holds because $\rho_0 \equiv \varphi$. Assume it holds for some $t < T-1$. By the reactivation rule and the fact that progression distributes over conjunction up to logical equivalence,
+for every $0\leq t<T$ and every non-empty finite continuation $\boldsymbol{\tau}$.
+
+For $t=0$, the claim holds because $\rho_0$ is equivalent to $\varphi$. Assume it holds for some $t<T-1$. By the reactivation rule,
 \[
-    \rho_{t+1} \equiv \mathsf{nf}\!\left(\bigwedge_{\chi \in S_t}\mathsf{prog}(\chi, \sigma_t)\right) \equiv \mathsf{nf}\big(\mathsf{prog}(\rho_t, \sigma_t)\big).
+    \rho_{t+1}
+    \equiv
+    \mathsf{nf}\left(
+        \bigwedge_{\chi\in\Sigma_t}\mathsf{prog}(\chi,\sigma_t)
+    \right).
 \]
-Hence, for every non-empty continuation $\boldsymbol{\tau}$,
+Since $\rho_t=\bigwedge_{\chi\in\Sigma_t}\chi$ and progression distributes over conjunction up to logical equivalence, this is equivalent to
+\[
+    \rho_{t+1}
+    \equiv
+    \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr).
+\]
+Therefore, for every non-empty continuation $\boldsymbol{\tau}$,
 \[
 \begin{array}{rcl}
-\sigma_0 \cdots \sigma_t \cdot \boldsymbol{\tau} \models \varphi
+\sigma_0\cdots\sigma_t\cdot\boldsymbol{\tau}\models\varphi
 &\Longleftrightarrow&
-\sigma_t \cdot \boldsymbol{\tau} \models \rho_t
-\quad\text{(induction hypothesis),}\\[1mm]
+\sigma_t\cdot\boldsymbol{\tau}\models\rho_t
+\quad\text{by the induction hypothesis,}\\
 &\Longleftrightarrow&
-\boldsymbol{\tau} \models \mathsf{prog}(\rho_t, \sigma_t)
-\quad\text{(Eq.~\eqref{eq:progression-step}),}\\[1mm]
+\boldsymbol{\tau}\models\mathsf{prog}(\rho_t,\sigma_t)
+\quad\text{by Equation~\eqref{eq:progression-step},}\\
 &\Longleftrightarrow&
-\boldsymbol{\tau} \models \rho_{t+1}
-\quad\text{($\mathsf{nf}$ preserves semantics).}
+\boldsymbol{\tau}\models\rho_{t+1}
+\quad\text{because $\mathsf{nf}$ preserves semantics.}
+\end{array}
+\]
+Thus the invariant holds at $t+1$.
+
+It remains to consider the last cell. Applying the invariant with $t=T-1$ and continuation $(\sigma_{T-1})$ gives
+\[
+    \boldsymbol{\sigma}\models\varphi
+    \quad\Longleftrightarrow\quad
+    (\sigma_{T-1})\models\rho_{T-1}.
+\]
+By definition of $\mathsf{last}$, the right-hand side is equivalent to
+\[
+    \mathsf{last}(\rho_{T-1},\sigma_{T-1})=\top .
+\]
+The final evaluation rules compute precisely this value. Hence the monitor returns \textsc{satisfy} exactly on traces satisfying $\varphi$, and \textsc{violate} otherwise.
+
+Finally, the operational register construction realizes the symbolic transition used in the proof. At time $t$, the state $S_t=sub(\rho_t)$ contains every subformula needed to evaluate and progress the active roots. Since the eager monitor allocates registers for all formulas in $sub(cl(\varphi))$, every such support formula has a corresponding register, and the bottom-up computation can be carried out by finitely many rules. Only the active roots in $\Sigma_t$ are reactivated, so support subformulas do not acquire an independent temporal meaning. Therefore the rule-based monitor implements exactly the residual update used in the invariant.
+
+If an early verdict is returned, the current residual is respectively valid or unsatisfiable over all finite continuations. By Equation~\eqref{eq:rulerunner-residual-invariant}, every completion of the prefix read so far then has the same truth value for $\varphi$, which proves soundness of early termination.
+\end{proof}
+
+
+\paragraph{The role of normalization.}
+As described above, we use a Boolean normalization on the residual formulas produced by progression. It is important to notice that this is not strictly required for soundness, meaning that $\mathsf{nf}$ could be an the identity function and the monitor would still be sound. 
+What normalization buys is \emph{finiteness}. Progression's raw output may grow syntactically without bound. For instance, since $\mathsf{prog}(F\psi,s) = \mathsf{prog}(\psi,s)\lor F\psi$, a trace on which $\psi$ keeps failing produces $\bot\lor F\psi$, then $\bot\lor(\bot\lor F\psi)$, and so on. Without normalization, every time point would allocate fresh registers and the eager compilation may not terminate. In other words, the residual formulas are finite \emph{up to logical equivalence}, and $\mathsf{nf}$ is useful to make $cl(\varphi)$ a finite set of registers.
+
+Furthermore, the normalization step can also help in keeping the residual formula compact and easy to evalutate. For compactness, note that $\mathsf{split}_\wedge$ only sees the conjuncts that $\mathsf{nf}$ exposes, so a normalization rewriting $(a\land b)\lor(a\land c)$ into $a\land(b\lor c)$ yields two conjuncts instead of just one. For evaluation, the normalization can be used to simplify the residual formulas, reducing the number of evaluation rules that need to be fired and detecting early termination.
+
+\paragraph{The counterexample revisited.}
+Consider again the formula $\varphi_b = F(a\land Xb)$ and the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$. The residual formulas before each time step are:
+
+\[
+\begin{array}{lllll}
+ & \rho_0 & \xrightarrow{\ \sigma_1\ } \rho_1 & \xrightarrow{\ \sigma_2\ } \rho_2 & \xrightarrow{\ \sigma_3\ } \rho_3 \\[0.5ex]
+\boldsymbol{\sigma}_A: & F(a \land Xb) & \xrightarrow{\ \{a\}\ } b \lor F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{b\}\ } false \\
+\boldsymbol{\sigma}_B: & F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{a\}\ } b \lor F(a \land Xb) & \xrightarrow{\ \{b\}\ } true
 \end{array}
 \]
 
-\emph{Last cell.} Applying Eq.~\eqref{eq:rulerunner-residual-invariant} with $t = T-1$ and continuation $(\sigma_{T-1})$ gives $\boldsymbol{\sigma} \models \varphi \iff (\sigma_{T-1}) \models \rho_{T-1}$, i.e.\ $\mathsf{last}(\rho_{T-1}, \sigma_{T-1}) = \top$, which is exactly what the final evaluation rules compute. Hence the monitor returns \textsc{satisfy} exactly on traces satisfying $\varphi$, and \textsc{violate} otherwise.
 
-\emph{Operational realization and early termination.} The support $\Gamma_t = \bigcup_{\chi \in S_t}\mathsf{sub}(\chi)$ contains every subformula needed to evaluate and progress the active roots, and the eager monitor allocates registers for all formulae in $\mathcal{C}_\varphi$, so the bottom-up computation is realized by finitely many rules; since only roots in $S_t$ are reactivated, support subformulae acquire no independent temporal meaning, and the rule-based monitor implements exactly the residual update above. Finally, if an early verdict is returned, $\rho_t$ is valid resp.\ unsatisfiable over all finite continuations; by Eq.~\eqref{eq:rulerunner-residual-invariant} every completion of the prefix read so far then has the same truth value for $\varphi$, so early termination is sound. These are precisely the accepting-sink resp.\ trap conditions of Section~\ref{sec:symbolic}, precomputed once in the eager realization exactly as the sink and trap sets are; the lazy realization detects them by Boolean simplification, a sound under-approximation that may lag by a few time points but never issues a wrong verdict.
-\end{proof}
+For trace $\boldsymbol{\sigma}_A$, the residual $b\lor F(a \land Xb)$ appears after the first time step. At the second time step, $b$ is false, so the disjunct disappears and the residual becomes $F(a \land Xb)$ again. At the last time step, the trace contains $b$, but the remaining formula $F(a \land Xb)$ is false on this last step, since $a\land Xb$ is false there. Hence the verdict is \textsc{violate}, as expected.
+%
+For trace $\boldsymbol{\sigma}_B$, the residual $b\lor F(a \land Xb)$ appears one step later, immediately before the time step containing $b$. At the last time step, this residual is evaluated to true because the disjunct $b$ holds. Hence the verdict is \textsc{satisfy}.
 
-\noindent\textcolor{red}{TODO: in the extended version, spell out the per-operator progression-correctness lemma and the end-of-trace resolution in full, and state the $\mathcal{R}_\varphi$-vs-minimal-DFA size bound as a separate proposition.}
+This is exactly the information lost by the original one-register construction. The repaired monitor does not try to store two incompatible truth evaluations in the single register $[Xb]$. Instead, it stores the residual formula $b\lor F(a\land Xb)$, and it occurs at different time points in the two traces.

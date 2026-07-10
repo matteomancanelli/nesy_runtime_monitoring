@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Callable
 
 from ltlf2dfa.parser.ltlf import LTLfParser
@@ -66,11 +67,36 @@ class DFA:
         raise ValueError(f"No transition fires from state {state} on {obs!r}")
 
 
+class MonaFailure(RuntimeError):
+    """MONA did not produce a usable DFA for the formula."""
+
+
+@lru_cache(maxsize=None)
 def compile_ltlf(formula: str) -> DFA:
-    """Compile an LTLf formula string to a minimal DFA."""
+    """Compile an LTLf formula string to a minimal DFA.
+
+    Cached: MONA is an external process that can take tens of seconds and
+    several GB on large formulas, and every monitor paradigm compiles the same
+    formula independently. The returned DFA is treated as read-only by all
+    callers (monitors hold their current state separately).
+    """
     parser = LTLfParser()
     dot = parser(formula).to_dfa()
-    return _parse_mona_dot(dot)
+    # ltlf2dfa runs MONA with a hardcoded 30 s subprocess timeout and returns
+    # False on expiry; on other failures it returns a stub DOT with no edges
+    # (a lone `init -> 1`). Both must raise rather than yield a silently
+    # degenerate 2-state DFA — Exp 6 plots the measured |Q| as its x-axis.
+    if not isinstance(dot, str):
+        raise MonaFailure(
+            f"MONA timed out (ltlf2dfa's 30 s limit) on: {formula!r}"
+        )
+    dfa = _parse_mona_dot(dot)
+    if not dfa.transitions:
+        raise MonaFailure(
+            f"MONA produced no transitions for: {formula!r} — it exhausted "
+            f"memory or failed to build the automaton."
+        )
+    return dfa
 
 
 # MONA's DOT lists accepting states as `node [shape = doublecircle]; 1; 2; 4;`

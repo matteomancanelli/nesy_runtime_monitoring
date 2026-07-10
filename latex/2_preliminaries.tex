@@ -12,7 +12,7 @@ In this paper, we use \ltlf as the specification language for all three monitori
 \subsection{Syntax and Semantics}
 \label{sec:ltlf}
 
-Given a finite set $\Sigma$ of atomic propositions, an \ltlf formula $\varphi$ has the form:
+Given a finite set $\calP$ of atomic propositions, an \ltlf formula $\varphi$ has the form:
 %\begin{equation}
 \[
     \varphi ::= \top \mid
@@ -29,16 +29,16 @@ Given a finite set $\Sigma$ of atomic propositions, an \ltlf formula $\varphi$ h
     \varphi_1 U\varphi_2,
 \]
 %\end{equation}
-where $a \in \Sigma$. We use $\top$ and $\bot$ to denote $True$ and $False$, respectively. $X$ (Strong Next) and $U$ (Until) are temporal operators. Other temporal operators can be derived as follows: $W$ (Weak Next) is defined as $W \varphi \equiv \neg X\neg\varphi$, $R$ (Release) is defined as $\varphi_1 R \varphi_2 \equiv \neg(\neg\varphi_1 U \neg\varphi_2 )$, $G$ (globally) is defined as $G\varphi \equiv \bot R\varphi$, and $F$ (eventually) is defined as $F \varphi \equiv \top U \varphi$.
+where $a \in \calP$. We use $\top$ and $\bot$ to denote $True$ and $False$, respectively. $X$ (Strong Next) and $U$ (Until) are temporal operators. Other temporal operators can be derived as follows: $W$ (Weak Next) is defined as $W \varphi \equiv \neg X\neg\varphi$, $R$ (Release) is defined as $\varphi_1 R \varphi_2 \equiv \neg(\neg\varphi_1 U \neg\varphi_2 )$, $G$ (globally) is defined as $G\varphi \equiv \bot R\varphi$, and $F$ (eventually) is defined as $F \varphi \equiv \top U \varphi$.
 
-A trace $\boldsymbol{\sigma} = (\sigma_{1}, \sigma_{2}, \dots, \sigma_{T})$ is a sequence of propositional assignments to the propositions in $\Sigma$, where $\sigma_{t} \in 2^\Sigma$ is the set of all and only propositions that are true at instant $t$. Additionally, $|\boldsymbol{\sigma}| = T$ denotes the length of the trace. 
+A trace $\boldsymbol{\sigma} = (\sigma_{1}, \sigma_{2}, \dots, \sigma_{T})$ is a sequence of propositional assignments to the propositions in $\calP$, where $\sigma_{t} \in 2^\calP$ is the set of all and only propositions that are true at instant $t$. Additionally, $|\boldsymbol{\sigma}| = T$ denotes the length of the trace. 
 %Since every trace is finite, $|\boldsymbol{\sigma}| < \infty$.
-Note that, if the propositional symbols in $\Sigma$ are all \textit{mutually exclusive}, i.e., the domain produces exactly one symbol true at each step, then we have $\sigma_{t} \in \Sigma$.
+Note that, if the propositional symbols in $\calP$ are all \textit{mutually exclusive}, i.e., the domain produces exactly one symbol true at each step, then we have $\sigma_{t} \in \calP$.
 %
 Let $last = |\boldsymbol{\sigma}| - 1$. We inductively define when
 an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$), written $\boldsymbol{\sigma},i \models \varphi$, as follows:
 \begin{itemize}
-    \item $\boldsymbol{\sigma}, i \models a$ iff $a \in \boldsymbol{\sigma}_i$, for $a \in \Sigma$;
+    \item $\boldsymbol{\sigma}, i \models a$ iff $a \in \boldsymbol{\sigma}_i$, for $a \in \calP$;
     \item $\boldsymbol{\sigma}, i \models \neg \varphi$ iff $\boldsymbol{\sigma}, i \not\models \varphi$;
     \item $\boldsymbol{\sigma}, i \models \varphi_1 \land \varphi_2$ iff $\boldsymbol{\sigma}, i \models \varphi_1$ and $\boldsymbol{\sigma}, i \models \varphi_2$;
     \item $\boldsymbol{\sigma}, i \models X\varphi$ iff $i < last$ and  $\boldsymbol{\sigma}, i + 1 \models \varphi$;
@@ -48,12 +48,14 @@ an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$),
 \noindent
 We say that $\boldsymbol{\sigma}$ satisfies $\phi$, written $\boldsymbol{\sigma} \models \varphi$, if $\boldsymbol{\sigma}, 0 \models \varphi$. A formula $\varphi$ is satisfiable if it is true wrt some trace $\boldsymbol{\sigma}$, and is valid, if it is true wrt every trace $\boldsymbol{\sigma}$.
 
+In the following, we will use $sub(\varphi)$ to denote the set of proper subformulas of $\varphi$, and we will refer to it as the syntactic closure of $\varphi$. Given a formula $\varphi$ and a propositional assignment $\sigma_t$ at time $t$, we are also interested in computing the residual formula, i.e the formula that has to be satisfied at time $t+1$. As explained in details in Sec. \ref{}, a residual formula can be computed using formula progression \cite{}, which returns a positive Boolean formula on $sub(\varphi) \cup sub(F \top) \cup sub(G \bot)$. We will use $cl(\varphi)$ to denote the set of residual formulas, and we will refer to it as the residual closure of $\varphi$ .
+
 \subsection{Symbolic Monitoring}
 \label{sec:symbolic}
 
 \paragraph{Deterministic Finite Automata.}
-Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \cite{LTLf} $A_\varphi = (2^\Sigma, Q, q_0, \delta, F)$, where $2^\Sigma$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\Sigma \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
-We also define the extended transition function over traces $\delta^*: Q \times (2^\Sigma)^* \rightarrow Q$ recursively as:
+Any \ltlf formula $\varphi$ can be translated into a Deterministic Finite Automaton (DFA) \cite{LTLf} $A_\varphi = (2^\calP, Q, q_0, \delta, F)$, where $2^\calP$ is the automaton alphabet, $Q$ is the finite set of states, $q_0 \in Q$ is the initial state, $\delta: Q \times 2^\calP \rightarrow Q$ is the transition function, and $F \subseteq Q$ is the set of final states. 
+We also define the extended transition function over traces $\delta^*: Q \times (2^\calP)^* \rightarrow Q$ recursively as:
 \begin{equation}
 %\[
 \begin{array}{l}
@@ -62,16 +64,16 @@ We also define the extended transition function over traces $\delta^*: Q \times 
 \end{array}
 %\]
 \end{equation}
-where $\sigma \in 2^\Sigma$ is a symbol and $\boldsymbol{x} \in (2^\Sigma)^*$ is a trace.  
+where $\sigma \in 2^\calP$ is a symbol and $\boldsymbol{x} \in (2^\calP)^*$ is a trace.  
 The automaton accepts the trace $\boldsymbol{\sigma}$ iff $\delta^*(q_0, \boldsymbol{\sigma}) \in F$, and in that case we say that $\boldsymbol{\sigma}$ belongs to the language of the automaton, denoted as $\calL(A_\varphi)$.  
-We have that $\varphi$ and $A_\varphi$ are equivalent because, for any trace $\boldsymbol{\sigma} \in (2^\Sigma)^*$:
+We have that $\varphi$ and $A_\varphi$ are equivalent because, for any trace $\boldsymbol{\sigma} \in (2^\calP)^*$:
 \begin{equation}
 %\[
 \boldsymbol{\sigma}\in \calL(A_\varphi) \iff\boldsymbol{\sigma}\vDash\varphi.
 %\]
 \end{equation}
 
-We can rely on the use of DFAs for several reasoning tasks, like model checking, planning and synthesis. In particular, monitoring formula $\varphi$ becomes a deterministic walk over the automaton $A_\varphi$: the monitor keeps a single current state $q$, initialized to $q_0$, and on observing the time point $\sigma_t \in 2^\Sigma$ it advances $q \leftarrow \delta(q, \sigma_t)$. Because the automaton is fixed and deterministic, each step costs a single transition lookup, independent of the trace seen so far and of the size of $\varphi$. In the following, DFA-based monitoring will serve as the exact baseline against which the neuro-symbolic paradigms will be measured.
+We can rely on the use of DFAs for several reasoning tasks, like model checking, planning and synthesis. In particular, monitoring formula $\varphi$ becomes a deterministic walk over the automaton $A_\varphi$: the monitor keeps a single current state $q$, initialized to $q_0$, and on observing the time point $\sigma_t \in 2^\calP$ it advances $q \leftarrow \delta(q, \sigma_t)$. Because the automaton is fixed and deterministic, each step costs a single transition lookup, independent of the trace seen so far and of the size of $\varphi$. In the following, DFA-based monitoring will serve as the exact baseline against which the neuro-symbolic paradigms will be measured.
 
 %as implemented by \texttt{ltlf2dfa} \cite{fuggitti-ltlf2dfa}.
 %the automaton encodes the specification exactly and admits no learning or adaptation.

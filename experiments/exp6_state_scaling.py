@@ -86,7 +86,7 @@ MONITORS = [
 
 TRACE_LENGTH = 500
 BATCH_SIZE   = 256          # fixed batch; |Q| is the swept axis
-N_REPEATS    = 7
+N_REPEATS    = 5
 N_WARMUP     = 3
 SEED         = 42
 EARLY_TERMINATION = False   # per-cell cost (Phase 0.1)
@@ -131,6 +131,9 @@ with tqdm(total=total, desc="exp6") as pbar:
                                  skip=True)
                 pbar.update()
                 continue
+            # label BEFORE the call: one time_monitor can run for minutes and the
+            # bar only advances after it returns.
+            pbar.set_postfix(monitor=monitor_cls.__name__, q=formula.n_leaves, run="...")
             r = time_monitor(
                 monitor_cls, formula,
                 trace_length=TRACE_LENGTH,

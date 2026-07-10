@@ -62,8 +62,8 @@ FORMULA = TRACE_LENGTH_SUITE[0]          # G(a -> F b) — no early termination
 TRACE_LENGTHS = [1_000, 2_000, 3_000, 4_000, 5_000,
                  6_000, 7_000, 8_000, 9_000, 10_000]
 N_TRACES  = 100
-N_REPEATS = 7
-N_WARMUP  = 3
+N_REPEATS = 5
+N_WARMUP  = 1
 SEED      = 42
 
 # Tensor monitors (RuleRunner, DeepDFA) run their batched matmuls here;
@@ -89,6 +89,9 @@ with tqdm(total=total, desc="exp1") as pbar:
                 pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl, skip=True)
                 pbar.update()
                 continue
+            # label BEFORE the call: one time_monitor can run for minutes and the
+            # bar only advances after it returns.
+            pbar.set_postfix(monitor=monitor_cls.__name__, tl=tl, run="...")
             r = time_monitor(
                 monitor_cls, FORMULA,
                 trace_length=tl,

@@ -79,7 +79,7 @@ MONITORS = [
 FORMULA      = IJCNN_SUITE[2]    # ijcnn_n8 — enough atoms to be interesting
 TRACE_LENGTH = 1_000
 BATCH_SIZES  = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
-N_REPEATS    = 7
+N_REPEATS    = 5
 N_WARMUP     = 3
 SEED         = 42
 
@@ -119,6 +119,9 @@ with tqdm(total=total, desc="exp3") as pbar:
                 )
                 pbar.update()
                 continue
+            # label BEFORE the call: one time_monitor can run for minutes and the
+            # bar only advances after it returns.
+            pbar.set_postfix(monitor=monitor_cls.__name__, batch=batch_size, run="...")
             r = time_monitor(
                 monitor_cls, FORMULA,
                 trace_length=TRACE_LENGTH,

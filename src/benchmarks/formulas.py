@@ -163,7 +163,13 @@ CALIBRATION_SUITE: tuple[BenchmarkFormula, ...] = (
 # 2^|AP| = 4, so the dense tensor stays feasible even at large |Q|). The exact
 # |Q| is recorded at run time (Exp 6 compiles each formula and stamps |Q|).
 
-STATE_SCALING_DEADLINES: tuple[int, ...] = (2, 4, 8, 16, 32, 64)
+# MONA is the binding constraint, not |Q|. The `X^k b` disjunction makes MONA's
+# intermediate BDD blow up well before the (linear) answer does: k=18 compiles in
+# ~7 s / 0.3 GB, k=20 exhausts memory (~6 GB) and returns a failure stub, and by
+# k=32 it also races ltlf2dfa's 30 s subprocess timeout. Both now raise
+# MonaFailure instead of yielding a degenerate |Q|=2 DFA. Stay at k<=18 and take
+# more points along the way; |Q| = k+2, so this still spans |Q| = 4..20.
+STATE_SCALING_DEADLINES: tuple[int, ...] = (2, 4, 6, 8, 10, 12, 14, 16, 18)
 
 
 def bounded_response(k: int) -> BenchmarkFormula:

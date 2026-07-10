@@ -144,6 +144,9 @@ with tqdm(total=total, desc="exp5") as pbar:
                 )
                 pbar.update()
                 continue
+            # label BEFORE the call: one time_monitor can run for minutes and the
+            # bar only advances after it returns.
+            pbar.set_postfix(monitor=monitor_cls.__name__, depth=depth, run="...")
             r = time_monitor(
                 monitor_cls, formula,
                 trace_length=TRACE_LENGTH,

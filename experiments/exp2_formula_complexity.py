@@ -94,10 +94,18 @@ _ALPHABET_WALL = (
     ProgressionRuleRunnerStructuredMonitor,
 )
 
-TRACE_LENGTH = 5_000
+# Trace length is the *sequential* axis: it amortizes fixed per-call overhead but
+# does not change any monitor's per-cell cost, so shortening it costs only a
+# little variance. It is the only knob that was making this experiment
+# intractable: at 5_000 x 100 traces x (3 warm-up + 5 repeats) = 4M cells, one
+# tqdm tick for StructuredRuleRunnerMonitor at n=32 took ~25 min (373 us/cell),
+# and the bar only advances once a whole time_monitor call returns — which reads
+# as a hang. Batch (N_TRACES) is kept at 100: that one *does* set the per-cell
+# cost of the batched monitors.
+TRACE_LENGTH = 500
 N_TRACES     = 100
-N_REPEATS    = 7
-N_WARMUP     = 3
+N_REPEATS    = 5
+N_WARMUP     = 1
 SEED         = 42
 
 # Phase 0.1 — kill the early-termination confound. The IJCNN family
@@ -146,6 +154,9 @@ with tqdm(total=total, desc="exp2") as pbar:
                 )
                 pbar.update()
                 continue
+            # label BEFORE the call: one time_monitor can run for minutes and the
+            # bar only advances after it returns.
+            pbar.set_postfix(monitor=monitor_cls.__name__, n=formula.n_leaves, run="...")
             r = time_monitor(
                 monitor_cls, formula,
                 trace_length=TRACE_LENGTH,

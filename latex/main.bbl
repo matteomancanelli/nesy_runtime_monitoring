@@ -1,25 +1,9 @@
 \begin{thebibliography}{10}
 
-\bibitem{bacchus2000using}
-Fahiem Bacchus and Froduald Kabanza.
-\newblock Using temporal logics to express search control knowledge for
-  planning.
-\newblock {\em Artificial Intelligence}, 116(1-2):123--191, 2000.
-
 \bibitem{monitorability_LTL}
 Andreas Bauer, Martin Leucker, and Christian Schallhart.
 \newblock Runtime verification for {LTL} and {TLTL}.
 \newblock {\em {ACM} Trans. Softw. Eng. Methodol.}, 20(4):14:1--14:64, 2011.
-
-\bibitem{LTL2DFA3}
-Giuseppe {De Giacomo} and Marco Favorito.
-\newblock Compositional approach to translate {LTL}f/{LDL}f into deterministic
-  finite automata.
-\newblock In Susanne Biundo, Minh Do, Robert Goldman, Michael Katz, Qiang Yang,
-  and Hankz~Hankui Zhuo, editors, {\em Proceedings of the Thirty-First
-  International Conference on Automated Planning and Scheduling, {ICAPS} 2021,
-  Guangzhou, China (virtual), August 2-13, 2021}, pages 122--130. {AAAI} Press,
-  2021.
 
 \bibitem{LTLf}
 Giuseppe {De Giacomo} and Moshe~Y. Vardi.

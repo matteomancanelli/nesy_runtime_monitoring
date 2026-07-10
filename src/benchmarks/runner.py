@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 
 from src.benchmarks.formulas import BenchmarkFormula
 from src.monitors.base import Monitor
@@ -60,7 +61,7 @@ def time_monitor(
     formula: BenchmarkFormula,
     trace_length: int,
     n_traces: int = 100,
-    n_repeats: int = 7,
+    n_repeats: int = 5,
     n_warmup: int = 3,
     seed: int = 42,
     device: str = "cpu",
@@ -111,9 +112,22 @@ def time_monitor(
     # comparable. Empty unless this monitor actually ran on a GPU.
     gpu_name = torch.cuda.get_device_name() if cuda_sync else ""
 
+    # A single pass can take minutes for the slow monitors, and the caller's
+    # outer bar only advances once this whole function returns — a silent gap
+    # that is indistinguishable from a hang. This inner bar ticks between
+    # passes, strictly outside every timed region, so it cannot perturb the
+    # measurement. It writes to stderr and erases itself when done.
+    passes = tqdm(
+        total=n_warmup + n_repeats,
+        desc=f"  {monitor_cls.__name__} [{formula.name}]",
+        unit="pass",
+        leave=False,
+    )
+
     # warm-up: prime caches without contributing to measurements
     for _ in range(n_warmup):
         monitor.batch_run(traces, early_termination=early_termination)
+        passes.update()
     if cuda_sync:
         torch.cuda.synchronize()  # drain warm-up before the first measurement
 
@@ -125,6 +139,9 @@ def time_monitor(
         if cuda_sync:
             torch.cuda.synchronize()  # ensure all kernels finished before t1
         times.append(time.perf_counter() - t0)
+        passes.update()          # after t1: never inside the timed region
+        passes.set_postfix(s_per_pass=f"{times[-1]:.1f}")
+    passes.close()
 
     per_cell = [t / total_cells for t in times]
     return TimingResult(

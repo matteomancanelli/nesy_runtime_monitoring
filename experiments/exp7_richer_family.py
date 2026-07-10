@@ -77,7 +77,7 @@ BLOWUP_MONITORS = [
 ]
 TRACE_LENGTH = 500
 BATCH_SIZE = 64
-N_REPEATS = 7
+N_REPEATS = 5
 N_WARMUP = 3
 SEED = 42
 EARLY_TERMINATION = False  # per-cell cost (Phase 0.1)
@@ -170,6 +170,9 @@ def run_state_blowup() -> pd.DataFrame:
                 if key in completed:
                     pbar.update()
                     continue
+                # label BEFORE the call: one time_monitor can run for minutes and the
+                # bar only advances after it returns.
+                pbar.set_postfix(monitor=monitor_cls.__name__, q=formula.n_leaves, run="...")
                 r = time_monitor(
                     monitor_cls, formula,
                     trace_length=TRACE_LENGTH,
