@@ -5,6 +5,11 @@ Andreas Bauer, Martin Leucker, and Christian Schallhart.
 \newblock Runtime verification for {LTL} and {TLTL}.
 \newblock {\em {ACM} Trans. Softw. Eng. Methodol.}, 20(4):14:1--14:64, 2011.
 
+\bibitem{darwiche2002knowledge}
+Adnan Darwiche and Pierre Marquis.
+\newblock A knowledge compilation map.
+\newblock {\em Journal of Artificial Intelligence Research}, 17:229--264, 2002.
+
 \bibitem{LTLf}
 Giuseppe {De Giacomo} and Moshe~Y. Vardi.
 \newblock Linear temporal logic and linear dynamic logic on finite traces.

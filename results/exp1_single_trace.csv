@@ -1,0 +1,16 @@
+monitor_name,formula_name,n_leaves,trace_length,n_traces,n_repeats,mean_s_per_cell,std_s_per_cell,device,early_termination,gpu_name
+SymbolicDFAMonitor,response,2,1000,100,5,5.611609060142655e-07,3.122407864592805e-08,cpu,True,
+SymbolicDFAMonitor,response,2,2000,100,5,5.570176430119318e-07,4.533114093561593e-08,cpu,True,
+SymbolicDFAMonitor,response,2,3000,100,5,5.23817179336523e-07,9.996333224651315e-09,cpu,True,
+SymbolicDFAMonitor,response,2,4000,100,5,5.436180935030278e-07,3.6084225721055606e-08,cpu,True,
+SymbolicDFAMonitor,response,2,5000,100,5,5.849979544058442e-07,5.0028149159592986e-08,cpu,True,
+SymbolicDFAMonitor,response,2,6000,100,5,5.514753966635909e-07,1.0974146630920405e-08,cpu,True,
+SymbolicDFAMonitor,response,2,7000,100,5,5.506017311417963e-07,1.3749357246416607e-08,cpu,True,
+SymbolicDFAMonitor,response,2,8000,100,5,5.50568029499118e-07,1.4592513883293803e-08,cpu,True,
+SymbolicDFAMonitor,response,2,9000,100,5,5.57507477999833e-07,2.1500601142380703e-08,cpu,True,
+SymbolicDFAMonitor,response,2,10000,100,5,5.591202673997031e-07,4.667913661444179e-09,cpu,True,
+RuleRunnerMonitor,response,2,1000,100,5,2.3832280345974142e-05,5.122760451790223e-07,cuda,True,NVIDIA GeForce RTX 3050 Laptop GPU
+RuleRunnerMonitor,response,2,2000,100,5,2.4205368543989607e-05,5.477916590934223e-07,cuda,True,NVIDIA GeForce RTX 3050 Laptop GPU
+RuleRunnerMonitor,response,2,3000,100,5,2.496268488399801e-05,5.365572887187251e-07,cuda,True,NVIDIA GeForce RTX 3050 Laptop GPU
+RuleRunnerMonitor,response,2,4000,100,5,2.677571792051094e-05,6.283706742092589e-07,cuda,True,NVIDIA GeForce RTX 3050 Laptop GPU
+RuleRunnerMonitor,response,2,5000,100,5,2.7256262771596082e-05,8.896514880066902e-07,cuda,True,NVIDIA GeForce RTX 3050 Laptop GPU

@@ -1,0 +1,244 @@
+\section{What Is a Verdict on a Probabilistic Trace?}
+\label{sec:prob-verdict}
+
+On a crisp trace the question does not arise: $\boldsymbol{\sigma} \models \varphi$ is defined by the semantics of Section~\ref{sec:ltlf}, and all three paradigms agree on it. Once a time point is delivered as a vector of per-atom probabilities $\mathbf{p}_t \in [0,1]^{\calP}$ rather than as an assignment $\sigma_t \in 2^\calP$, the question becomes ill-posed: there is no single object to check $\varphi$ against, only a distribution over such objects. Every paradigm nonetheless emits \emph{something}. This section identifies what.
+
+The claim we defend is that the three paradigms do not compute noisy approximations of one shared quantity. They compute \emph{different, individually well-defined quantities}, each of which is the exact answer to a different question; and one of them --- the soft acceptance score of Section~\ref{sec:deepdfa-soft} --- is not, in general, the exact answer to any of them. Making these distinctions precise explains an otherwise puzzling experimental observation (the symbolic baseline is far stronger under perceptual noise than ``it throws information away'' would suggest), and it locates the non-read-once anomaly of Section~\ref{sec:deepdfa-soft} as an instance of a classical condition from knowledge compilation rather than an implementation defect.
+
+\subsection{The Probabilistic Trace Model}
+\label{sec:prob-model}
+
+\begin{definition}[Soft trace]
+\label{def:soft-trace}
+A \emph{soft trace} of length $T$ is a sequence $\mathbf{P} = (\mathbf{p}_1, \dots, \mathbf{p}_T)$ with $\mathbf{p}_t \in [0,1]^{\calP}$, where $p_{t,a}$ is read as the probability that atom $a$ holds at time $t$.
+\end{definition}
+
+A soft trace is not itself a trace; it is a compact description of a probability distribution over crisp traces. We take the standard \emph{independent-bit} reading: each atom at each time point is an independent Bernoulli variable, so that a soft trace $\mathbf{P}$ induces the distribution
+\begin{equation}
+  \Pr[\boldsymbol{\sigma} \mid \mathbf{P}]
+  \;=\;
+  \prod_{t=1}^{T} \prod_{a \in \calP}
+  p_{t,a}^{\,[a \in \sigma_t]}\,(1 - p_{t,a})^{\,[a \notin \sigma_t]}
+  \label{eq:trace-dist}
+\end{equation}
+over $(2^\calP)^T$. This is exactly the perceptor model of our uncertainty experiments (Section~\ref{sec:experiments}): a per-atom classifier emits marginal probabilities and its errors are assumed independent across atoms and across time. Two independence assumptions are hiding in Equation~\eqref{eq:trace-dist} --- \emph{across atoms} within a time point, and \emph{across time points} --- and both are properties of the perceptor, not of the logic. A perceptor whose atom errors correlate (a shared visual backbone confusing two atoms in the same way) violates the first; a temporally smoothed perceptor violates the second. Everything below is exact relative to Equation~\eqref{eq:trace-dist} and inherits its assumptions; we return to this in Section~\ref{sec:prob-assumptions}.
+
+With Equation~\eqref{eq:trace-dist} fixed, $\varphi$ induces a Bernoulli random variable $[\boldsymbol{\sigma} \models \varphi]$, and the monitoring question becomes: \emph{which functional of this random variable should the monitor report?}
+
+\subsection{Three Candidate Verdicts}
+\label{sec:prob-candidates}
+
+Three answers present themselves, all natural, all distinct.
+
+\paragraph{(V1) The marginal acceptance probability.} Average the truth value over the distribution:
+\begin{equation}
+  \mathrm{Acc}(\mathbf{P})
+  \;=\;
+  \Pr_{\boldsymbol{\sigma} \sim \mathbf{P}}\bigl[\boldsymbol{\sigma} \models \varphi\bigr]
+  \;=\;
+  \sum_{\boldsymbol{\sigma} \in (2^\calP)^T} \Pr[\boldsymbol{\sigma} \mid \mathbf{P}] \cdot [\boldsymbol{\sigma} \models \varphi].
+  \label{eq:acc-marginal}
+\end{equation}
+This is a number in $[0,1]$, from which a binary verdict is obtained by thresholding at $1/2$. It is the quantity that a calibrated confidence \emph{should} be, and Proposition~\ref{prop:bayes} below makes that precise.
+
+\paragraph{(V2) The verdict of the most likely trace.} Commit to the single most probable crisp trace and check it:
+\begin{equation}
+  \boldsymbol{\sigma}^\star = \argmax_{\boldsymbol{\sigma}} \Pr[\boldsymbol{\sigma} \mid \mathbf{P}],
+  \qquad
+  \mathrm{MAP}(\mathbf{P}) = [\,\boldsymbol{\sigma}^\star \models \varphi\,].
+  \label{eq:acc-map}
+\end{equation}
+This is the \emph{plug-in} estimator: reconstruct the world, then evaluate the specification on the reconstruction.
+
+\paragraph{(V3) The verdict of the most likely run.} A crisp trace drives the automaton $A_\varphi$ along a state path. One may instead ask for the most probable \emph{path}, and report whether it ends in an accepting state. Writing $\pi = (q_0, q_1, \dots, q_T)$ for a path, and deferring its probability to Equation~\eqref{eq:path-prob},
+\begin{equation}
+  \pi^\star = \argmax_{\pi} \Pr[\pi \mid \mathbf{P}],
+  \qquad
+  \mathrm{VIT}(\mathbf{P}) = [\, q^\star_T \in F \,].
+  \label{eq:acc-viterbi}
+\end{equation}
+This is the Viterbi decoding of the trace, in exactly the sense familiar from hidden Markov models.
+
+\medskip
+\noindent
+A fourth object, which is not a competitor but a refinement of (V1), is the \emph{distribution over three-valued verdicts} at each time point; we develop it in Section~\ref{sec:prob-online} once the machinery is in place.
+
+The rest of this section shows that (V1), (V2) and (V3) are pairwise distinct, that each paradigm natively computes one of them, and that the choice between them is a choice of loss function rather than a matter of correctness.
+
+\subsection{Runs Partition Traces}
+\label{sec:prob-paths}
+
+The bookkeeping device that relates all three is the state path. Everything follows from the automaton being \emph{deterministic}.
+
+Fix a soft trace $\mathbf{P}$. For a pair of states $q, q'$ define the \emph{exact per-cell marginal transition}
+\begin{equation}
+  M^\star(\mathbf{p}_t)[q, q']
+  \;=\;
+  \Pr_{\sigma \sim \mathbf{p}_t}\bigl[\, \delta(q, \sigma) = q' \,\bigr]
+  \;=\;
+  \sum_{\sigma \in 2^\calP : \delta(q,\sigma) = q'} \;\; \prod_{a \in \sigma} p_{t,a} \prod_{a \notin \sigma} (1 - p_{t,a}),
+  \label{eq:exact-M}
+\end{equation}
+the probability mass of the symbols that carry $q$ to $q'$. Since $\delta$ is a total function, the symbols are partitioned by their destination and each row of $M^\star(\mathbf{p}_t)$ sums to one. Note that Equation~\eqref{eq:exact-M} is stated as a sum over $2^\calP$; how to compute it without enumerating the alphabet is precisely the subject of Section~\ref{sec:prob-native}.
+
+\begin{lemma}[Run partition]
+\label{lem:run-partition}
+Every crisp trace $\boldsymbol{\sigma} \in (2^\calP)^T$ induces exactly one path $\pi(\boldsymbol{\sigma}) = (q_0, \delta(q_0,\sigma_1), \dots)$ through $A_\varphi$. Hence the map $\boldsymbol{\sigma} \mapsto \pi(\boldsymbol{\sigma})$ partitions $(2^\calP)^T$ into the fibres of the paths, and for any path $\pi$,
+\begin{equation}
+  \Pr[\pi \mid \mathbf{P}]
+  \;\isdef\;
+  \Pr_{\boldsymbol{\sigma} \sim \mathbf{P}}\bigl[\pi(\boldsymbol{\sigma}) = \pi\bigr]
+  \;=\;
+  \prod_{t=1}^{T} M^\star(\mathbf{p}_t)[q_{t-1}, q_t].
+  \label{eq:path-prob}
+\end{equation}
+Moreover $\boldsymbol{\sigma} \models \varphi$ depends on $\boldsymbol{\sigma}$ only through $q_T$ of $\pi(\boldsymbol{\sigma})$, so
+\begin{equation}
+  \mathrm{Acc}(\mathbf{P}) \;=\; \sum_{\pi \,:\, q_T \in F} \Pr[\pi \mid \mathbf{P}].
+  \label{eq:acc-as-path-sum}
+\end{equation}
+\end{lemma}
+
+\begin{proof}
+Determinism gives existence and uniqueness of $\pi(\boldsymbol{\sigma})$, hence the fibre partition. For Equation~\eqref{eq:path-prob}, the event $\{\pi(\boldsymbol{\sigma}) = \pi\}$ is the product event $\bigcap_t \{\delta(q_{t-1}, \sigma_t) = q_t\}$, in which the $t$-th conjunct constrains only $\sigma_t$; by the across-time independence of Equation~\eqref{eq:trace-dist} the probability factorizes into $\prod_t M^\star(\mathbf{p}_t)[q_{t-1}, q_t]$. Equation~\eqref{eq:acc-as-path-sum} follows because acceptance is $[q_T \in F]$ and the accepting paths are a union of disjoint fibres.
+\end{proof}
+
+Lemma~\ref{lem:run-partition} exposes the structure of the disagreement. Equation~\eqref{eq:acc-as-path-sum} is a \emph{sum} over accepting paths; Equation~\eqref{eq:acc-viterbi} is a \emph{max} over all paths. (V1) and (V3) are the sum-product and max-product readings of one and the same weighted trellis --- the marginal-versus-Viterbi distinction of hidden Markov models, transported to a monitor. (V2) is a max as well, but over a strictly finer partition: many crisp traces share a path, so $\Pr[\pi] = \sum_{\boldsymbol{\sigma} \in \pi^{-1}} \Pr[\boldsymbol{\sigma}]$, and the most probable trace need not lie on the most probable path. Three quantities, three different aggregations of the same trellis.
+
+The second consequence of the lemma is that (V1) never requires enumerating traces.
+
+\begin{proposition}[Exactness of the forward recursion]
+\label{prop:forward}
+Let $\mathbf{q}_0$ be the one-hot indicator of $q_0$ and $\mathbf{q}_t = \mathbf{q}_{t-1} M^\star(\mathbf{p}_t)$. Then $\mathbf{q}_t[q] = \Pr_{\boldsymbol{\sigma} \sim \mathbf{P}}[\,\delta^*(q_0, \sigma_1 \cdots \sigma_t) = q\,]$ for every $t$ and $q$, and consequently $\mathrm{Acc}(\mathbf{P}) = \mathbf{q}_T \cdot v_o$.
+\end{proposition}
+
+\begin{proof}
+By induction on $t$. The base case is immediate. Assume $\mathbf{q}_{t-1}$ is the state distribution after $t-1$ cells. The state after $t$ cells is $\delta(q_{t-1}, \sigma_t)$, and $\sigma_t$ is independent of $\sigma_1 \cdots \sigma_{t-1}$ by Equation~\eqref{eq:trace-dist}, hence independent of $q_{t-1}$, which is a function of that prefix. Conditioning on $q_{t-1}$,
+\[
+  \Pr[q_t = q'] = \sum_{q} \Pr[q_{t-1} = q] \cdot \Pr[\delta(q, \sigma_t) = q'] = \sum_q \mathbf{q}_{t-1}[q] \cdot M^\star(\mathbf{p}_t)[q,q'],
+\]
+which is the claimed vector--matrix product. The final identity is Equation~\eqref{eq:acc-as-path-sum} rewritten as an inner product with the acceptance vector.
+\end{proof}
+
+Proposition~\ref{prop:forward} is the classical forward algorithm, and it deserves emphasis because it isolates where an implementation can go wrong. \emph{The propagation is unconditionally exact.} Given the correct per-cell matrix $M^\star$, iterating a vector--matrix product commits no approximation whatsoever, for any formula, any trace length, any guard structure. It is the same computation as the crisp DFA walk with a distribution in place of a state. Any error in a monitor of this shape must therefore come from the \emph{per-cell matrix}, never from the recursion --- and this is exactly where DeepDFA's soft path departs from $M^\star$ (Section~\ref{sec:prob-native}). Note also that the argument breaks the moment one takes an $\argmax$ of $\mathbf{q}_t$ mid-trace: collapsing the distribution to its mode discards the conditioning that the induction step relies on, and yields a greedy path approximation which is neither (V1) nor (V3).
+
+\subsection{The Three Verdicts Disagree}
+\label{sec:prob-disagree}
+
+The distinctions above are not hypothetical. Table~\ref{tab:three-verdicts} evaluates all three quantities on two elementary specifications, and every pairwise disagreement is realized.
+
+\begin{table}[t]
+\centering
+\begin{tabular}{llccc}
+\toprule
+$\varphi$ & soft trace $\mathbf{P}$ & (V1) $\mathrm{Acc}$ & (V2) $\mathrm{MAP}$ & (V3) $\mathrm{VIT}$ \\
+\midrule
+$F(a \lor b \lor c)$ & $p_a = p_b = p_c = 0.4$, $T=1$
+  & $0.784$ \;\textsc{sat} & \textsc{violate} & \textsc{satisfy} \\
+$F(a \land b)$ & $p_a = p_b = 0.6$, $T=2$
+  & $0.590$ \;\textsc{sat} & \textsc{satisfy} & \textsc{violate} \\
+\bottomrule
+\end{tabular}
+\caption{The three probabilistic verdicts on two soft traces. Row 1 separates (V2) from (V1) and (V3); row 2 separates (V3) from (V1) and (V2). No two of the three quantities coincide in general.}
+\label{tab:three-verdicts}
+\end{table}
+
+\paragraph{Row 1: the plug-in verdict discards magnitude.} Each atom is individually more likely false than true, so the most probable single trace is $\boldsymbol{\sigma}^\star = (\emptyset)$, which violates $F(a \lor b \lor c)$; hence $\mathrm{MAP} = \textsc{violate}$, even though $\boldsymbol{\sigma}^\star$ carries only $0.6^3 = 0.216$ of the probability mass. Meanwhile the disjunction fails only if all three atoms fail, so $\mathrm{Acc} = 1 - 0.6^3 = 0.784$: the specification is satisfied with high probability. The plug-in estimator sees three atoms each on the wrong side of $1/2$ and concludes violation; the marginal sees that their \emph{union} is very likely. Rounding each atom independently is a decision made before the formula is consulted, and no amount of care in the automaton walk afterwards can recover the information that rounding destroyed.
+
+\paragraph{Row 2: the most likely run is not the most likely outcome.} Here $\Pr[a \land b] = 0.36$ per cell. Over two cells the automaton has two states --- pending ($q_1$) and the accepting sink ($q_2$) --- and exactly three paths: $q_1 q_1 q_1$ with probability $0.64^2 = 0.4096$ (rejecting), $q_1 q_1 q_2$ with $0.64 \cdot 0.36 = 0.2304$, and $q_1 q_2 q_2$ with $0.36 \cdot 1 = 0.36$. The accepting mass is $0.2304 + 0.36 = 0.5904$, so $\mathrm{Acc} = 0.590$ and the formula is satisfied more likely than not. Yet the single most probable path is the rejecting one, because the accepting mass is \emph{split across two paths}, neither of which individually exceeds $0.4096$. Viterbi therefore reports \textsc{violate}. This is precisely the standard failure of max-product decoding: the modal path can carry less mass than a set of paths agreeing on the outcome. Note that (V2) reports \textsc{satisfy} here --- the modal trace is $(\{a,b\},\{a,b\})$ --- so row 2 separates (V3) from \emph{both} of the others.
+
+Two lessons follow. First, no pair of these quantities can be substituted for one another as a matter of implementation convenience. Second, (V3) is a poor \emph{verdict} even though it is an excellent \emph{explanation}: a Viterbi path is a concrete witness run that a human can inspect, which neither (V1) nor (V2) provides. We return to this in Section~\ref{sec:prob-which}.
+
+\subsection{What Each Paradigm Natively Computes}
+\label{sec:prob-native}
+
+We now substantiate, paradigm by paradigm, the claim that each computes a different one of these quantities. The point is not that each paradigm was designed with a probabilistic semantics in mind --- none was --- but that each has exactly one canonical way of accepting a soft trace, and that way pins down the quantity.
+
+\paragraph{Symbolic DFA computes (V2), exactly.} The symbolic walk of Section~\ref{sec:symbolic} consumes elements of $2^\calP$. It has no representation for a fractional $\mathbf{p}_t$ and no way to acquire one: its state is a single automaton state and its step is a table lookup. The only available adapter is to round --- threshold each atom at $1/2$ to obtain a crisp trace, then walk. It is tempting to dismiss this as a lossy heuristic. It is not; it is the exact answer to (V2).
+
+\begin{proposition}[Thresholding is MAP trace reconstruction]
+\label{prop:threshold-is-map}
+Under Equation~\eqref{eq:trace-dist}, the trace $\hat{\boldsymbol{\sigma}}$ defined by $a \in \hat\sigma_t \iff p_{t,a} > 1/2$ is a maximizer of $\Pr[\boldsymbol{\sigma} \mid \mathbf{P}]$. Consequently the thresholding symbolic monitor returns exactly $\mathrm{MAP}(\mathbf{P})$.
+\end{proposition}
+
+\begin{proof}
+By Equation~\eqref{eq:trace-dist} the objective factorizes into one independent factor per $(t,a)$, each of which is $p_{t,a}$ if $a \in \sigma_t$ and $1 - p_{t,a}$ otherwise. Maximizing a product of nonnegative factors over independent choices maximizes each factor separately, and $\max(p, 1-p)$ selects $p$ iff $p > 1/2$. Ties at $p_{t,a} = 1/2$ are broken arbitrarily and leave the maximum unchanged.
+\end{proof}
+
+This proposition is the theoretical explanation of an empirical result that initially reads as a disappointment: in our uncertainty experiments the symbolic baseline is not brittle but \emph{competitive}, and where the noise is unbiased it is very hard to beat. Proposition~\ref{prop:threshold-is-map} says why. Thresholding is not a crude approximation of $\mathrm{Acc}$; it is a principled estimator in its own right, the one that answers ``what most likely happened, and does it satisfy $\varphi$?''. Its failure mode is equally sharply characterized by row 1 of Table~\ref{tab:three-verdicts}: it degrades exactly when the probability mass of the satisfying traces is spread across many individually-unlikely traces, which is what disjunctive structure over weakly-true atoms produces. When the perceptor is confident, or the formula is conjunctive, $\boldsymbol{\sigma}^\star$ carries most of the mass and (V2) agrees with (V1). The symbolic monitor is therefore not information-destroying by nature; it is committed to a mode-seeking loss.
+
+\paragraph{DeepDFA's architecture computes (V1); its guard evaluation does not.} DeepDFA's soft update, Equation~\eqref{eq:deepdfa-soft}, is a vector--matrix product $\mathbf{q}_t = \mathbf{q}_{t-1} M(\mathbf{p}_t)$ --- structurally the forward recursion of Proposition~\ref{prop:forward}. By that proposition, if $M = M^\star$ then $\mathrm{acc}_T = \mathbf{q}_T \cdot v_o$ is \emph{exactly} $\mathrm{Acc}(\mathbf{P})$. So the paradigm's architecture natively targets the marginal, and the entire question of correctness reduces to a per-cell, per-guard question: does the implementation's $M$ equal $M^\star$?
+
+Section~\ref{sec:deepdfa-factored} gives two constructions of $M$, and they answer differently.
+
+\begin{itemize}
+  \item The \emph{disjoint-cube cover} evaluates each guard as a sum over mutually exclusive cubes. Mutually exclusive events have additive probabilities, and each cube's probability is a product over atoms with disjoint roles, so the cube sum is the exact probability mass of the guard's satisfying symbols --- that is, $M = M^\star$, for \emph{any} guard, read-once or not. Its rows sum to one because a state's out-guards partition $2^\calP$.
+  \item The \emph{recursive closure} evaluates each guard bottom-up with the independence rules $P(\psi_1 \land \psi_2) = P(\psi_1)P(\psi_2)$ and $P(\psi_1 \lor \psi_2) = 1 - (1-P(\psi_1))(1-P(\psi_2))$. These rules are correct only when the two operands are probabilistically \emph{independent} events, which holds when they read disjoint sets of atoms. On a read-once guard every atom occurs once, so every operand pair is atom-disjoint and $M = M^\star$. On a guard that re-reads an atom, the rule is applied to dependent events and $M \neq M^\star$.
+\end{itemize}
+
+Both statements are verified on the non-read-once guard $(a \land b) \lor (b \land c) \lor (a \land c)$ of the \texttt{majority3} specification. At $p_a = p_b = p_c = 0.5$, the cube cover reproduces $M^\star$ to machine precision and is row-stochastic, while the recursive closure over-estimates the accepting guard by $0.078$ and its rows sum to $1.156$. The recursive $M$ is therefore not a transition matrix at all, and the score it propagates is not a probability: it can exceed one.
+
+The direction of the error is not accidental. For two events, the recursive disjunction rule returns $P_1 + P_2 - P_1 P_2$, whereas the truth is $P_1 + P_2 - \Pr[\psi_1 \land \psi_2]$. The closure therefore over-estimates precisely when the disjuncts are \emph{positively correlated}, $\Pr[\psi_1 \land \psi_2] > P_1 P_2$, and under-estimates when they are negatively correlated. The threshold family $\bigvee$ of shared conjunctions is maximally positively correlated --- every pair of disjuncts shares an atom --- which is why its over-count is large and grows with atom multiplicity, whereas the Declare template $G(a \rightarrow X(\lnot a \muntil b))$, whose repeated atoms sit across an alternation, exhibits errors that nearly cancel. This sharpens the empirical finding of Section~\ref{sec:experiments}: non-read-once is \emph{necessary but not sufficient} for divergence, and the sign and magnitude are governed by the correlation between disjuncts.
+
+Nor is the discrepancy cosmetic. On \texttt{majority3} with $p_a = p_b = p_c = 0.47$, the true marginal is $\mathrm{Acc} = 0.455$ --- the specification is more likely violated than satisfied --- while the recursive score is $0.527$, so thresholding it at $1/2$ returns \textsc{satisfy}. The over-count flips the verdict for every $p \in [0.46, 0.49]$. Renormalizing by the propagated mass $\mathbf{q}_T \cdot \mathbf{1}$ restores the range $[0,1]$ and, on this formula, restores the verdict; but it is a rescaling of a quantity that was never a probability, and it does not in general recover $\mathrm{Acc}$.
+
+The honest summary is therefore not that DeepDFA is wrong, but that DeepDFA offers a \emph{choice of estimator} for the same architectural quantity: an exact one whose cost is the number of disjoint cubes (which Shannon expansion can make exponential, Section~\ref{sec:deepdfa-factored}), and a cheap one whose bias is controlled by guard structure. That is a bias--cost trade-off, and it is the reason the alphabet blow-up of Section~\ref{sec:deepdfa-alphabet} reappears here in probabilistic clothing: computing $M^\star$ is a weighted model counting problem, and no representation escapes its hardness in general.
+
+\paragraph{RuleRunner computes a fuzzy truth degree, which is none of the three.} RuleRunner's registers hold three-valued truth evaluations $[\psi]V$ and its CILP encoding uses a $\mathrm{sign}$ activation, so on crisp inputs a register is a Boolean. To ingest a soft trace one replaces $\mathrm{sign}$ by $\tanh$ and injects $\mathbf{p}_t$ at the atom registers, which is the standard route to differentiability and the one the adaptation experiments take. What does a register then hold?
+
+The evaluation phase computes, bottom-up over the parse tree of $\varphi$, a real value per subformula from the values of its children. Whatever activation is chosen, the value at a node is a function of its children's values alone. This is a \emph{circuit evaluation}, and it computes the exact satisfaction probability of $\varphi$ only under the same condition that governs DeepDFA's recursive closure: the children of each gate must read disjoint atom sets. But RuleRunner's parse tree \emph{shares subformulas by construction} --- the node for $\psi$ is created once and consumed by every parent that mentions it (Section~\ref{sec:rulerunner-arch}) --- so a repeated atom or subformula is read by several gates, and its uncertainty is double-counted along each path to the root. The condition for exactness is that the whole parse tree be read-once, which is strictly stronger and rarer than DeepDFA's requirement that each individual \emph{guard} be read-once. Absent that, the propagated value is a \emph{fuzzy truth degree} under a product t-norm: a well-defined real number, monotone in the atom probabilities, but not the probability of any event. It is not (V1), and it is not (V2) or (V3) either, since no trace and no path is ever selected.
+
+The progression-based reformulation (Section~\ref{sec:rulerunner-progression}) clarifies what the right quantity would be. The repaired monitor carries a residual $\rho_t \in cl(\varphi)$, a positive Boolean formula over the closure, with the invariant that the suffix satisfies $\varphi$ iff it satisfies $\rho_t$. The probabilistically correct update is then not a fuzzy evaluation of $\rho_t$ but its \emph{weighted model count} under $\mathbf{p}_t$: sum the probability of every assignment satisfying $\rho_t$. Weighted model counting is $\#\mathrm{P}$-hard in general, which is the same wall that makes $M^\star$ expensive; and the fuzzy evaluation is exactly the standard, generally-incorrect, polynomial-time surrogate for it. We stress that this is an analysis of the encoding, not a measurement: a soft-input RuleRunner is not among the monitors we evaluate, and Section~\ref{sec:experiments} makes the capability comparison with the symbolic and DeepDFA monitors alone.
+
+\paragraph{One condition unifies the three.} The recurring criterion --- \emph{children of a gate must read disjoint atom sets}, or \emph{disjuncts must be mutually exclusive} --- is not an artifact of any of these systems. It is the pair of conditions from knowledge compilation \cite{darwiche2002knowledge} under which probability propagation over a Boolean circuit is exact in linear time. A circuit is \emph{decomposable} when the operands of every conjunction have disjoint atom supports, which licenses the product rule; it is \emph{deterministic} when the operands of every disjunction are pairwise mutually exclusive, which licenses the sum rule. A circuit with both properties (a d-DNNF) admits exact weighted model counting in one bottom-up sweep. Read from this vantage point, the three paradigms differ in \emph{which circuit they propagate over}:
+
+\begin{itemize}
+  \item the disjoint-cube cover is a \emph{deterministic} representation of each guard, so summing cubes is exact --- it purchases determinism, at the price of a possibly exponential number of cubes;
+  \item a read-once guard is \emph{decomposable} (every atom occurs once, so every gate's operands are support-disjoint), so the independent-union rule $1 - (1-P_1)(1-P_2)$ is exact --- decomposability alone suffices, provided the disjunction rule accounts for independent rather than exclusive events;
+  \item RuleRunner's shared parse tree is neither, and its fuzzy evaluation is the corresponding approximation.
+\end{itemize}
+
+The soft acceptance score of Section~\ref{sec:deepdfa-soft} is thus the result of applying a decomposable circuit's evaluation rule to a circuit that is not decomposable. Stated this way, the non-read-once anomaly is not a bug to be patched but the expected behaviour of a well-understood approximation, and its cure --- compile to a d-DNNF --- carries the expected cost.
+
+\subsection{The Online, Three-Valued Refinement}
+\label{sec:prob-online}
+
+Everything so far concerns the binary end-of-trace verdict. A monitor, however, is an online device, and Section~\ref{sec:symbolic} equips it with a three-valued verdict driven by the trap and accepting-sink sets. Lemma~\ref{lem:run-partition} lifts that to the probabilistic setting for free. Because the runs partition the traces, the forward vector $\mathbf{q}_t$ of Proposition~\ref{prop:forward} already assigns probability mass to \emph{regions} of the automaton, so with $\mathbf{1}_{\mathrm{trap}}$ and $\mathbf{1}_{\mathrm{sink}}$ the indicator vectors of the two precomputed sets,
+\begin{equation}
+  \Pr[\textsc{violate by } t] = \mathbf{q}_t \cdot \mathbf{1}_{\mathrm{trap}},
+  \quad
+  \Pr[\textsc{satisfy by } t] = \mathbf{q}_t \cdot \mathbf{1}_{\mathrm{sink}},
+  \label{eq:prob-three-valued}
+\end{equation}
+and the residual mass is the probability that the verdict is still \textsc{undecided}. These are exact --- they are marginal probabilities of the events ``the run has entered a trap by time $t$'', which are unions of fibres --- and they cost two inner products on top of the step the monitor already performs. The three-valued semantics of LTL$_3$ thereby lifts to a \emph{distribution} over $\{\textsc{satisfy}, \textsc{violate}, \textsc{undecided}\}$ available at every time point.
+
+This is what turns the marginal from a number reported at the end into an actionable monitor. Raising an alarm when $\Pr[\textsc{violate by } t] \ge 1 - \delta$ yields a family of monitors indexed by a tolerance $\delta$, trading detection latency against false-alarm rate. The symbolic monitor admits no such dial: having committed to $\hat{\boldsymbol{\sigma}}$, it enters a trap state or it does not, and it is a single point on that curve. We take this as the sharpest form of the capability claim, and evaluate it in Section~\ref{sec:experiments}.
+
+\subsection{Which Verdict Should a Monitor Report?}
+\label{sec:prob-which}
+
+The question in this section's title has no paradigm-independent answer, but it has a precise loss-dependent one.
+
+\begin{proposition}[(V1) is Bayes-optimal for the binary verdict]
+\label{prop:bayes}
+Under Equation~\eqref{eq:trace-dist} and the $0/1$ loss on the binary end-of-trace verdict, the decision rule minimizing expected loss reports \textsc{satisfy} iff $\mathrm{Acc}(\mathbf{P}) \ge 1/2$.
+\end{proposition}
+
+\begin{proof}
+A deterministic rule outputs $d \in \{0,1\}$; its expected loss is $\Pr[[\boldsymbol{\sigma} \models \varphi] \neq d]$, equal to $1 - \mathrm{Acc}$ if $d=1$ and $\mathrm{Acc}$ if $d=0$. Choosing $d = 1$ iff $\mathrm{Acc} \ge 1/2$ attains the minimum.
+\end{proof}
+
+So if the task is to answer ``does this trace satisfy $\varphi$?'' as often as possible, and the noise model of Equation~\eqref{eq:trace-dist} is correct, then (V1) is the answer and the other two are suboptimal. This is a real asymmetry between the paradigms, and it is the theoretical content of the capability claim. But three qualifications keep it honest.
+
+First, Proposition~\ref{prop:bayes} is optimality \emph{relative to an assumed noise model}. A monitor computing (V1) under a misspecified $\Pr[\boldsymbol{\sigma} \mid \mathbf{P}]$ enjoys no guarantee, and may lose to the mode-seeking (V2), which depends on the model only through the sign of $p_{t,a} - 1/2$ and is correspondingly robust to miscalibration. When a perceptor's probabilities are ordered correctly but scaled badly, thresholding is the safer estimator.
+
+Second, safety monitoring rarely has a symmetric loss. Missing a violation and raising a false alarm carry very different costs, and under an asymmetric loss the optimal rule thresholds $\mathrm{Acc}$ at a level determined by the cost ratio rather than at $1/2$. This does not change which \emph{quantity} is sufficient --- $\mathrm{Acc}$ still is, and the whole three-valued distribution of Equation~\eqref{eq:prob-three-valued} more so --- but it means the reported scalar, not the reported bit, is the useful output. A monitor that can only emit a bit has thrown away the sufficient statistic before the decision is made.
+
+Third, (V3) answers a question the others cannot. A Viterbi path is a \emph{witness}: a single concrete run of the automaton, hence a single explanation of how the specification came to be satisfied or violated, which can be presented to an engineer. (V1) marginalizes exactly this information away. The right reading is that (V1) is the verdict, (V3) is the diagnosis, and (V2) is what one must report when a downstream consumer demands a crisp trace. They coexist; they are not competitors for one throne.
+
+\subsection{Assumptions, and What This Does Not Claim}
+\label{sec:prob-assumptions}
+
+Three limitations bound the scope of the above. \emph{(i)} Everything is exact relative to the independent-bit model of Equation~\eqref{eq:trace-dist}; correlated perceptor errors, across atoms or across time, invalidate the factorization in Lemma~\ref{lem:run-partition} and with it Proposition~\ref{prop:forward}. Handling correlated observations requires a joint model of the perceptor output and is outside the scope of this work. \emph{(ii)} We assume the perceptor emits marginal probabilities that are themselves calibrated; the experiments measure calibration of the \emph{monitor's} output given the perceptor's, not of the perceptor. \emph{(iii)} The optimality of (V1) is a statement about a decision rule, not about a monitor's ability to compute it: as Section~\ref{sec:prob-native} shows, computing $\mathrm{Acc}$ exactly is a weighted model counting problem, and the cheap surrogate that DeepDFA ships is exact only on read-once guards.
+
+\textcolor{red}{TODO: position against runtime verification with state estimation (Stoller et al., RV 2011), which applies the forward algorithm to a DFA monitor under a hidden Markov observation model, and against statistical/probabilistic model checking more broadly. Our contribution here is not the identification of the marginal as the Bayes-optimal verdict --- that is established --- but the paradigm-level map: that the three monitoring paradigms natively compute three different functionals of the same trellis, and that the widely-used soft DeepDFA readout computes none of them exactly once guards share atoms. Verify the exact claims of the RVSE line before finalizing this paragraph.}
