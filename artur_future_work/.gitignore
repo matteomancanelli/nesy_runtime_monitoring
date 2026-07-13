@@ -1,0 +1,11 @@
+.claude/
+*__pycache__/
+.pytest_cache/
+.ruff_cache/
+.vscode/
+*.egg-info/
+
+papers*/
+
+# Windows "downloaded-from-internet" metadata (from Colab CSV downloads)
+*Zone.Identifier

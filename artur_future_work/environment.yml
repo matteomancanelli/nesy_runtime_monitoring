@@ -1,0 +1,23 @@
+name: nesy-monitoring-future
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy=2.4.4
+  - matplotlib=3.10.9
+  - pandas=3.0.2
+  - tqdm=4.67.3
+  - scipy=1.17.1
+  - pytest=9.0.3
+  - ruff=0.15.1
+  - black=26.3.1
+  - pip
+  - pip:
+    # --extra-index-url must be its own line (pip ignores it when appended to a
+    # package spec). It ADDS the PyTorch CUDA index alongside PyPI, so torch
+    # resolves to the +cu124 build while ltlf2dfa still resolves from PyPI.
+    - --extra-index-url https://download.pytorch.org/whl/cu124
+    - torch==2.6.0+cu124
+    - ltlf2dfa==1.0.2
+    - -e .

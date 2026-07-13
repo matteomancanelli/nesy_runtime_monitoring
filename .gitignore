@@ -6,7 +6,8 @@
 *.egg-info/
 
 papers*/
-CLAUDE.md
+# Root CLAUDE.md only (tracked by explicit add); artur_future_work/CLAUDE.md must stay trackable.
+/CLAUDE.md
 
 # Windows "downloaded-from-internet" metadata (from Colab CSV downloads)
 *Zone.Identifier

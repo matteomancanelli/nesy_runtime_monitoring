@@ -71,14 +71,6 @@ def main() -> None:
     plots.plot_correctness_cost(_both("exp2_formula_complexity.csv"), merged)
     plots.plot_correctness_cost([GPU / "exp2_formula_complexity.csv"], gpu_only)
 
-    # Hardware-independent results (accuracy / calibration / soft divergence).
-    # The two sessions' copies are byte-identical apart from exp_uncertainty,
-    # which agrees to 0.0 on every numeric column; use the CPU copy.
-    plots.plot_exp7_divergence(CPU / "exp7_divergence.csv", merged)
-    plots.plot_uncertainty(CPU / "exp_uncertainty.csv", merged)
-    plots.plot_uncertainty_sharpness(CPU / "exp_uncertainty_sharpness.csv", merged)
-    plots.plot_uncertainty_riskcoverage(CPU / "exp_uncertainty_riskcoverage.csv", merged)
-
 
 if __name__ == "__main__":
     main()

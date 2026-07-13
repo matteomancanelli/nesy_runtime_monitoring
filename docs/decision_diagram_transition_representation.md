@@ -1,5 +1,14 @@
 # Decision-diagram (BDD/SDD) transition representations for DeepDFA
 
+> **Scope note (2026-07-13, post ICLR-refocus).** This direction straddles the
+> repo split. The **crisp/scalability side** (compact exact transition
+> representation, batched compiled circuits, representation-size and throughput
+> experiments) is Phase 4 of THIS repo's roadmap (see CLAUDE.md). The
+> **calibration/WMC-exactness headline** (§3.1, §8 — exact soft transitions,
+> calibrated probabilistic verdicts) belongs to the probabilistic-monitoring
+> thread in `artur_future_work/`, which holds a copy of this note. Coordinate
+> before building either half.
+
 **Status:** exploratory planning note (2026-07-07). Captures a candidate direction
 raised while reviewing §4 (DeepDFA). Records the technical case, the GPU tension and
 its resolution, the relationship to the LydiaSyft / symbolic-synthesis line, and a
@@ -235,7 +244,8 @@ Why this is A*-shaped:
   runtime *and* differentiable), completing the three-Achilles-heels narrative rather than
   crowning a winner.
 - **Evaluation is feasible without a training loop:** calibration/ECE + reliability
-  diagrams on non-read-once families (extends the existing `exp_uncertainty.py` harness),
+  diagrams on non-read-once families (extends the uncertainty harness, now in
+   `artur_future_work/experiments/exp_uncertainty.py`),
   plus alphabet-scaling (diagram size vs dense `2^|Σ|` vs cube count) and a batched-circuit
   throughput panel. No BPIC log, no adaptation training, no new dataset.
 
@@ -271,6 +281,6 @@ Why this is A*-shaped:
 - Signpost paragraph (inert): `latex/8_conclusion.tex` (remove `\iffalse`/`\fi` to promote).
 - Factored representation it upgrades: `latex/4_deepdfa.tex` §4.4, `src/monitors/deep_dfa.py`
   (`_guard_cubes` / `_shannon_cubes` / `crisp_matrix` / `soft_matrix`).
-- Calibration harness to extend: `src/benchmarks/calibration.py`, `experiments/exp_uncertainty.py`.
+- Calibration harness to extend (moved to the future-work fork): `artur_future_work/src/benchmarks/calibration.py`, `artur_future_work/experiments/exp_uncertainty.py`.
 - Bib keys added for this: `lydiasyft2025`, `darwiche2002knowledge`, `t_ilr_2025`
   (plus existing `LTL2DFA1`, `LTL2DFA3`, `NesyA`, `pseudosemantic_loss`, `liu2024tractable`).

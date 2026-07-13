@@ -1,0 +1,53 @@
+% =====================================================================
+% Prose trimmed from the parent (ICLR foundation) paper on 2026-07-13,
+% preserved VERBATIM for reuse in the future-work papers.
+%
+% Contents:
+%   1. 4_deepdfa.tex §4.2 "Soft Observations and Differentiability" —
+%      the full analysis version (replaced in the paper by a short
+%      affordance paragraph). Contains the read-once exactness condition,
+%      the non-read-once non-stochasticity finding, and renormalization.
+%   2. 4_deepdfa.tex §4.4 — the full "Soft path: recursive guard
+%      probabilities" paragraph (replaced by a pointer version).
+%   3. 5_theory_cmp.tex §5.2 "Repaired RuleRunner and DeepDFA as
+%      Learnable Objects" (removed from the paper).
+%
+% The whole probabilistic-verdict section (5b) was moved unchanged to
+% 5b_probabilistic_verdict.tex in this folder. Cross-references
+% (\ref{sec:...}) point at labels of the parent paper.
+% =====================================================================
+
+% ---------------------------------------------------------------------
+% 1. Original §4.2 (Soft Observations and Differentiability), full text
+% ---------------------------------------------------------------------
+
+\subsection{Soft Observations and Differentiability}
+\label{sec:deepdfa-soft}
+
+The reason to pay for this tensorization is that Equation~\eqref{eq:deepdfa-crisp} extends verbatim to \emph{probabilistic} observations, which the symbolic walk cannot represent. Suppose a time point is delivered not as a crisp assignment but as a vector of per-atom probabilities $\mathbf{p}_t \in [0,1]^{\calP}$, as produced by a neural perceptor or a noisy sensor. We replace the one-hot symbol selection by an \emph{expected} transition matrix $M(\mathbf{p}_t) \in [0,1]^{|Q| \times |Q|}$, whose entry $(q, q')$ is the probability that the guard of edge $q \to q'$ is satisfied under $\mathbf{p}_t$. Here our setting departs from the source formulation: the original DeepDFA and the process-monitoring work that adopts it assume \emph{mutual exclusivity} --- exactly one activity is true per step --- so the alphabet is the set of atoms and the expected transition is a simple convex combination $M(\mathbf{p}_t) = \sum_\sigma p_\sigma\, T_\sigma$ of the one-hot per-symbol matrices, weighted by the categorical symbol probabilities. Because our propositional benchmark family admits conjunctions of simultaneously-true atoms (Section~\ref{sec:ltlf}), we drop this assumption and instead compute each edge's guard-satisfaction probability compositionally over the boolean structure of the guard under an atom-independence assumption ($P(a) = p_a$, $P(\lnot \psi) = 1 - P(\psi)$, $P(\psi_1 \land \psi_2) = P(\psi_1)P(\psi_2)$, $P(\psi_1 \lor \psi_2) = 1 - (1 - P(\psi_1))(1 - P(\psi_2))$). The update and acceptance score are unchanged,
+\begin{equation}
+  \mathbf{q}_t = \mathbf{q}_{t-1}\, M(\mathbf{p}_t),
+  \qquad
+  \mathrm{acc}_t = \mathbf{q}_t \cdot v_o,
+  \label{eq:deepdfa-soft}
+\end{equation}
+so that $\mathbf{q}_t$ propagates the perceptual uncertainty all the way to the verdict rather than discarding it through a hard $0.5$ threshold, and $\mathrm{acc}_t$ is a soft acceptance score that the symbolic walk fundamentally cannot emit. Because each $M(\mathbf{p}_t)$ is a smooth function of $\mathbf{p}_t$ (and, if desired, of the learnable parameters of $T$), the whole monitor is differentiable: gradients of a verdict loss flow back through the automaton, which is what makes DeepDFA the vehicle for gradient-based specification adaptation and, ultimately, end-to-end training of a perceptor. On crisp inputs $M(\mathbf{p}_t)$ collapses to $T_{\sigma_t}$ and the probabilistic semantics is exact for any guard. On fractional inputs, however, the guarantee is conditional: the compositional score is exact --- and $M(\mathbf{p}_t)$ genuinely row-stochastic, so $\mathrm{acc}_t$ is a well-defined acceptance \emph{probability} --- precisely when every guard is \emph{read-once} (each atom occurring once), which holds for the \ltlf families we study after \textsc{mona}'s factoring. On a non-read-once guard the independence assumption double-counts shared atoms across disjuncts: the per-state out-guard probabilities no longer sum to one, $M(\mathbf{p}_t)$ ceases to be row-stochastic, and the raw $\mathrm{acc}_t$ is no longer a valid probability (it can exceed $1$). It can be renormalized by the total propagated mass $\mathbf{q}_t \cdot \mathbf{1}$ to restore the range $[0,1]$ --- a no-op on read-once guards, where the mass is already one --- but this restores range validity, not calibration; we return to this point, and to which probabilistic quantity a monitor \emph{should} report, in Section~\ref{sec:prob-verdict} and the experiments.
+
+% ---------------------------------------------------------------------
+% 2. Original §4.4 "Soft path" paragraph, full text
+% ---------------------------------------------------------------------
+
+\paragraph{Soft path: recursive guard probabilities.} Separately, each guard is compiled into a differentiable closure that evaluates its satisfaction probability recursively over the boolean tree, using the independence rules of Equation~\eqref{eq:deepdfa-soft}; summing these per-edge closures yields the expected transition matrix $M(\mathbf{p}_t)$, differentiable in $\mathbf{p}_t$ and in the automaton parameters. This is the substrate for the soft observations and gradient-based adaptation of Section~\ref{sec:deepdfa-soft}. On read-once guards the two views coincide even on fractional inputs, since the orthogonal-cube sum equals the recursive read-once probability; on crisp inputs both are exact for any guard. They part ways only on non-read-once guards with fractional inputs, and instructively so: the disjoint-cube sum computes the \emph{exact} independent-atom marginal (it sums probabilities of mutually exclusive events), whereas the recursive closure double-counts shared atoms and can overshoot. We deliberately drive the soft readout from the recursive closure rather than the exact-marginal cube sum --- both because the cube count can itself blow up, as noted above, and because retaining the overshoot keeps the non-read-once non-stochasticity of Section~\ref{sec:deepdfa-soft} observable rather than silently corrected. Which of these quantities is the ``correct'' probabilistic verdict for a monitor is itself a question we take up in Section~\ref{sec:prob-verdict}.
+
+% ---------------------------------------------------------------------
+% 3. Original §5.2 "Repaired RuleRunner and DeepDFA as Learnable Objects"
+% ---------------------------------------------------------------------
+
+\subsection{Repaired RuleRunner and DeepDFA as Learnable Objects}
+\label{sec:theory-learnable}
+
+As \emph{monitors}, the completeness-restored RuleRunner and DeepDFA are interchangeable: the progression construction converges to the same minimal DFA (Section~\ref{sec:rulerunner-progression}), so on any crisp trace they agree, and on crisp throughput the symbolic walk is optimal for both. The reason to keep both lineages is not runtime but what they expose to gradient-based adaptation.
+
+DeepDFA's learnable parameters are the entries of the transition tensor and the accepting vector: a gradient adapts transition probabilities between \emph{opaque} states, over $|Q|^2 \cdot |\calP|$ parameters with no structural inductive bias, and the learned object can drift into an arbitrary weighted automaton no longer corresponding to any \ltlf formula. The rule-based construction, by contrast, attaches parameters to the \emph{rules}, indexed by subformula and operator at the symbolic construction level: adaptation is syntactically local, the learned object re-extracts as a corrected specification, and the parameterization carries an inductive bias toward valid specifications. The two are thus interchangeable as monitors but not as learnable objects --- DeepDFA adapts an opaque automaton, the rule form adapts a structured specification --- which is the distinction we build on in the specification-adaptation experiments (Section~\ref{sec:experiments}) and the bridge to follow-up work.
+
+\textcolor{red}{TODO: expand once the adaptation experiments are in; cite Bacchus--Kabanza progression and the LTLf 2EXP bound as primary sources.}

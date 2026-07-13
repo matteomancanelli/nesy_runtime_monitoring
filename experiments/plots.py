@@ -1,6 +1,6 @@
 """Plotting for all experiments, decoupled from the runs.
 
-Every experiment script (exp1/2/3/5, exp_uncertainty) writes a CSV and nothing
+Every experiment script (exp1/2/3/5/6/7) writes a CSV and nothing
 else about the figures; this module turns those CSVs into PNGs. That split means
 you can re-style a plot without re-running the (slow) sweep: edit here and call
 the relevant ``plot_*`` function, or run this file to regenerate every figure
@@ -502,242 +502,6 @@ def plot_device_speedup(csv_paths, experiment: str,
 
 
 # ---------------------------------------------------------------------------
-# Capability Exp A — accuracy + calibration vs perceptual noise
-# ---------------------------------------------------------------------------
-
-# Fixed colours for the three uncertainty series (reuse the paradigm palette:
-# Symbolic = blue, DeepDFA-factored = green; the two soft read-outs are the same
-# monitor, so raw = green and norm = vermillion to tell them apart).
-_UNC_STYLE = {
-    "sym":  ("Symbolic (threshold)",   "#0072B2", "s", "-"),
-    "raw":  ("DeepDFA soft (raw)",     "#009E73", "o", "-"),
-    "norm": ("DeepDFA soft (norm)",    "#D55E00", "^", "--"),
-}
-# Colours for per-formula lines (distinct from the paradigm palette).
-_FORMULA_COLORS = ["#E69F00", "#56B4E9", "#CC79A7", "#000000"]
-
-
-def plot_uncertainty(csv_paths=None, out_dir: Path | None = None,
-                     rep_eps: float = 0.4) -> list[Path]:
-    """Capability Exp A figures, one file per plot.
-
-    Accuracy: one file per (noise model, formula). Calibration: reliability,
-    ECE, and the two non-read-once defect quantities (split — no dual axis) as
-    separate files. Everything but the reliability diagram is CSV-driven; the
-    reliability panel recomputes raw scores from the monitor (lazy import).
-    """
-    csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty.csv"
-    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
-    if not frames:
-        raise FileNotFoundError(f"no uncertainty CSV found among {csv_paths}")
-    df = pd.concat(frames, ignore_index=True)
-    out_dir = out_dir or RESULTS_DIR
-    N_BINS = 10
-
-    fmeta = (df[["formula", "read_once"]].drop_duplicates()
-             .set_index("formula")["read_once"].to_dict())
-    formula_names = list(fmeta)
-    noise_names = sorted(df["noise"].unique())
-    fcolor = {f: _FORMULA_COLORS[i % len(_FORMULA_COLORS)]
-              for i, f in enumerate(formula_names)}
-    outs = []
-
-    # --- accuracy vs eps: one file per (noise, formula) ---
-    for noise_name in noise_names:
-        for fname in formula_names:
-            g = df[(df["formula"] == fname) & (df["noise"] == noise_name)]
-            g = g.sort_values("eps")
-            if g.empty:
-                continue
-            fig, ax = _new_ax(figsize=(6.0, 4.2))
-            for key, col in [("sym", "sym_acc"), ("raw", "raw_acc"),
-                             ("norm", "norm_acc")]:
-                lab, color, marker, ls = _UNC_STYLE[key]
-                ax.plot(g["eps"], g[col], marker=marker, ms=6, lw=2, ls=ls,
-                        color=color, label=lab)
-            rate = float(g["pos_rate"].iloc[0])
-            ax.axhline(max(rate, 1.0 - rate), color="gray", ls=":", alpha=0.7,
-                       label="majority-class baseline")
-            ax.set_ylim(0.45, 1.02)
-            ro = "read-once" if fmeta[fname] else "NON-read-once"
-            ax.set_xlabel("noise level ε")
-            ax.set_ylabel("verdict accuracy")
-            ax.set_title(f"Accuracy vs {noise_name} noise — {fname} ({ro})")
-            fname_out = f"exp_uncertainty_accuracy_{noise_name}_{fname}.png"
-            outs.append(_save(fig, ax, out_dir / fname_out))
-
-    non_read_once = [n for n, ro in fmeta.items() if not ro]
-    majority = non_read_once[0] if non_read_once else formula_names[0]
-
-    # --- reliability diagram (recomputed; graceful if deps missing) ---
-    fig, ax = _new_ax(figsize=(5.6, 5.2))
-    try:
-        reliability = _reliability_bins(df, majority, rep_eps, N_BINS)
-        ax.plot([0, 1], [0, 1], color="gray", ls=":", label="perfectly calibrated")
-        for xs, ys, key, ece in reliability:
-            lab, color, marker, _ = _UNC_STYLE[key]
-            ls = "-" if key == "raw" else "--"
-            ax.plot(xs, ys, marker=marker, ms=6, lw=2, ls=ls, color=color,
-                    label=f"{key} (ECE={ece:.3f})")
-        legend = True
-    except ImportError:
-        ax.text(0.5, 0.5, "reliability panel needs the monitor\n(raw scores not "
-                "stored in the CSV)", ha="center", va="center",
-                transform=ax.transAxes, fontsize=9, color="0.4")
-        legend = False
-    ax.set_xlabel("mean predicted confidence")
-    ax.set_ylabel("empirical accuracy")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.set_title(f"Reliability — {majority} (non-read-once), Beta ε={rep_eps}")
-    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_reliability.png",
-                      legend=legend))
-
-    # --- ECE vs eps (Beta), per formula ---
-    fig, ax = _new_ax(figsize=(6.5, 4.4))
-    for fname in formula_names:
-        g = df[(df["formula"] == fname) & (df["noise"] == "beta")].sort_values("eps")
-        if g.empty:
-            continue
-        tag = "read-once" if fmeta[fname] else "NON-read-once"
-        ax.plot(g["eps"], g["raw_ece"], marker="o", ms=6, lw=2, color=fcolor[fname],
-                label=f"{fname} raw ({tag})")
-        if not fmeta[fname]:
-            ax.plot(g["eps"], g["norm_ece"], marker="^", ms=6, lw=2, ls="--",
-                    color=fcolor[fname], label=f"{fname} norm")
-    ax.set_xlabel("noise level ε")
-    ax.set_ylabel("Expected Calibration Error")
-    ax.set_title("ECE vs noise (Beta) — only the soft paradigm emits a confidence")
-    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_ece.png"))
-
-    # --- non-read-once defect: split into two single-axis files (no twinx) ---
-    g = df[(df["formula"] == majority) & (df["noise"] == "beta")].sort_values("eps")
-    fig, ax = _new_ax(figsize=(6.0, 4.2))
-    ax.plot(g["eps"], g["raw_max_score"], marker="o", ms=6, lw=2, color="#D55E00",
-            label="raw max acceptance score")
-    ax.axhline(1.0, color="gray", ls=":", label="valid-probability ceiling")
-    ax.set_xlabel("noise level ε")
-    ax.set_ylabel("raw acceptance score (max)")
-    ax.set_title(f"Non-read-once defect — {majority}: raw score exceeds 1")
-    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_defect_maxscore.png"))
-
-    fig, ax = _new_ax(figsize=(6.0, 4.2))
-    ax.plot(g["eps"], g["raw_frac_over1"], marker="s", ms=6, lw=2, color="#CC79A7",
-            label="fraction of traces with raw score > 1")
-    ax.set_xlabel("noise level ε")
-    ax.set_ylabel("fraction of traces with raw score > 1")
-    ax.set_title(f"Non-read-once defect — {majority}: overshoot prevalence")
-    outs.append(_save(fig, ax, out_dir / "exp_uncertainty_defect_fracover1.png"))
-    return outs
-
-
-def _reliability_bins(df: pd.DataFrame, formula_name: str, rep_eps: float, n_bins: int):
-    """Recompute reliability-curve points; lazy heavy imports, raises ImportError."""
-    from src.benchmarks.calibration import (
-        expected_calibration_error,
-        reliability_curve,
-    )
-    from src.benchmarks.formulas import CALIBRATION_SUITE
-    from src.benchmarks.noise import BetaNoise, true_verdicts
-    from src.benchmarks.runner import random_traces
-    from src.monitors.deep_dfa import DeepDFAMonitorFactored
-
-    spec = next(f for f in CALIBRATION_SUITE if f.name == formula_name)
-    L = int(df.loc[df["formula"] == formula_name, "trace_length"].iloc[0])
-    crisp = random_traces(spec.atoms, L, 3_000, np.random.default_rng(42))
-    labels = true_verdicts(spec.formula, crisp)
-    soft = BetaNoise(rep_eps, concentration=10.0).corrupt_all(
-        crisp, np.random.default_rng(1_000))
-    dd = DeepDFAMonitorFactored.compile(spec.formula)
-    raw = np.clip(dd.batch_acceptance_probability(soft, normalize=False), 0.0, 1.0)
-    norm = np.asarray(dd.batch_acceptance_probability(soft, normalize=True))
-
-    out = []
-    for scores, key in [(raw, "raw"), (norm, "norm")]:
-        bins = reliability_curve(scores, labels, n_bins)
-        xs = [b.mean_confidence for b in bins if b.count]
-        ys = [b.accuracy for b in bins if b.count]
-        ece = expected_calibration_error(scores, labels, n_bins)
-        out.append((xs, ys, key, ece))
-    return out
-
-
-def plot_uncertainty_sharpness(csv_paths=None,
-                               out_dir: Path | None = None) -> list[Path]:
-    """Verdict accuracy vs perceptor sharpness (Beta concentration), one file per
-    formula. Shows whether the soft marginal beats thresholding as the perceptor
-    fuzzes (low concentration = fuzzy = the regime where softness should win)."""
-    csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty_sharpness.csv"
-    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
-    if not frames:
-        raise FileNotFoundError(f"no sharpness CSV among {csv_paths}")
-    df = pd.concat(frames, ignore_index=True)
-    out_dir = out_dir or RESULTS_DIR
-    outs = []
-    for fname, g in df.groupby("formula"):
-        g = g.sort_values("concentration")
-        ro = "read-once" if bool(g["read_once"].iloc[0]) else "NON-read-once"
-        eps = float(g["eps"].iloc[0])
-        fig, ax = _new_ax(figsize=(6.2, 4.4))
-        for key, col in [("sym", "sym_acc"), ("raw", "raw_acc"), ("norm", "norm_acc")]:
-            lab, color, marker, ls = _UNC_STYLE[key]
-            ax.plot(g["concentration"], g[col], marker=marker, ms=6, lw=2, ls=ls,
-                    color=color, label=lab)
-        ax.set_xscale("log", base=2)
-        ax.get_xaxis().set_major_formatter(plt.ScalarFormatter())
-        ax.set_xlabel("perceptor sharpness (Beta concentration) — higher = sharper")
-        ax.set_ylabel("verdict accuracy")
-        ax.set_title(f"Accuracy vs perceptor sharpness — {fname} ({ro}), ε={eps}")
-        outs.append(_save(fig, ax, out_dir / f"exp_uncertainty_sharpness_{fname}.png"))
-    return outs
-
-
-def plot_uncertainty_riskcoverage(csv_paths=None,
-                                  out_dir: Path | None = None) -> list[Path]:
-    """Risk–coverage (selective prediction), one file per formula: DeepDFA's
-    accuracy as it abstains on its least-confident verdicts, vs symbolic's single
-    no-abstention point. The confidence knob is the capability symbolic lacks."""
-    csv_paths = csv_paths or RESULTS_DIR / "exp_uncertainty_riskcoverage.csv"
-    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
-    if not frames:
-        raise FileNotFoundError(f"no risk-coverage CSV among {csv_paths}")
-    df = pd.concat(frames, ignore_index=True)
-    out_dir = out_dir or RESULTS_DIR
-    _, soft_color, _, _ = _UNC_STYLE["norm"]
-    _, sym_color, _, _ = _UNC_STYLE["sym"]
-    outs = []
-    for fname, g in df.groupby("formula"):
-        eps = float(g["eps"].iloc[0])
-        soft = g[g["monitor"] == "DeepDFA soft (norm)"].sort_values("coverage")
-        sym = g[g["monitor"] == "Symbolic (no abstention)"]
-        fig, ax = _new_ax(figsize=(6.2, 4.4))
-        ax.plot(soft["coverage"], soft["accuracy"], marker="o", ms=5, lw=2,
-                color=soft_color, label="DeepDFA soft (abstains on low confidence)")
-        if not sym.empty:
-            ax.axhline(float(sym["accuracy"].iloc[0]), color=sym_color, ls="--",
-                       lw=2, label="Symbolic (no confidence → no abstention)")
-        ax.set_xlabel("coverage (fraction of traces the monitor commits to)")
-        ax.set_ylabel("accuracy on the covered subset")
-        ax.set_title(f"Selective prediction — {fname}, Beta ε={eps}")
-        ax.set_xlim(0, 1.02)
-        outs.append(_save(
-            fig, ax, out_dir / f"exp_uncertainty_riskcoverage_{fname}.png"))
-    return outs
-
-
-def _plot_uncertainty_all(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
-    """CLI entry: the core figures + the sharpness and risk-coverage figures,
-    each skipped with a note if its CSV is absent."""
-    outs = plot_uncertainty(csv_paths, out_dir)
-    for fn in (plot_uncertainty_sharpness, plot_uncertainty_riskcoverage):
-        try:
-            outs += fn(None, out_dir)
-        except FileNotFoundError as e:
-            print(f"[uncertainty] skipped: {e}")
-    return outs
-
-
-# ---------------------------------------------------------------------------
 # Cost of correctness: corrected (progression) RR vs the original (WRONG on
 # nested-temporal) RR — the paper number for "does the fix cost throughput?".
 # ---------------------------------------------------------------------------
@@ -818,76 +582,8 @@ def plot_correctness_cost(csv_paths=None, out_dir: Path | None = None,
 
 
 # ---------------------------------------------------------------------------
-# Exp 7 — richer family: probabilistic divergence + state-blowup neutrality
+# Exp 7 — state blowup as a shared weakness (symbolic vs DeepDFA)
 # ---------------------------------------------------------------------------
-
-
-def plot_exp7_divergence(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
-    """Non-read-once soft over-count: the finding as a curve.
-
-    (1) over-count vs input probability p (one line per formula, showing the
-        shape and that larger families diverge more), and (2) the aggregate
-        max over-count vs atom multiplicity (the headline "divergence grows").
-    """
-    csv_paths = csv_paths or RESULTS_DIR / "exp7_divergence.csv"
-    frames = [pd.read_csv(p) for p in _as_paths(csv_paths) if Path(p).exists()]
-    if not frames:
-        raise FileNotFoundError(f"no exp7 divergence CSV among {csv_paths}")
-    df = pd.concat(frames, ignore_index=True)
-    out_dir = out_dir or RESULTS_DIR
-    outs = []
-    order = df.drop_duplicates("formula").sort_values(["multiplicity", "formula"])
-    formulas = list(order["formula"])
-    cmap = plt.cm.viridis(np.linspace(0.05, 0.9, len(formulas)))
-
-    # (1) over-count vs p
-    fig, ax = _new_ax()
-    for color, fname in zip(cmap, formulas):
-        g = df[df["formula"] == fname].sort_values("p")
-        mult = int(g["multiplicity"].iloc[0])
-        ax.plot(g["p"], g["gap_raw"], marker="o", ms=4, lw=2, color=color,
-                label=f"{fname} (mult={mult})")
-    ax.axhline(0.0, color="gray", ls=":", lw=1)
-    ax.set_xlabel("shared per-atom probability p")
-    ax.set_ylabel("soft over-count  (soft_raw − exact marginal)")
-    ax.set_title("Exp 7 — soft acceptance over-counts on non-read-once guards")
-    outs.append(_save(fig, ax, out_dir / "exp7_divergence_vs_p.png"))
-
-    # (2) aggregate max over-count vs multiplicity. The parametric threshold
-    # family (majority3 = 2-of-3, atleast*) is the connected curve; the realistic
-    # Declare anchor alt_response is a *standalone* point (same multiplicity as
-    # majority3 but structurally different — its independence error nearly
-    # cancels over a trace, an honest structure-dependence, not on the trend).
-    agg = (
-        df.groupby(["formula", "multiplicity"])
-        .agg(max_gap_raw=("gap_raw", "max"),
-             max_abs_gap_norm=("gap_norm", lambda s: s.abs().max()))
-        .reset_index()
-    )
-    is_threshold = agg["formula"].str.startswith(("majority", "atleast"))
-    thr = agg[is_threshold].sort_values("multiplicity")
-    anchor = agg[~is_threshold]
-
-    fig, ax = _new_ax()
-    ax.plot(thr["multiplicity"], thr["max_gap_raw"], marker="o", ms=8, lw=2,
-            color="#D55E00", label="threshold family — raw score")
-    ax.plot(thr["multiplicity"], thr["max_abs_gap_norm"], marker="^", ms=7, lw=2,
-            ls="--", color="#009E73", label="threshold family — normalized")
-    for _, r in thr.iterrows():
-        ax.annotate(r["formula"], (r["multiplicity"], r["max_gap_raw"]),
-                    textcoords="offset points", xytext=(6, 4), fontsize=7)
-    for _, r in anchor.iterrows():
-        ax.plot(r["multiplicity"], r["max_gap_raw"], marker="*", ms=15,
-                color="#0072B2",
-                label=f"{r['formula']} (realistic Declare anchor)")
-        ax.annotate(r["formula"], (r["multiplicity"], r["max_gap_raw"]),
-                    textcoords="offset points", xytext=(6, -12), fontsize=7)
-    ax.axhline(0.0, color="gray", ls=":", lw=1)
-    ax.set_xlabel("max atom multiplicity in guard (non-read-once-ness)")
-    ax.set_ylabel("max |over-count| over p")
-    ax.set_title("Exp 7 — divergence grows with non-read-once-ness")
-    outs.append(_save(fig, ax, out_dir / "exp7_divergence_vs_size.png"))
-    return outs
 
 
 def _state_blowup_curves(q_values: list[int]) -> dict[str, list[float]]:
@@ -952,17 +648,6 @@ def plot_exp7_stateblowup(csv_paths=None, out_dir: Path | None = None) -> list[P
     return outs
 
 
-def _plot_exp7_all(csv_paths=None, out_dir: Path | None = None) -> list[Path]:
-    """CLI entry: both exp7 panels, each skipped with a note if its CSV is absent."""
-    outs: list[Path] = []
-    for fn in (plot_exp7_divergence, plot_exp7_stateblowup):
-        try:
-            outs += fn(None, out_dir)
-        except FileNotFoundError as e:
-            print(f"[exp7] skipped: {e}")
-    return outs
-
-
 # ---------------------------------------------------------------------------
 # CLI: regenerate figures from the CSVs currently in results/
 # ---------------------------------------------------------------------------
@@ -973,8 +658,7 @@ _PLOTTERS = {
     "exp3": plot_exp3,
     "exp5": plot_exp5,
     "exp6": plot_exp6,
-    "exp7": _plot_exp7_all,
-    "uncertainty": _plot_uncertainty_all,
+    "exp7": plot_exp7_stateblowup,
     "correctness": plot_correctness_cost,
 }
 

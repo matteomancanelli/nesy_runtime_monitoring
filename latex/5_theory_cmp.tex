@@ -1,7 +1,7 @@
 \section{Theoretical Comparison}
 \label{sec:theory-cmp}
 
-Having presented the three paradigms individually, we now compare them along the dimensions that matter for a monitor: what each can represent, where each breaks down, and --- for the two neuro-symbolic paradigms --- what a gradient means when the specification is adapted from data.
+Having presented the three paradigms individually, we now compare them along the dimensions that matter for a monitor: what each can represent, and where each breaks down.
 
 \subsection{Three Achilles Heels}
 \label{sec:theory-heels}
@@ -16,13 +16,8 @@ Each paradigm is exact and efficient on a large class of specifications, and eac
 %
 Two clarifications keep this comparison honest. First, the state-space blow-up is not exclusive to the symbolic paradigm: DeepDFA is compiled from the \emph{same} minimal DFA, so it inherits $|Q|$ (its tensor is $|Q|^2 \cdot 2^{|\calP|}$) and suffers the same doubly-exponential worst case. We list state blow-up under the symbolic monitor because it is that monitor's \emph{only} structural weakness, whereas for DeepDFA the \emph{additional}, representation-specific cost that the symbolic monitor escapes is the alphabet axis. Second, the two neuro-symbolic-versus-symbolic heels are duals in a precise sense: a DFA transition function is a table with $|Q| \cdot 2^{|\calP|}$ entries, and each paradigm compresses a different axis of it to obtain its advantage, paying on the axis it leaves explicit. The symbolic monitor compresses the $2^\calP$ axis with symbolic guards --- keeping an explicit current state, so its cost driver is $|Q|$ --- and this is exactly why it cannot suffer an alphabet blow-up: it never enumerates symbols. DeepDFA (dense) compresses the state axis into a uniform, differentiable, batchable matrix product --- which requires one explicit transition matrix per symbol, so its cost driver is $2^{|\calP|}$. Neither weakness can be swapped onto the other paradigm without discarding the very representational choice that defines it; the factored representation (Section~\ref{sec:deepdfa-factored}) is precisely the attempt to compress \emph{both} axes at once, and recovers the flat-in-$|\calP|$ scaling on the read-once guards where such a compression exists.
 
+As monitors of crisp traces, the completeness-restored RuleRunner and DeepDFA are interchangeable --- the progression construction converges to the same minimal DFA (Section~\ref{sec:rulerunner-progression}), so on any crisp trace they agree. The reason to keep both lineages is what each exposes beyond crisp monitoring: DeepDFA parameterizes an opaque transition tensor, while the rule-based construction attaches its parameters to syntactically-indexed rules --- two different substrates for the gradient-based specification adaptation we defer to future work (Section~\ref{sec:conclusion}).
+
 \textcolor{red}{TODO: capability matrix summarizing exactness, soft-input support, differentiability, and the three heels across the three paradigms.}
 
-\subsection{Repaired RuleRunner and DeepDFA as Learnable Objects}
-\label{sec:theory-learnable}
-
-As \emph{monitors}, the completeness-restored RuleRunner and DeepDFA are interchangeable: the progression construction converges to the same minimal DFA (Section~\ref{sec:rulerunner-progression}), so on any crisp trace they agree, and on crisp throughput the symbolic walk is optimal for both. The reason to keep both lineages is not runtime but what they expose to gradient-based adaptation.
-
-DeepDFA's learnable parameters are the entries of the transition tensor and the accepting vector: a gradient adapts transition probabilities between \emph{opaque} states, over $|Q|^2 \cdot |\calP|$ parameters with no structural inductive bias, and the learned object can drift into an arbitrary weighted automaton no longer corresponding to any \ltlf formula. The rule-based construction, by contrast, attaches parameters to the \emph{rules}, indexed by subformula and operator at the symbolic construction level: adaptation is syntactically local, the learned object re-extracts as a corrected specification, and the parameterization carries an inductive bias toward valid specifications. The two are thus interchangeable as monitors but not as learnable objects --- DeepDFA adapts an opaque automaton, the rule form adapts a structured specification --- which is the distinction we build on in the specification-adaptation experiments (Section~\ref{sec:experiments}) and the bridge to follow-up work.
-
-\textcolor{red}{TODO: expand once the adaptation experiments are in; cite Bacchus--Kabanza progression and the LTLf 2EXP bound as primary sources.}
+\textcolor{red}{TODO: cite Bacchus--Kabanza progression and the LTLf 2EXP bound as primary sources.}
