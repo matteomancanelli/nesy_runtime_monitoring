@@ -1,0 +1,81 @@
+monitor_name,formula_name,n_leaves,trace_length,n_traces,n_repeats,mean_s_per_cell,std_s_per_cell,device,early_termination,gpu_name
+SymbolicDFAMonitor,response,2,1000,100,5,1.3837365639999463e-06,6.079965294820841e-08,cpu,True,
+SymbolicDFAMonitor,response,2,2000,100,5,1.403610912999966e-06,7.154027077827652e-08,cpu,True,
+SymbolicDFAMonitor,response,2,3000,100,5,7.307645473333273e-07,3.315139224702794e-08,cpu,True,
+SymbolicDFAMonitor,response,2,4000,100,5,7.50332697000033e-07,2.6050498995021328e-08,cpu,True,
+SymbolicDFAMonitor,response,2,5000,100,5,8.053877867999972e-07,1.2949832149363483e-07,cpu,True,
+SymbolicDFAMonitor,response,2,6000,100,5,8.642752836666431e-07,2.6567092552159864e-07,cpu,True,
+SymbolicDFAMonitor,response,2,7000,100,5,1.0985178880000117e-06,4.353580914151051e-07,cpu,True,
+SymbolicDFAMonitor,response,2,8000,100,5,7.284054940000003e-07,1.7783727858331825e-08,cpu,True,
+SymbolicDFAMonitor,response,2,9000,100,5,7.755176437777765e-07,1.0845331039027199e-07,cpu,True,
+SymbolicDFAMonitor,response,2,10000,100,5,9.438343993999979e-07,2.5430534954322597e-07,cpu,True,
+RuleRunnerMonitor,response,2,1000,100,5,1.991286807999995e-05,2.584424306798791e-06,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,2000,100,5,1.9801406676000054e-05,1.7480262892153253e-06,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,3000,100,5,1.8984785643999997e-05,1.2869827607475566e-06,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,4000,100,5,1.930672386699999e-05,9.193513243144392e-07,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,5000,100,5,1.94225481744e-05,3.891809201479232e-07,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,6000,100,5,1.9328152941333394e-05,3.711139893746191e-07,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,7000,100,5,1.922701574628572e-05,3.217233755856358e-07,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,8000,100,5,1.9181518537250042e-05,4.006192877168411e-07,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,9000,100,5,1.9547287993111114e-05,1.0324845596377587e-06,cuda,True,Tesla T4
+RuleRunnerMonitor,response,2,10000,100,5,1.8948077853999982e-05,4.015413982473917e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,1000,100,5,3.5446988240000336e-05,3.919597055088498e-06,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,2000,100,5,3.555371094299994e-05,8.3659980259186e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,3000,100,5,3.5300202290666834e-05,9.138303085828009e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,4000,100,5,3.510941475049993e-05,2.5805683925585895e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,5000,100,5,3.5278756865999815e-05,9.190168803980343e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,6000,100,5,3.490705033533338e-05,7.547067115827795e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,7000,100,5,3.527657566542848e-05,4.05431247163253e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,8000,100,5,3.484089623624999e-05,1.0728908945291803e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,9000,100,5,3.552541989733325e-05,6.225794713114544e-07,cuda,True,Tesla T4
+StructuredRuleRunnerMonitor,response,2,10000,100,5,3.525099792360002e-05,5.263793208651207e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,1000,100,5,5.079731787999662e-06,9.157078935882241e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,2000,100,5,5.01509088200055e-06,7.998367402158148e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,3000,100,5,5.445325673333172e-06,1.0057576271646072e-06,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,4000,100,5,5.005581279500119e-06,6.595702089386875e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,5000,100,5,5.201095211999745e-06,6.576825999959384e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,6000,100,5,5.211098266333163e-06,6.618978330510799e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,7000,100,5,5.29089513314284e-06,4.624703807572619e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,8000,100,5,5.316925104749999e-06,5.524776520625999e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,9000,100,5,5.235522992444506e-06,6.627600994215761e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerMonitor,response,2,10000,100,5,5.147814781199941e-06,4.3937653635537584e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,1000,100,5,1.6554048025998784e-05,2.311427175415357e-06,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,2000,100,5,1.54053900050003e-05,1.2134659505085432e-06,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,3000,100,5,1.5178576480000022e-05,1.2901051123049908e-06,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,4000,100,5,1.538801584499993e-05,1.35175338892471e-06,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,5000,100,5,1.578551148200022e-05,9.673353067369246e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,6000,100,5,1.581648325933338e-05,5.030043033376859e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,7000,100,5,1.540505326942873e-05,4.17695699340218e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,8000,100,5,1.5411069264500045e-05,3.069491198109664e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,9000,100,5,1.5411290710888957e-05,1.9947782725095388e-07,cuda,True,Tesla T4
+ProgressionRuleRunnerStructuredMonitor,response,2,10000,100,5,1.5009742868799913e-05,9.796968934205403e-08,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,1000,100,5,5.426969787999041e-06,1.1763094442599216e-06,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,2000,100,5,4.056933757000479e-06,3.453445812294366e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,3000,100,5,4.2733507920002006e-06,8.314438113953313e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,4000,100,5,3.944929952500161e-06,4.836114284012798e-08,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,5000,100,5,4.277490584000043e-06,7.465395018619415e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,6000,100,5,4.2248891739999025e-06,4.828962055433795e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,7000,100,5,4.210562700000083e-06,6.59482574866363e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,8000,100,5,4.174804003000077e-06,5.979856004097387e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,9000,100,5,4.224281191999884e-06,5.645822797395006e-07,cuda,True,Tesla T4
+DeepDFAMonitor,response,2,10000,100,5,4.299027962800027e-06,3.604954816705129e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,1000,100,5,5.930496401998426e-06,1.0741908684318933e-06,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,2000,100,5,5.387047612999595e-06,5.738580067733439e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,3000,100,5,5.969159891333219e-06,1.1117495383703872e-06,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,4000,100,5,5.784094904000313e-06,8.883651188358401e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,5000,100,5,5.611307066800145e-06,9.537126288097027e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,6000,100,5,5.8355912693332355e-06,8.13123118431051e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,7000,100,5,5.514628623142795e-06,4.6248417135273373e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,8000,100,5,5.372045862250048e-06,5.771153491186817e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,9000,100,5,5.59674519355556e-06,5.602026977010419e-07,cuda,True,Tesla T4
+DeepDFAMonitorFactored,response,2,10000,100,5,5.616219476399874e-06,5.611216427872581e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,1000,100,5,3.1875181360001077e-06,8.209422888937966e-08,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,2000,100,5,4.153996480999922e-06,8.642500956499224e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,3000,100,5,3.1633553866662022e-06,3.4375096737689046e-08,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,4000,100,5,3.851082468999721e-06,8.167662688611648e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,5000,100,5,3.699311487199702e-06,6.404418153723225e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,6000,100,5,3.6248581606666146e-06,7.974563959445312e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,7000,100,5,3.528848722857089e-06,4.771560581631673e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,8000,100,5,3.486476108750026e-06,5.334952065559108e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,9000,100,5,3.504914273111151e-06,4.028499583990798e-07,cuda,True,Tesla T4
+DeepDFAMonitorScan,response,2,10000,100,5,3.4281901675997693e-06,3.638073240330558e-07,cuda,True,Tesla T4

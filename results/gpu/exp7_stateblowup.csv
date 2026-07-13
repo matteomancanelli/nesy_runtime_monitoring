@@ -1,0 +1,16 @@
+monitor_name,formula_name,n_leaves,trace_length,n_traces,n_repeats,mean_s_per_cell,std_s_per_cell,device,early_termination,gpu_name
+SymbolicDFAMonitor,kthlast_k2,5,500,64,5,6.376462875010702e-07,3.838344125700243e-08,cpu,False,
+SymbolicDFAMonitor,kthlast_k4,17,500,64,5,6.687029812496803e-07,1.9855014453309097e-08,cpu,False,
+SymbolicDFAMonitor,kthlast_k6,65,500,64,5,7.082807937507596e-07,8.569524023150842e-08,cpu,False,
+SymbolicDFAMonitor,kthlast_k8,257,500,64,5,6.985532374955028e-07,3.5256887740482856e-08,cpu,False,
+SymbolicDFAMonitor,kthlast_k10,1025,500,64,5,6.861132874973919e-07,4.170885360011431e-08,cpu,False,
+DeepDFAMonitorDense,kthlast_k2,5,500,64,5,3.3837973687496973e-06,4.7109201368382597e-07,cuda,False,Tesla T4
+DeepDFAMonitorDense,kthlast_k4,17,500,64,5,2.1037482749960644e-06,2.020318598626708e-07,cuda,False,Tesla T4
+DeepDFAMonitorDense,kthlast_k6,65,500,64,5,2.007084012501537e-06,1.0845965263848085e-07,cuda,False,Tesla T4
+DeepDFAMonitorDense,kthlast_k8,257,500,64,5,3.868140243747576e-06,4.584165726923444e-08,cuda,False,Tesla T4
+DeepDFAMonitorDense,kthlast_k10,1025,500,64,5,4.6433664649998715e-05,4.4790340764268615e-07,cuda,False,Tesla T4
+DeepDFAMonitorFactored,kthlast_k2,5,500,64,5,3.967388918749749e-06,3.191178999685829e-07,cuda,False,Tesla T4
+DeepDFAMonitorFactored,kthlast_k4,17,500,64,5,3.879268074996389e-06,1.602531051650538e-07,cuda,False,Tesla T4
+DeepDFAMonitorFactored,kthlast_k6,65,500,64,5,3.8534042500003805e-06,2.2934091412011154e-07,cuda,False,Tesla T4
+DeepDFAMonitorFactored,kthlast_k8,257,500,64,5,4.1523964125048e-06,1.8345309152762165e-07,cuda,False,Tesla T4
+DeepDFAMonitorFactored,kthlast_k10,1025,500,64,5,3.848445671249863e-05,3.4292828939362124e-07,cuda,False,Tesla T4
