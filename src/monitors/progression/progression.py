@@ -3,22 +3,24 @@
 Two operations drive the progression-based monitor (latex/3_rulerunner.tex
 §3.3):
 
-* ``prog(f, s)`` — the residual that must hold on the *remaining, non-empty*
-  suffix after reading cell ``s``. Characterized by
-  ``s . tau |= f  <=>  tau |= prog(f, s)`` for every non-empty finite ``tau``.
+* ``prog(f, s)`` — the residual that must hold on the remaining suffix after
+  reading cell ``s``. Characterized by
+  ``s . tau |= f  <=>  tau |= prog(f, s)`` for every finite ``tau``, including
+  the empty trace.
 * ``last(f, s)`` — the truth value of ``f`` on the *one-cell* trace ``(s)``,
   i.e. treating ``s`` as the final cell. This is the finite-trace counterpart
   of RuleRunner's END-triggered rules and yields the binary end-of-trace
   verdict.
 
-``prog`` is the non-final clause for the two next operators (``X f`` and
-``W f`` both fall through to ``f``); the finite-trace boundary is handled
-separately by ``last`` at the last cell, exactly as in the paper. Results of
-``prog`` are built with the constant-folding smart constructors of
-``formula.py`` and are expected to be ``simplify``-ed by the caller.
+The next clauses make this definition total: ``X f`` progresses to
+``f & F true`` (the suffix must be non-empty), while ``W f`` progresses to
+``f | G false`` (the empty suffix satisfies weak next). Results are built with
+the constant-folding smart constructors of ``formula.py`` and are expected to
+be ``simplify``-ed by the caller.
 
-``holds_empty`` gives the truth value on the empty trace; it is only needed
-for the degenerate empty-input case (the benchmark traces are all non-empty).
+``holds_empty`` gives the truth value on the empty trace.  With total
+progression this is also the exact boundary test for the residual after the
+last observed cell.
 """
 
 from __future__ import annotations
@@ -29,8 +31,10 @@ from src.monitors.progression.formula import (
     TRUE,
     Formula,
     Op,
+    always,
     conj,
     disj,
+    eventually,
     neg,
 )
 
@@ -53,11 +57,12 @@ def prog(f: Formula, obs: Observation) -> Formula:
         return conj(prog(f.args[0], obs), prog(f.args[1], obs))
     if op is Op.OR:
         return disj(prog(f.args[0], obs), prog(f.args[1], obs))
-    if op is Op.NEXT or op is Op.WEAK_NEXT:
-        # Non-final clause: the next-obligation falls through to its operand,
-        # carrying no residue of the operator that spawned it. The finite-trace
-        # difference between strong/weak next is resolved by `last`.
-        return f.args[0]
+    if op is Op.NEXT:
+        # F true is exactly the non-empty-suffix test.
+        return conj(f.args[0], eventually(TRUE))
+    if op is Op.WEAK_NEXT:
+        # G false is true exactly on the empty suffix.
+        return disj(f.args[0], always(FALSE))
     if op is Op.EVENTUALLY:
         # F x = x | X F x
         return disj(prog(f.args[0], obs), f)

@@ -10,15 +10,16 @@ do NOT vendor their code (see CLAUDE.md § Paradigm 3 for the full rationale):
     simultaneously-true atoms, so that encoding is unusable here.
   * DeepDFA must be the canonical, exactly-correct monitor in the three-way
     comparison: it has to agree with SymbolicDFAMonitor on *every* trace,
-    including nested-temporal formulas where RuleRunner diverges.
+    including formulas rejected by the original RuleRunner certifier because of
+    shared-register temporal-instance conflation.
 
 Two representations of the same transition function are provided:
 
   * dense    — T (|Q|, 2^|AP|, |Q|) one-hot transition tensor. One matmul
                per step, trivial GPU batching. Build/storage cost is
                exponential in |AP| (this is DeepDFA's structural scaling
-               weakness, dual to RuleRunner's nested-temporal limit and the
-               symbolic DFA's state blowup). Best for small |AP| and for
+               weakness, dual to original RuleRunner's shared-register limit
+               and the symbolic DFA's state blowup). Best for small |AP| and for
                the batching showcase (Exp 3, ijcnn_n8 -> 256 symbols).
 
   * factored — no 2^|AP| tensor. Two complementary views of each edge guard:

@@ -13,8 +13,10 @@ from src.monitors.rulerunner.rules import Literal, Rule, build_rules
 
 
 def _has_rule(rules: tuple[Rule, ...], body_names: set[str], head_name: str) -> bool:
-    body_lits = {Literal(n[1:], negated=True) if n.startswith("~") else Literal(n)
-                 for n in body_names}
+    body_lits = {
+        Literal(n[1:], negated=True) if n.startswith("~") else Literal(n)
+        for n in body_names
+    }
     head_lit = Literal(head_name)
     return any(r.body == frozenset(body_lits) and r.head == head_lit for r in rules)
 
@@ -37,11 +39,11 @@ def test_atom_yields_two_eval_rules_and_no_react() -> None:
 
 def test_not_atom() -> None:
     rs = build_rules(parse("!a"))
-    # NOT eval: T->F, F->T; the [a]? case is pruned (atoms never undecided).
-    assert _has_rule(rs.eval_rules, {"R[!(a)]", "[a]T"}, "[!(a)]F")
-    assert _has_rule(rs.eval_rules, {"R[!(a)]", "[a]F"}, "[!(a)]T")
-    assert _has_rule(rs.react_rules, {"[!(a)]?"}, "R[!(a)]")
-    # Atom's `?` literal is pruned, so no NOT rule consumes [a]?.
+    # The published NNF rule evaluates a negated atom directly; R[a] is not
+    # part of this subsystem's initial activation.
+    assert _has_rule(rs.eval_rules, {"R[!(a)]", "obs:a"}, "[!(a)]F")
+    assert _has_rule(rs.eval_rules, {"R[!(a)]", "~obs:a"}, "[!(a)]T")
+    assert rs.initial_state == frozenset({Literal("R[!(a)]")})
     not_rules = [r for r in rs.eval_rules if r.head.name.startswith("[!(a)]")]
     assert len(not_rules) == 2
 
@@ -127,9 +129,9 @@ def test_eventually_eval_and_react() -> None:
 def test_always_eval_and_react() -> None:
     rs = build_rules(parse("G a"))
     K = "G(a)"
-    assert _has_rule(rs.eval_rules, {f"R[{K}]", "[a]T"}, f"[{K}]?")
+    assert _has_rule(rs.eval_rules, {f"R[{K}]", "[a]T"}, f"[{K}]?^K")
     assert _has_rule(rs.eval_rules, {f"R[{K}]", "[a]F"}, f"[{K}]F")
-    assert _has_rule(rs.react_rules, {f"[{K}]?"}, "R[a]")
+    assert _has_rule(rs.react_rules, {f"[{K}]?^K"}, "R[a]")
 
 
 def test_eventually_reactivation_reinstalls_full_subtree() -> None:
@@ -149,12 +151,29 @@ def test_eventually_reactivation_reinstalls_full_subtree() -> None:
 def test_until_truth_table() -> None:
     rs = build_rules(parse("a U b"))
     K = "(a U b)"
-    R = f"R[{K}]"
-    # (T,T)->T, (F,T)->T, (T,F)->?, (F,F)->F
+    R = f"R[{K}]^A"
+    # Published U_A table: (T,T)->T, (F,T)->T, (T,F)->?A, (F,F)->F.
     assert _has_rule(rs.eval_rules, {R, "[a]T", "[b]T"}, f"[{K}]T")
     assert _has_rule(rs.eval_rules, {R, "[a]F", "[b]T"}, f"[{K}]T")
-    assert _has_rule(rs.eval_rules, {R, "[a]T", "[b]F"}, f"[{K}]?")
+    assert _has_rule(rs.eval_rules, {R, "[a]T", "[b]F"}, f"[{K}]?^A")
     assert _has_rule(rs.eval_rules, {R, "[a]F", "[b]F"}, f"[{K}]F")
+    assert rs.initial_state == frozenset(
+        {Literal("R[a]"), Literal("R[b]"), Literal(f"R[{K}]^A")}
+    )
+
+
+def test_until_retains_all_published_qualifier_tables() -> None:
+    rs = build_rules(parse("(F a) U (F b)"))
+    K = "(F(a) U F(b))"
+    assert _has_rule(
+        rs.eval_rules,
+        {f"R[{K}]^B", "[F(a)]?", "[F(b)]T"},
+        f"[{K}]?^L",
+    )
+    assert _has_rule(rs.eval_rules, {f"R[{K}]^L", "[F(a)]?"}, f"[{K}]?^L")
+    assert _has_rule(rs.eval_rules, {f"R[{K}]^R", "[F(b)]?"}, f"[{K}]?^R")
+    for mode in ("A", "B", "L", "R"):
+        assert _has_rule(rs.react_rules, {f"[{K}]?^{mode}"}, f"R[{K}]^{mode}")
 
 
 def test_release_truth_table() -> None:
@@ -171,31 +190,42 @@ def test_release_truth_table() -> None:
 # ----------------- NEXT / WEAK_NEXT -----------------
 
 
-def test_next_mode_B_defers_unconditionally() -> None:
+def test_next_initial_mode_defers_unconditionally() -> None:
     rs = build_rules(parse("X a"))
     K = "X(a)"
-    # The B-mode rule has just R[X(a)]^B in the body (no observation).
-    assert _has_rule(rs.eval_rules, {f"R[{K}]^B"}, f"[{K}]?^I")
+    assert _has_rule(rs.eval_rules, {f"R[{K}]"}, f"[{K}]?")
+    # Crucially, the operand is not active in the first cell.
+    assert rs.initial_state == frozenset({Literal(f"R[{K}]")})
 
 
-def test_next_mode_A_mirrors_phi() -> None:
+def test_next_mode_M_mirrors_phi() -> None:
     rs = build_rules(parse("X a"))
     K = "X(a)"
-    R_A = f"R[{K}]^A"
-    assert _has_rule(rs.eval_rules, {R_A, "[a]T"}, f"[{K}]T")
-    assert _has_rule(rs.eval_rules, {R_A, "[a]F"}, f"[{K}]F")
+    R_M = f"R[{K}]^M"
+    assert _has_rule(rs.eval_rules, {R_M, "[a]T"}, f"[{K}]T")
+    assert _has_rule(rs.eval_rules, {R_M, "[a]F"}, f"[{K}]F")
 
 
-def test_next_mode_I_react_installs_A_mode_and_phi_subtree() -> None:
+def test_next_initial_react_installs_M_mode_and_phi_initial_state() -> None:
     rs = build_rules(parse("X (F a)"))
     K = "X(F(a))"
-    body = {f"[{K}]?^I"}
-    # Transition B -> A re-installs the φ subtree fresh.
-    assert _has_rule(rs.react_rules, body, f"R[{K}]^A")
+    body = {f"[{K}]?"}
+    assert _has_rule(rs.react_rules, body, f"R[{K}]^M")
     assert _has_rule(rs.react_rules, body, "R[F(a)]")
     assert _has_rule(rs.react_rules, body, "R[a]")
-    # Mode-A reactivation only re-installs itself (φ's own ? handles φ).
-    assert _has_rule(rs.react_rules, {f"[{K}]?^A"}, f"R[{K}]^A")
+    assert _has_rule(rs.react_rules, {f"[{K}]?^M"}, f"R[{K}]^M")
+
+
+def test_nested_next_reinstallation_respects_activation_boundary() -> None:
+    rs = build_rules(parse("X X a"))
+    outer = "X(X(a))"
+    # The first cell activates only the outer X.  Its reactivation installs
+    # the inner X, but still not `a`; `a` is installed one cell later.
+    assert rs.initial_state == frozenset({Literal(f"R[{outer}]")})
+    body = {f"[{outer}]?"}
+    assert _has_rule(rs.react_rules, body, f"R[{outer}]^M")
+    assert _has_rule(rs.react_rules, body, "R[X(a)]")
+    assert not _has_rule(rs.react_rules, body, "R[a]")
 
 
 def test_weak_next_same_rules_as_next() -> None:
@@ -214,12 +244,14 @@ def test_ijcnn2014_initial_state() -> None:
     """Paper §III worked example for a ∨ ◇b:
     initial state = {R[a], R[b], R[♦b], R[a∨♦b]B}."""
     rs = build_rules(parse("a | F b"))
-    expected = frozenset({
-        Literal("R[a]"),
-        Literal("R[b]"),
-        Literal("R[F(b)]"),
-        Literal("R[(a | F(b))]^B"),
-    })
+    expected = frozenset(
+        {
+            Literal("R[a]"),
+            Literal("R[b]"),
+            Literal("R[F(b)]"),
+            Literal("R[(a | F(b))]^B"),
+        }
+    )
     assert rs.initial_state == expected
 
 
@@ -254,8 +286,9 @@ def test_shared_subformula_yields_one_rule_set() -> None:
     """`(F b) & (F b)` after dedup has one Node for `F(b)`, so only one
     set of EVENTUALLY rules is emitted."""
     rs = build_rules(parse("(F b) & (F b)"))
-    fb_rules = [r for r in rs.eval_rules if r.head.name == "[F(b)]T"
-                or r.head.name == "[F(b)]?"]
+    fb_rules = [
+        r for r in rs.eval_rules if r.head.name == "[F(b)]T" or r.head.name == "[F(b)]?"
+    ]
     # Two eval rules for F(b): one for [b]T, one for [b]F.
     assert len(fb_rules) == 2
 
@@ -275,8 +308,17 @@ def test_no_duplicate_rules() -> None:
 
 def test_build_rules_handles_every_operator() -> None:
     formulas = [
-        "a", "!a", "a & b", "a | b", "a -> b",
-        "X a", "WX a", "F a", "G a", "a U b", "a R b",
+        "a",
+        "!a",
+        "a & b",
+        "a | b",
+        "a -> b",
+        "X a",
+        "WX a",
+        "F a",
+        "G a",
+        "a U b",
+        "a R b",
         "G (a -> F b)",
         "F ((a & X b) | (c & WX d))",
     ]
@@ -284,5 +326,13 @@ def test_build_rules_handles_every_operator() -> None:
         rs = build_rules(parse(f))
         assert len(rs.eval_rules) > 0, f
         assert rs.root_key == parse(f).key
-        # Initial state lists every distinct subformula's R[.] literal.
-        assert len(rs.initial_state) == len(list(parse(f).subformulae()))
+        assert rs.initial_state
+
+
+def test_boolean_constants_are_unconditional_and_not_observations() -> None:
+    true_rs = build_rules(parse("true"))
+    false_rs = build_rules(parse("false"))
+    assert _has_rule(true_rs.eval_rules, {"R[true]"}, "[true]T")
+    assert _has_rule(false_rs.eval_rules, {"R[false]"}, "[false]F")
+    assert true_rs.atoms == ()
+    assert false_rs.atoms == ()

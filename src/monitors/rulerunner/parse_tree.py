@@ -5,10 +5,15 @@ accepted here match the rest of the codebase), then walks its AST into a
 frozen-dataclass DAG with three properties the rules layer relies on:
 
 1. Strictly binary children. ltlf2dfa keeps n-ary And/Or/Implies/Until/
-   Release as flat tuples; we left-fold &/| and right-fold ->/U/R. The
-   U/R right-association matches ltlf2dfa's own MONA translation
-   (verified empirically: `a U b U c` and `a U (b U c)` produce the
-   same MONA formula).
+   Release as flat tuples; we left-fold &/|/-> and right-fold U/R, which
+   is what ltlf2dfa's own MONA translation does. Verified empirically:
+   `a U b U c` matches `a U (b U c)`, while `a -> b -> c` matches
+   `(a -> b) -> c` and NOT the usual right-associative reading. The fold
+   direction has to follow the compiler, not convention: the DFA-based
+   monitors are built from the formula string by ltlf2dfa, so a different
+   association here would silently have the paradigms monitor two
+   different formulas (pinned by the association-sensitive entries in
+   tests/test_semantic_oracle.py).
 
 2. Syntactic deduplication of shared subformulae. Two occurrences of the
    same subformula string yield the *same* Node instance, so the rules
@@ -101,7 +106,7 @@ _BINARY_OP: dict[type, Op] = {
     LTLfRelease: Op.RELEASE,
 }
 
-_LEFT_ASSOC: frozenset[type] = frozenset({LTLfAnd, LTLfOr})
+_LEFT_ASSOC: frozenset[type] = frozenset({LTLfAnd, LTLfOr, LTLfImplies})
 
 _INFIX: dict[Op, str] = {
     Op.AND: "&",

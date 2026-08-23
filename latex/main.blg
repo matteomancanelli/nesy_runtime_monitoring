@@ -1,0 +1,50 @@
+This is BibTeX, Version 0.99d (TeX Live 2022/dev/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: main.aux
+The style file: plain.bst
+Database file #1: citations.bib
+Warning--I didn't find a database entry for "emerson90"
+Warning--I didn't find a database entry for "bacchus&kabanza98"
+Warning--I didn't find a database entry for "t_ilr_2025"
+You've used 16 entries,
+            2118 wiz_defined-function locations,
+            601 strings with 7168 characters,
+and the built_in function-call counts, 6507 in all, are:
+= -- 675
+> -- 260
+< -- 11
++ -- 105
+- -- 85
+* -- 402
+:= -- 993
+add.period$ -- 58
+call.type$ -- 16
+change.case$ -- 89
+chr.to.int$ -- 0
+cite$ -- 16
+duplicate$ -- 288
+empty$ -- 537
+format.name$ -- 85
+if$ -- 1457
+int.to.chr$ -- 0
+int.to.str$ -- 16
+missing$ -- 17
+newline$ -- 83
+num.names$ -- 34
+pop$ -- 117
+preamble$ -- 1
+purify$ -- 74
+quote$ -- 0
+skip$ -- 216
+stack$ -- 0
+substring$ -- 423
+swap$ -- 109
+text.length$ -- 11
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 62
+warning$ -- 0
+while$ -- 64
+width$ -- 18
+write$ -- 185
+(There were 3 warnings)

@@ -3,7 +3,7 @@
 The original RuleRunner (``src/monitors/rulerunner``) carries truth
 registers addressed by the *syntactic subformulae of the input formula*,
 which conflates two live instances of the same subformula spawned from
-different temporal contexts (the nested-temporal limitation — see
+different temporal contexts (the shared-register limitation — see
 CLAUDE.md / latex/3_rulerunner.tex §3.2). The progression-based
 reformulation instead carries *residual formulae* produced by formula
 progression, which may be syntactically new (e.g. ``F(a & X b)`` can
@@ -20,14 +20,15 @@ This module provides that type:
   drags around ``a & true`` etc.);
 * a converter ``from_node`` from the shared parse tree (desugaring
   ``->`` and constants); and
-* ``simplify`` — Boolean simplification via sympy, treating each atom and
-  each *maximal temporal subformula* as an independent Boolean variable.
+* ``simplify`` — recursive syntactic temporal normalization plus Boolean
+  simplification via sympy, treating each atom and each *maximal temporal
+  subformula* as an independent Boolean variable.
   This is sound for validity/unsatisfiability (a Boolean tautology over
   those variables holds under the one real assignment too), which is all
   the monitor's absorbing early-termination needs; it is deliberately an
   under-approximation of true LTLf validity (it does not know, e.g., that
-  ``F a & G ~a`` is unsatisfiable), so lazy early termination may *lag* a
-  few cells but never fires a wrong verdict. See ``progression.py``.
+  ``(a U b) & G ~b`` is unsatisfiable), so lazy early termination may lag
+  arbitrarily but never fires a wrong verdict. See ``progression.py``.
 """
 
 from __future__ import annotations
@@ -68,9 +69,10 @@ class Formula:
     """Immutable LTLf formula node.
 
     ``args`` holds the operand subformulae (empty for ``TRUE``/``FALSE``/
-    atoms); ``atom`` is set iff ``op is Op.ATOM``. ``key`` is a canonical
+    atoms); ``atom`` is set iff ``op is Op.ATOM``. ``key`` is a deterministic
     structural string, used for hashing/deduplication and (later, in the
-    eager construction) for residual-state identity.
+    eager construction) for residual-state identity.  It is not a canonical
+    identifier of the formula's full LTLf right language.
     """
 
     op: Op
@@ -115,7 +117,43 @@ def neg(x: Formula) -> Formula:
         return TRUE
     if x.op is Op.NOT:
         return x.args[0]  # double negation
+    # Negation normal form, including the finite-trace temporal dualities.
+    if x.op is Op.AND:
+        return disj(neg(x.args[0]), neg(x.args[1]))
+    if x.op is Op.OR:
+        return conj(neg(x.args[0]), neg(x.args[1]))
+    if x.op is Op.NEXT:
+        return weak_next(neg(x.args[0]))
+    if x.op is Op.WEAK_NEXT:
+        return next_(neg(x.args[0]))
+    if x.op is Op.EVENTUALLY:
+        return always(neg(x.args[0]))
+    if x.op is Op.ALWAYS:
+        return eventually(neg(x.args[0]))
+    if x.op is Op.UNTIL:
+        return release(neg(x.args[0]), neg(x.args[1]))
+    if x.op is Op.RELEASE:
+        return until(neg(x.args[0]), neg(x.args[1]))
     return Formula(Op.NOT, (x,))
+
+
+def _are_complements(x: Formula, y: Formula) -> bool:
+    """Recognize structural NNF duals without constructing ``neg(x)``."""
+    if x.op is Op.NOT:
+        return x.args[0].key == y.key
+    if y.op is Op.NOT:
+        return y.args[0].key == x.key
+    duals = {
+        Op.NEXT: Op.WEAK_NEXT,
+        Op.WEAK_NEXT: Op.NEXT,
+        Op.EVENTUALLY: Op.ALWAYS,
+        Op.ALWAYS: Op.EVENTUALLY,
+        Op.UNTIL: Op.RELEASE,
+        Op.RELEASE: Op.UNTIL,
+    }
+    if duals.get(x.op) is not y.op or len(x.args) != len(y.args):
+        return False
+    return all(_are_complements(a, b) for a, b in zip(x.args, y.args))
 
 
 def conj(x: Formula, y: Formula) -> Formula:
@@ -127,6 +165,8 @@ def conj(x: Formula, y: Formula) -> Formula:
         return x
     if x.key == y.key:
         return x
+    if _are_complements(x, y):
+        return FALSE
     return Formula(Op.AND, (x, y))
 
 
@@ -139,30 +179,59 @@ def disj(x: Formula, y: Formula) -> Formula:
         return x
     if x.key == y.key:
         return x
+    if _are_complements(x, y):
+        return TRUE
     return Formula(Op.OR, (x, y))
 
 
 def next_(x: Formula) -> Formula:
+    # Strong Next of false is false on non-empty and empty suffixes alike.
+    if x.op is Op.FALSE:
+        return FALSE
     return Formula(Op.NEXT, (x,))
 
 
 def weak_next(x: Formula) -> Formula:
+    # Weak Next of true is true, including at the finite boundary.
+    if x.op is Op.TRUE:
+        return TRUE
     return Formula(Op.WEAK_NEXT, (x,))
 
 
 def until(x: Formula, y: Formula) -> Formula:
+    # true U y is F y, while x U false is false.  Other familiar-looking
+    # reductions (for example false U y = y) fail on the empty suffix under
+    # the total residual semantics and are deliberately not used.
+    if y.op is Op.FALSE:
+        return FALSE
+    if x.op is Op.TRUE:
+        return eventually(y)
     return Formula(Op.UNTIL, (x, y))
 
 
 def release(x: Formula, y: Formula) -> Formula:
+    # false R y is G y, while x R true is true.  These identities preserve
+    # the empty-suffix value as well as every non-empty finite trace.
+    if y.op is Op.TRUE:
+        return TRUE
+    if x.op is Op.FALSE:
+        return always(y)
     return Formula(Op.RELEASE, (x, y))
 
 
 def eventually(x: Formula) -> Formula:
+    if x.op is Op.FALSE:
+        return FALSE
+    if x.op is Op.EVENTUALLY:
+        return x
     return Formula(Op.EVENTUALLY, (x,))
 
 
 def always(x: Formula) -> Formula:
+    if x.op is Op.TRUE:
+        return TRUE
+    if x.op is Op.ALWAYS:
+        return x
     return Formula(Op.ALWAYS, (x,))
 
 
@@ -215,11 +284,10 @@ def from_node(node: Node) -> Formula:
 # ---------------------------------------------------------------------------
 #
 # Atoms and maximal temporal subformulae are the Boolean "variables"; the
-# &/|/~ skeleton above them is what sympy simplifies. This canonicalizes
-# residuals (so structurally different but logically equal residuals collapse
-# to the same form — important for keeping the state small and, later, for the
-# eager construction to terminate), and detects TRUE/FALSE for the monitor's
-# absorbing verdicts.
+# &/|/~ skeleton above them is what sympy simplifies.  Smart constructors also
+# apply a deliberately small set of finite-trace-safe temporal identities as
+# formulas are parsed and progressed.  This collapses structural duplicates and
+# detects TRUE/FALSE, but is not a quotient by full LTLf language equivalence.
 
 
 def atoms_of(f: Formula) -> frozenset[str]:
@@ -288,20 +356,20 @@ def _from_sympy(expr, name2f: dict[str, Formula]) -> Formula:
 
 
 def simplify(f: Formula) -> Formula:
-    """Boolean-simplify a residual, returning a canonical equivalent.
+    """Return a deterministic, semantics-preserving normalized residual.
 
-    Temporal subformulae are treated as independent Boolean variables, so
-    ``simplify`` collapses the propositional skeleton (``a & true`` →
-    ``a``, ``x | ~x`` → ``true``, ``x & ~x`` → ``false``) and detects the
-    ``TRUE``/``FALSE`` residuals the monitor stops on, but does not reason
-    inside temporal operators. That is sound for validity and
-    unsatisfiability (see module docstring).
+    Smart constructors apply finite-trace dualities, idempotence of ``F``/``G``,
+    and safe constant identities.
+    Maximal temporal subformulae are then treated as independent Boolean
+    variables so SymPy can collapse the current propositional skeleton
+    (``a & true`` → ``a``, ``x | ~x`` → ``true``).
 
-    The leaf→symbol assignment is deterministic (sorted by canonical leaf
-    key) and ``simplify_logic`` depends only on the truth table, so the
-    result is a *canonical* representative of ``f``'s equivalence class: two
-    logically-equal residuals return equal ``Formula`` objects (equal
-    ``key``). ``canonical_key`` exposes that key for state deduplication.
+    The result is canonical for the syntactic identities implemented here only;
+    it is not canonical modulo full LTLf equivalence.  In particular, temporal
+    leaves related by a non-local language identity may remain distinct, and
+    SymPy deliberately avoids exhaustive truth-table minimization above its
+    variable threshold.  ``canonical_key`` is therefore a structural
+    normalization key, not a right-language identifier.
     """
     leaves: dict[str, Formula] = {}
     _collect_leaves(f, leaves)
@@ -313,11 +381,10 @@ def simplify(f: Formula) -> Formula:
 
 
 def canonical_key(f: Formula) -> str:
-    """Canonical dedup key: the ``key`` of the Boolean-simplified residual.
+    """Structural dedup key of the syntactically normalized residual.
 
-    Equal for logically-equivalent residuals (up to the opaque-temporal-leaf
-    approximation), which is what the eager BFS uses to recognize a state it
-    has already seen.
+    Equal residuals have equal keys, but language-equivalent residuals need not.
+    The historical function name is retained for API compatibility.
     """
     return simplify(f).key
 

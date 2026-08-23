@@ -1,8 +1,6 @@
 """Tests for src/formula/compiler.py — DFA structure and sink/trap labeling."""
 
-import pytest
 from src.formula.compiler import compile_ltlf
-
 
 # ---------------------------------------------------------------------------
 # DFA structure
@@ -72,10 +70,11 @@ def test_guard_true_constant():
     assert any(t.guard({"a": True}) for t in outgoing)
 
 
-def test_guard_missing_atom_raises():
+def test_guard_missing_atoms_default_to_false():
     dfa = compile_ltlf("a U b")
-    with pytest.raises(ValueError, match="missing an atom"):
-        dfa.step(dfa.initial, {})
+    assert dfa.step(dfa.initial, {}) == dfa.step(
+        dfa.initial, {"a": False, "b": False}
+    )
 
 
 def test_dfa_step_deterministic():

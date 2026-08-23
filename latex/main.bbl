@@ -17,6 +17,13 @@ Giuseppe {De Giacomo} and Moshe~Y. Vardi.
   23rd International Joint Conference on Artificial Intelligence, Beijing,
   China, August 3-9, 2013}, pages 854--860. {IJCAI/AAAI}, 2013.
 
+\bibitem{finkbeiner2009monitor}
+Bernd Finkbeiner and Lars Kuhtz.
+\newblock Monitor circuits for {LTL} with bounded and unbounded future.
+\newblock In {\em Runtime Verification, 9th International Workshop, {RV} 2009,
+  Grenoble, France, June 26--28, 2009, Selected Papers}, volume 5779 of {\em
+  Lecture Notes in Computer Science}, pages 60--75. Springer, 2009.
+
 \bibitem{fuggitti-ltlf2dfa}
 Francesco Fuggitti.
 \newblock Ltlf2dfa.

@@ -6,8 +6,9 @@ matches set-membership semantics, OR-accumulation across iterations
 matches the engine's eval-loop fixed-point.
 
 We piggyback on the engine's sweep formulas and traces. The known
-nested-temporal limitation (see CLAUDE.md § Paradigm 2) is inherited
-from the rule system itself; the same xfail set applies here.
+shared-register temporal-instance conflation is inherited from the published
+rule system itself; the same strict-xfail set applies here. Temporal nesting by
+itself is not the correctness criterion.
 """
 
 from __future__ import annotations

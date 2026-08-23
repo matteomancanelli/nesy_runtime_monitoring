@@ -86,14 +86,13 @@ MONITORS = [
 
 # Progression's own wall (the dual of DeepDFA-dense's 2^|AP| wall in exp2, and
 # the "price" CLAUDE.md flags for the corrected paradigm 2). On this family the
-# *residual* closure is wildly non-canonical: `simplify` does not collapse
-# progression-equivalent residuals, so the residual DFA explodes even though the
-# minimal DFA grows linearly. Measured (deadline k -> residual n_states vs
-# minimal |Q|):  k=8 -> 38 vs 10 | k=10 -> 711 vs 12 | k=12 -> 3776 vs 14 |
-# k=14 -> 16064 vs 16.  Build time follows: 2 s, 10 s, 33 s, 191 s — roughly 5x
-# per +2 in k, so k=16 is ~20 min and k=18 ~90 min, PER progression monitor. The
-# cost is one sympy `simplify_logic`/POSform per residual (58 s of the 93 s at
-# k=12), all inside `compile`, before a single cell is timed.
+# *residual* closure is not quotiented by full LTLf language equivalence:
+# `simplify` can leave multiple right-language-equivalent residuals even though
+# the minimal DFA for this family grows only linearly.  Exact raw counts and
+# build times depend on the normalization version and belong in regenerated
+# evaluation artifacts, not in this source comment.  The qualitative wall is
+# stable: one SymPy Boolean simplification is paid per discovered residual,
+# entirely inside `compile`, before a single cell is timed.
 #
 # Capping at |Q| <= 14 (k <= 12) keeps six points per progression curve and the
 # whole experiment near ~20 min. Past the cap the two progression monitors are

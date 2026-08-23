@@ -5,7 +5,6 @@
 .vscode/
 *.egg-info/
 
-papers*/
 # Root CLAUDE.md only (tracked by explicit add); artur_future_work/CLAUDE.md must stay trackable.
 /CLAUDE.md
 

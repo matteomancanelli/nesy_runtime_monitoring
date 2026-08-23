@@ -16,31 +16,31 @@ the parse-tree DAG (per-operator end semantics + the pin values for
 binary operators in modes L/R, where one child was settled mid-trace
 and only the mode marker remains in state).
 
-Known limitation — nested temporal under F/G/U/R.
-=================================================
+Known limitation — shared-register temporal-instance conflation.
+================================================================
 The IJCNN 2014 encoding uses a single literal per subformula. For a
 formula like `F(a & X b)`, F's reactivation creates a fresh
 `(a & X b)` instance at each cell while X-b instances from prior
-cells are still resolving. Both instances share the literal
-`[X b]`: mode A produces the prior-cell instance's resolution
-(definite T/F at cell N), mode B produces the fresh defer `?^I`.
+cells are still resolving. Both instances share the literal `[X b]`: the
+fresh instance produces an unqualified `?`, while monitoring mode `M`
+produces the prior-cell instance's resolution (definite T/F or `?^M`).
 The binary operator's mode-R rules cannot tell which instance
 each `[X b]` literal belongs to and fire on both, corrupting the
 carry-over.
 
-A correct fix would scope literals by cell offset (e.g. `[X b @ now]`
-vs `[X b @ prev]`), which is a structural redesign that goes beyond
-what IJCNN 2014 documents. We accept the limitation here: the
-engine matches `SymbolicDFAMonitor` on flat-temporal and on
-temporal-under-propositional formulas (the IJCNN scalability suite
-this project benchmarks), and disagrees on nested-temporal-under-
-F/G/U/R formulas like the BPM response pattern `G(a → F b)`. This is
-itself a relevant finding for Paper A — the DFA-based monitor has no
-such restriction because its single canonical state machine doesn't
-conflate concurrent instances.
+Any correct repair must distinguish the temporal meanings that this
+state has merged, which is a structural redesign beyond IJCNN 2014's
+one-slot address space.  This module intentionally remains the faithful
+published baseline.  ``certify_rule_runner`` decides its correctness
+formula-by-formula; nesting alone is neither necessary nor sufficient for
+failure.  The bounded-event monitor adds finite offset-indexed event modules
+for bounded islands, while the progression monitor carries residual roots and
+is complete for the supported LTLf syntax.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from src.formula.compiler import Observation
 from src.monitors.base import Verdict
@@ -48,8 +48,39 @@ from src.monitors.rulerunner.parse_tree import Node, Op, parse
 from src.monitors.rulerunner.rules import Literal, Rule, RuleSystem, build_rules
 
 
+@dataclass(frozen=True)
+class RuleEngineState:
+    """The complete mutable state of a :class:`RuleEngine`.
+
+    Exhaustive analyses (``equivalence.py``, ``bounded_extrapolation.py``)
+    save and restore engine states instead of reaching into private
+    attributes.  Two invariants make that safe:
+
+    * ``step`` reads only ``active`` and ``decided``.  Code that explores the
+      reachable state graph may therefore use that pair as its key.
+    * ``last_cell`` and ``seen_cell`` are read only by ``final_verdict``, and
+      ``step`` always rewrites them.  A restored state whose ``last_cell`` is
+      unknown is usable as long as ``final_verdict`` is called only after a
+      subsequent ``step``.
+
+    ``RuleEngine._STATE_FIELDS`` pins the attributes covered here; a test
+    fails if the engine grows another one, so a new field cannot silently
+    escape the round trip.
+    """
+
+    active: frozenset[Literal]
+    last_cell: frozenset[Literal]
+    seen_cell: bool
+    decided: Verdict | None
+
+
 class RuleEngine:
     """Pure-Python executor for a RuleSystem."""
+
+    #: Mutable attributes carried by :class:`RuleEngineState`.  The remaining
+    #: attributes (``_root``/``_rules``/``_depth``) are compile-time constants.
+    _STATE_FIELDS = ("_state", "_last_cell", "_decided", "_seen_cell")
+    _CONSTANT_FIELDS = ("_root", "_rules", "_depth")
 
     def __init__(self, root: Node) -> None:
         self._root = root
@@ -58,6 +89,7 @@ class RuleEngine:
         self._state: set[Literal] = set(self._rules.initial_state)
         self._last_cell: frozenset[Literal] = frozenset(self._rules.initial_state)
         self._decided: Verdict | None = None
+        self._seen_cell = False
 
     @classmethod
     def from_formula(cls, formula: str) -> "RuleEngine":
@@ -67,12 +99,42 @@ class RuleEngine:
         self._state = set(self._rules.initial_state)
         self._last_cell = frozenset(self._rules.initial_state)
         self._decided = None
+        self._seen_cell = False
+
+    @property
+    def rule_system(self) -> RuleSystem:
+        """The compiled rule system (read-only view for analyses)."""
+        return self._rules
+
+    @property
+    def atoms(self) -> frozenset[str]:
+        """Observable atoms the rule system reads."""
+        return frozenset(self._rules.atoms)
+
+    # ---------------- explicit state round trip ----------------
+
+    def state(self) -> RuleEngineState:
+        """Snapshot the complete mutable state."""
+        return RuleEngineState(
+            active=frozenset(self._state),
+            last_cell=self._last_cell,
+            seen_cell=self._seen_cell,
+            decided=self._decided,
+        )
+
+    def load_state(self, state: RuleEngineState) -> None:
+        """Restore a state produced by :meth:`state`."""
+        self._state = set(state.active)
+        self._last_cell = state.last_cell
+        self._seen_cell = state.seen_cell
+        self._decided = state.decided
 
     # ---------------- per-cell step ----------------
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
             return self._decided
+        self._seen_cell = True
 
         cell_state: set[Literal] = set(self._state)
         for atom in self._rules.atoms:
@@ -117,6 +179,9 @@ class RuleEngine:
     def final_verdict(self) -> Verdict:
         if self._decided is not None:
             return self._decided
+        if not self._seen_cell:
+            resolved = self._holds_empty(self._root)
+            return Verdict.SATISFY if resolved else Verdict.VIOLATE
         resolved = self._resolve(self._root, self._last_cell)
         return Verdict.SATISFY if resolved else Verdict.VIOLATE
 
@@ -152,6 +217,29 @@ class RuleEngine:
             return Verdict.VIOLATE
         return Verdict.UNDECIDED
 
+    def _holds_empty(self, node: Node) -> bool:
+        if node.op is Op.ATOM:
+            return node.atom == "true"
+        if node.op is Op.NOT:
+            return not self._holds_empty(node.children[0])
+        if node.op is Op.AND:
+            return self._holds_empty(node.children[0]) and self._holds_empty(
+                node.children[1]
+            )
+        if node.op is Op.OR:
+            return self._holds_empty(node.children[0]) or self._holds_empty(
+                node.children[1]
+            )
+        if node.op is Op.IMPLIES:
+            return not self._holds_empty(node.children[0]) or self._holds_empty(
+                node.children[1]
+            )
+        if node.op in (Op.NEXT, Op.EVENTUALLY, Op.UNTIL):
+            return False
+        if node.op in (Op.WEAK_NEXT, Op.ALWAYS, Op.RELEASE):
+            return True
+        raise ValueError(node.op)
+
     def _resolve(self, node: Node, state: frozenset[Literal]) -> bool:
         """Recursive end-of-trace resolution. Definite values in `state`
         win; otherwise apply per-operator end semantics."""
@@ -162,6 +250,10 @@ class RuleEngine:
             return False
 
         if node.op is Op.ATOM:
+            if node.atom == "true":
+                return True
+            if node.atom == "false":
+                return False
             # R[a] was not active at the last cell; the atom's value is
             # irrelevant to the active mode of any parent.
             return False
@@ -180,8 +272,15 @@ class RuleEngine:
         if node.op in (Op.UNTIL, Op.RELEASE):
             return self._resolve(node.children[1], state)
         if node.op is Op.NEXT:
-            return False  # strong next: cell i+1 doesn't exist -> F
+            # Initial mode has no successor and is false.  Monitoring mode
+            # already moved to the successor cell and therefore mirrors phi,
+            # including phi's own END resolution.
+            if Literal(f"[{K}]?^M") in state:
+                return self._resolve(node.children[0], state)
+            return False
         if node.op is Op.WEAK_NEXT:
+            if Literal(f"[{K}]?^M") in state:
+                return self._resolve(node.children[0], state)
             return True
         raise ValueError(node.op)
 

@@ -19,12 +19,36 @@ import numpy as np
 import pytest
 
 from src.benchmarks.formulas import IJCNN_SUITE
-from src.benchmarks.runner import random_traces, reset_if_stale, time_monitor
+from src.benchmarks.runner import (
+    _compile_for_benchmark,
+    random_traces,
+    reset_if_stale,
+    time_monitor,
+)
 from src.monitors.deep_dfa import DeepDFAMonitor
 from src.monitors.rulerunner import RuleRunnerMonitor
+from src.monitors.rulerunner.bounded_cilp import BoundedEventRuleRunnerMonitor
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 MONITORS = [SymbolicDFAMonitor, RuleRunnerMonitor, DeepDFAMonitor]
+
+
+def test_bounded_benchmark_compilation_requires_offline_certificate() -> None:
+    monitor = _compile_for_benchmark(
+        BoundedEventRuleRunnerMonitor,
+        "F (a & X b)",
+        "cpu",
+        {"exact_online": False},
+    )
+    assert monitor.certificate_source == "cache"
+
+    with pytest.raises(ValueError, match="certificate='auto'"):
+        _compile_for_benchmark(
+            BoundedEventRuleRunnerMonitor,
+            "F (a & X b)",
+            "cpu",
+            {"certificate": "auto"},
+        )
 
 
 @pytest.mark.parametrize("monitor_cls", MONITORS)

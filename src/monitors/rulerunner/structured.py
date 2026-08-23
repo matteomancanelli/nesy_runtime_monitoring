@@ -11,14 +11,14 @@ Motivation
 `cilp.CILPRunner` pools every rule into one network and reaches the per-cell
 fixpoint by iterating the whole network ``depth+1`` times. IJCNN 2015 (Perotti,
 d'Avila Garcez, Boella — "Neural-Symbolic Monitoring and Adaptation", Fig. 5)
-instead keeps one subnetwork per parse-tree node and composes them
-horizontally: child-node outputs feed parent-node inputs, while recurrent
-connections carry the reactivation (``R[.]``) state across cells. That per-node
-decomposition is precisely what their *local* (single-node) adaptation operates
-on — so this module is kept for the deferred Paper-B adaptation work.
+groups the same monitor by parse-tree node and composes the resulting modules
+horizontally. Here we execute that grouping explicitly: one bottom-up
+evaluation sweep, followed by independent per-node reactivation modules whose
+outputs are OR-ed into the recurrent ``R[.]`` state for the next cell. This is
+a functional factorization rather than a literal concatenated RNN tensor.
 
-Status: wired into the package API (`StructuredRuleRunnerMonitor`) and the
-experiments as a second RuleRunner data point. It is device-aware and batches
+Status: wired into the package API (`StructuredRuleRunnerMonitor`) and available
+for the deferred evaluation phase. It is device-aware and batches
 across traces (`batch_run` runs a batched per-node sweep on CPU or CUDA). By
 construction it returns the *same* per-cell verdicts as `CILPRunner` and the
 symbolic `RuleEngine`: partitioning the rules by node is purely organizational,
@@ -42,6 +42,8 @@ import torch
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
 from src.monitors.rulerunner.cilp import (
+    SkeletonLabelState,
+    _holds_empty,
     _layer_matrices,
     _resolve_end,
     _step_activation,
@@ -117,12 +119,40 @@ class StructuredCILPRunner:
         self._state: torch.Tensor = self._initial_x.clone()
         self._last_cell: torch.Tensor = self._initial_x.clone()
         self._decided: Verdict | None = None
+        self._seen_cell = False
 
     @classmethod
     def from_formula(
         cls, formula: str, device: str | torch.device = "cpu"
     ) -> "StructuredCILPRunner":
         return cls(parse(formula), device=device)
+
+    # -- public state snapshot (bounded-event extrapolation head) --
+
+    def label_state(self, names: Iterable[str] | None = None) -> SkeletonLabelState:
+        """Snapshot the literals a fixed label head is allowed to read.
+
+        Exposed so that analyses outside this module do not have to reach into
+        the runner's tensors or index dictionary.  ``names`` restricts the
+        snapshot to the literals a caller declared interest in.
+        """
+        index = self._index
+        selected = index.items() if names is None else (
+            (name, index[name]) for name in names if name in index
+        )
+        active: set[str] = set()
+        last: set[str] = set()
+        for name, position in selected:
+            if bool(self._state[position] > 0):
+                active.add(name)
+            if bool(self._last_cell[position] > 0):
+                last.add(name)
+        return SkeletonLabelState(
+            active=frozenset(active),
+            last_cell=frozenset(last),
+            seen_cell=self._seen_cell,
+            decided=self._decided,
+        )
 
     # -- compilation --
 
@@ -189,10 +219,12 @@ class StructuredCILPRunner:
         self._state = self._initial_x.clone()
         self._last_cell = self._initial_x.clone()
         self._decided = None
+        self._seen_cell = False
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
             return self._decided
+        self._seen_cell = True
 
         # Cell input: -1 everywhere, carry the R[.] recurrent state, clamp obs.
         x = torch.full((self._n,), -1.0, device=self._device)
@@ -236,6 +268,8 @@ class StructuredCILPRunner:
     def final_verdict(self) -> Verdict:
         if self._decided is not None:
             return self._decided
+        if not self._seen_cell:
+            return Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
         return self._end_verdict(self._last_cell.cpu())
 
     def _end_verdict(self, cell_state: torch.Tensor) -> Verdict:
@@ -286,7 +320,8 @@ class StructuredCILPRunner:
         lengths = [len(t) for t in trace_list]
         maxL = max(lengths)
         if maxL == 0:  # all-empty traces -> end-of-trace on the initial state
-            return [self._end_verdict(self._initial_x.cpu())] * B
+            v = Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
+            return [v] * B
 
         atoms = self._rs.atoms
         n_atoms = len(atoms)
@@ -355,6 +390,11 @@ class StructuredCILPRunner:
 
         results: list[Verdict] = []
         for b in range(B):
+            if lengths[b] == 0:
+                results.append(
+                    Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
+                )
+                continue
             if bool(has_dec[b]):
                 results.append(
                     Verdict.SATISFY if int(first_v[b]) == 1 else Verdict.VIOLATE

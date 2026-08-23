@@ -25,7 +25,7 @@ A RuleRunner system can be translated in a logic program, which in turn can be e
 
 The rule system underlies two behaviorally-equivalent neural encodings, both of which we evaluate in Section~\ref{sec:experiments}. In the \emph{flat} encoding \cite{perotti2014neural}, the whole rule set is compiled into a single recurrent network following the standard CILP translation \cite{}: one hidden unit per rule, weights realizing each Horn clause, and the fixpoint of the evaluation phase recovered by iterating the forward pass until the fixpoint is met. 
 %Because it is a single pair of weight matrices, the flat encoding vectorizes naturally over traces, i.e. the per-step evaluation and reactivation steps become matrix--matrix products over a whole batch. 
-In the \emph{structured} encoding \cite{perotti2015neural}, the same rules are instead laid out as one CILP subnetwork per parse-tree node, wired according to the syntax of $\varphi$. This modular form is the substrate for \emph{local learning}: because parameters are attached to syntactically-local subnetworks, adaptation can be confined to the subtree responsible for a misclassification rather than diffused across a monolithic network.
+In the \emph{structured} encoding \cite{perotti2015neural}, the same rules are instead grouped as one CILP subnetwork per parse-tree node, wired according to the syntax of $\varphi$. Operationally, we execute one bottom-up sweep of the evaluation modules and then fire every reactivation module independently, taking the union of their outputs as the recurrent state of the next cell. This is functionally equivalent to horizontally composing the modules into the single recurrent network of Figure~5 in \cite{perotti2015neural}. The modular form is the substrate for \emph{local learning}: because parameters are attached to syntactically-local subnetworks, adaptation can be confined to the subtree responsible for a misclassification rather than diffused across a monolithic network.
 
 
 \subsection{The Nested-Temporal Limitation}
@@ -89,6 +89,360 @@ This is a structural consequence of the one-literal-per-subformula encoding, and
 The conflation cannot be repaired at the output layer. Consider $\varphi_b$ again, the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ (ground truth \textsc{violate}) and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$ (ground truth \textsc{satisfy}) for $\varphi_b$. After the second time point both present the \emph{identical} conflicted register $[Xb] = \{F, ?\}$, yet the correct resolutions are opposite: $\boldsymbol{\sigma}_A$ needs the $F$ to win, $\boldsymbol{\sigma}_B$ needs the $?$ to win. Any monitor whose decision is a function of the shared register alone must answer identically on both, so no priority order over the register can be correct on both traces.
 
 
+\subsection{The Exact Boundary and a Bounded-Event Construction}
+\label{sec:rulerunner-bounded}
+
+The counterexample identifies the mechanism of failure, but not a syntactic
+boundary.  Temporal nesting alone is neither necessary nor sufficient for a
+mismatch.  For example, after the initialization and Next-mode rules are
+interpreted faithfully, $X(Xa)$ is handled correctly: the two Next nodes are
+distinct subformulas, and the inner one is activated only after the outer one
+advances.  Conversely,
+\[
+    (Xa)\land X(Xa)
+\]
+shares the subformula $Xa$ between two temporal offsets.  On the two-cell trace
+$(\emptyset,\{a\})$, the original RuleRunner returns \textsc{satisfy}, whereas
+the correct verdict is \textsc{violate}.  Operator identities can also make
+apparently dangerous nesting harmless.  Moreover, the equivalent rewriting
+$X(a\land Xa)$ is certified correct, although $(Xa)\land X(Xa)$ is not: the
+former activates $Xa$ once, whereas the latter reaches its deduplicated
+register at two offsets.  Hence an exact presentation must account jointly for
+global syntactic sharing and the semantic effect of each collision; this
+amounts to the reachability/equivalence analysis performed by the certifier,
+rather than a clean compositional grammar.
+
+\paragraph{Exact semantic class.}
+Let $RR_\varphi$ be the deterministic finite-state monitor induced by the
+original RuleRunner rules, and let $A_\varphi$ be a canonical DFA for
+$\varphi$.  We define
+\[
+    \mathcal C_{RR}
+    = \{\varphi \mid L(RR_\varphi)=L(A_\varphi)\}.
+\]
+This is the maximal semantic class on which the original construction is
+correct.  Membership is decidable exactly, rather than estimated from sampled
+formulas or traces.  Both monitors have finite state, so we explore their
+synchronous product over $2^{\mathcal P_\varphi}$.  A reachable product state
+whose two components disagree on final acceptance yields a counterexample;
+breadth-first exploration yields a shortest one.  The same product also checks
+whether every definite online RuleRunner verdict agrees with the DFA's trap or
+accepting-sink label.  We call this latter property \emph{prefix soundness}; it
+is weaker than requiring identical verdict timing, because RuleRunner may
+remain undecided after the DFA can already decide.
+
+This certifier gives an exact per-formula boundary, but it does not explain how
+the construction behaves on a recognizable family of specifications.
+
+\paragraph{A sufficient syntactic fragment.}
+Let $\pi$ range over propositional formulas and let
+$\mathcal F_{\mathsf{flat}}$ be the Boolean closure of temporal clauses with
+propositional operands:
+\[
+\begin{array}{rcl}
+\pi &::=& \top \mid \bot \mid p \mid \neg p
+ \mid \pi\land\pi \mid \pi\lor\pi \mid \pi\to\pi,\\
+\theta &::=& \pi \mid X\pi \mid W\pi \mid F\pi \mid G\pi
+ \mid \pi\ U\ \pi \mid \pi\ R\ \pi,\\
+\varphi_{\mathsf{flat}} &::=& \theta
+ \mid \varphi_{\mathsf{flat}}\land\varphi_{\mathsf{flat}}
+ \mid \varphi_{\mathsf{flat}}\lor\varphi_{\mathsf{flat}}
+ \mid \varphi_{\mathsf{flat}}\to\varphi_{\mathsf{flat}},
+\end{array}
+\]
+where $p\in\mathcal P$.  Thus $(Fa)\to G(b\lor c)$ belongs to the
+fragment, whereas $F(a\land Xb)$ and $X(Xa)$ do not.  The restriction is on
+temporal scope, not on the surrounding Boolean structure.  In particular,
+this is a readable sufficient fragment rather than an attempt to reproduce
+the identity-sensitive semantic class $\mathcal C_{RR}$: the latter also
+contains formulas such as $X(Xa)$ and $F(Fa)$.
+
+\begin{theorem}[Flat-fragment correctness]
+\label{thm:rulerunner-flat-correct}
+For every $\varphi\in\mathcal F_{\mathsf{flat}}$, the original RuleRunner is
+language-equivalent to $A_\varphi$ and is prefix-sound.
+\end{theorem}
+
+\begin{proof}
+Consider first one temporal clause $\theta$.  Every proper subformula below
+its temporal operator is propositional and therefore receives a definite
+Boolean value in the cell in which it is activated.  Reactivating $F$, $G$,
+$U$, or $R$ can consequently reinstall only propositional operand trees; no
+pending temporal instance is installed a second time.  Similarly, $X$ and
+$W$ install a propositional operand exactly at the successor cell.  The only
+temporal state carried between cells is therefore the state of $\theta$
+itself, for which the RuleRunner modes and end-of-trace tables implement the
+corresponding finite-trace semantics.
+
+Boolean rules do not reinstall their descendants.  They only retain the mode
+recording which already-active operands remain relevant.
+Consequently, composing temporal clauses with the Boolean grammar above cannot
+create a second temporal instance.  If an equal clause occurs more than once,
+all its occurrences were activated at the same trace position and denote the
+same obligation, so syntactic deduplication is harmless.  Induction over cells,
+with a structural induction over the Boolean layer in each cell, now preserves
+the single-instance invariant and the intended three-valued evaluation of
+every active formula.  At the finite boundary the operator-specific end rules
+give $\boldsymbol\sigma\models\varphi$ exactly.  A definite value produced
+before the boundary is respectively true or false for every continuation by
+the same invariant, proving prefix soundness.
+\end{proof}
+
+The inclusion $\mathcal F_{\mathsf{flat}}\subseteq\mathcal C_{RR}$ can be
+strict, and membership in $\mathcal C_{RR}$ remains the exact test outside the
+fragment.  We next give a second syntactic class that strictly enlarges
+$\mathcal F_{\mathsf{flat}}$ while preserving a small, static RuleRunner
+network.
+
+\paragraph{Bounded event formulas.}
+Consider the syntactically bounded fragment
+\[
+\begin{array}{rcl}
+\beta &::=& \top \mid \bot \mid p \mid \neg\beta
+ \mid \beta\land\beta \mid \beta\lor\beta \mid \beta\to\beta
+ \mid X\beta \mid W\beta .
+\end{array}
+\]
+Its future horizon is defined by
+\[
+\begin{array}{rclcrcl}
+h(p)&=&0,
+&\qquad&h(\top)=h(\bot)&=&0,\\
+h(\neg\beta)&=&h(\beta),
+&&h(\beta_1\circ\beta_2)&=&\max(h(\beta_1),h(\beta_2)),\\
+ h(X\beta)&=&1+h(\beta),
+&&h(W\beta)&=&1+h(\beta),
+\end{array}
+\]
+where $\circ\in\{\land,\lor,\to\}$.  Standard unbounded $F$, $G$, $U$, and
+$R$ have infinite syntactic horizon.  Semantic normalization may reveal
+special bounded cases containing these operators, but we keep that question
+separate from this transparent sufficient test.
+
+Let $\beta_1,\ldots,\beta_m$ be the maximal non-atomic bounded subformulas of
+$\varphi$.  Replace each distinct $\beta_i$ with a fresh event proposition
+$e_i$, obtaining a \emph{RuleRunner skeleton}
+$\alpha=\mathsf{sk}(\varphi)$.  This gives the checkable bounded-event
+fragment
+\[
+    \mathcal F_{\mathsf{BE}}
+    = \{\varphi \mid
+         \mathsf{sk}(\varphi)\in\mathcal F_{\mathsf{flat}}\}.
+\]
+This two-level definition---a bounded grammar followed by a syntactic skeleton
+test---mirrors the construction more faithfully than a single grammar: bounded
+islands are evaluated by the front end, while only their skeleton is evaluated
+by the original RuleRunner.  For example,
+\[
+\begin{array}{c|c|c}
+\text{formula} & \text{bounded event} & \text{skeleton}\\ \hline
+G(Xa) & e\equiv Xa & Ge\\
+F(a\land Xb) & e\equiv a\land Xb & Fe\\
+G(a\to Xb) & e\equiv a\to Xb & Ge\\
+a\ U\ (b\land Xc) & e\equiv b\land Xc & a\ U\ e.
+\end{array}
+\]
+By contrast, eventization does not change $G(a\to Fb)$, because $Fb$ has no
+finite horizon; its skeleton is rejected by the exact certifier.
+
+Let $H=\max_i h(\beta_i)$.  For each non-empty trace
+$\boldsymbol{\sigma}=\sigma_0\cdots\sigma_{T-1}$, define a derived trace
+$D_\varphi(\boldsymbol{\sigma})$ of the same length.  Its cell at position $t$
+retains the original propositions required by $\alpha$ and contains $e_i$
+exactly when
+\[
+    \boldsymbol{\sigma},t\models\beta_i.
+\]
+A streaming transducer implements this definition with a fixed window.  It
+stores the previous $H$ observations; together with the current observation,
+these form the $H+1$ cells needed to emit the oldest derived cell.  At
+end-of-trace it flushes the remaining suffixes, interpreting strong Next as
+false and weak Next as true when no successor exists.  The empty trace has no
+position at which an event can be emitted, so its truth value is computed
+directly from the empty-trace semantics of $\varphi$.
+
+\begin{theorem}[Bounded-event composition]
+\label{thm:rulerunner-bounded-correct}
+Let $\alpha$ be the eventized skeleton of an \ltlf formula $\varphi$.  If the
+exact product certifies that $RR_\alpha$ is language-equivalent to
+$A_\alpha$, then for every finite trace $\boldsymbol{\sigma}$ the composition
+of the bounded-event transducer and $RR_\alpha$ returns \textsc{satisfy} iff
+$\boldsymbol{\sigma}\models\varphi$.  If $RR_\alpha$ is also prefix-sound,
+every verdict returned before end-of-trace is sound.
+\end{theorem}
+
+\begin{proof}
+For a non-empty trace, the definition of each $e_i$ and structural induction on
+$\varphi$ give the substitution equivalence
+\[
+    \boldsymbol{\sigma},0\models\varphi
+    \quad\Longleftrightarrow\quad
+    D_\varphi(\boldsymbol{\sigma}),0\models\alpha.
+\]
+The fixed-window transducer emits exactly
+$D_\varphi(\boldsymbol{\sigma})$: a position at least $H$ cells behind the
+input is mature, while the final flush supplies the finite boundary for the
+remaining positions.  Language equivalence of $RR_\alpha$ therefore gives the
+correct final verdict.  The empty trace follows from the separately computed
+boundary value.
+
+For an early verdict, the emitted cells form a prefix of the derived trace.
+Prefix soundness states that the verdict is permanent under every continuation
+of that derived prefix.  The continuations realizable by the bounded-event
+transducer form a subset of those continuations, so the same verdict is sound
+for every continuation of the original trace.
+\end{proof}
+
+\paragraph{Soundness is not timeliness.}
+The theorem deliberately claims no latency bound.  The derived \emph{prefix}
+trails the input by at most $H$ cells, but the \emph{verdict} need not: it is
+exactly the inclusion used in the proof that is lossy in the other direction.
+Eventization forgets which derived words are realizable --- in particular that
+the final position of any trace falsifies every strong-Next event --- so
+$RR_\alpha$ reasons about continuations that no original trace produces and may
+miss a permanence that already holds.  The sharpest witness is $G(Xa)$, which is
+unsatisfiable on every non-empty trace, so $A_\varphi$ traps after one cell.
+Its skeleton is $Ge$, and the derived word in which $e$ holds everywhere is
+consistent with $Ge$; the skeleton therefore stays undecided for the whole trace
+and reports \textsc{violate} only at the boundary.  The lag is the trace length,
+not $H$.  Recovering the DFA's timing consequently requires information about
+which continuations are realizable, which is exactly what the extrapolation of
+Corollary~\ref{cor:rulerunner-bounded-online} supplies.
+
+
+\begin{corollary}[Syntactic enlargement]
+\label{cor:rulerunner-bounded-fragment}
+For every $\varphi\in\mathcal F_{\mathsf{BE}}$, the bounded-event RuleRunner
+returns the correct final verdict and every early definite verdict is sound.
+Moreover,
+\[
+    \mathcal F_{\mathsf{flat}}
+    \subsetneq
+    \mathcal F_{\mathsf{BE}}.
+\]
+\end{corollary}
+
+\begin{proof}
+If $\varphi\in\mathcal F_{\mathsf{BE}}$, its skeleton belongs to
+$\mathcal F_{\mathsf{flat}}$ and hence satisfies both hypotheses of
+Theorem~\ref{thm:rulerunner-bounded-correct} by
+Theorem~\ref{thm:rulerunner-flat-correct}.  Eventizing a flat-fragment formula
+only replaces bounded subformulas by atoms and cannot introduce temporal
+nesting, so
+$\mathcal F_{\mathsf{flat}}\subseteq\mathcal F_{\mathsf{BE}}$.  The inclusion
+is strict: $F(a\land Xb)$ is not flat, but its bounded island
+$a\land Xb$ is replaced by $e$, leaving the flat skeleton $Fe$.
+\end{proof}
+
+For comparison with the implementation's exact admission check, define
+\[
+    \mathcal C_{\mathsf{BE}}
+    = \{\varphi \mid RR_{\mathsf{sk}(\varphi)}
+       \text{ is language-equivalent to }A_{\mathsf{sk}(\varphi)}
+       \text{ and prefix-sound}\}.
+\]
+Writing $\mathcal C_{\mathsf{prog}}$ for the correctness class of the
+progression construction, the two readable fragments and the exact classes
+satisfy
+\[
+    \mathcal F_{\mathsf{flat}}
+    \subsetneq \mathcal F_{\mathsf{BE}}
+    \subseteq \mathcal C_{\mathsf{BE}}
+    \subsetneq \mathcal C_{\mathsf{prog}}
+    = \mathrm{Form}(\ltlf).
+\]
+The last inclusion is strict for the present bounded syntax: for example,
+$G(a\to Fb)$ has no non-atomic bounded island and its unchanged skeleton fails
+certification.  The equality is established by the progression correctness
+theorem below.
+
+\paragraph{Exact online extrapolation.}
+The theorem above already gives exact final verdicts, but the delayed skeleton
+alone may discover a permanent verdict arbitrarily late, even when $H$ is
+fixed.  We recover exact
+three-valued timing from the complete pipeline state.  Let $z_t$ contain the
+RuleRunner carry after the mature derived prefix, its last evaluated cell, the
+at-most-$H$ observations still in the pipeline, and the fill level.  These
+components induce a finite deterministic transition system over the original
+alphabet.  Mark $z$ accepting when flushing its pipeline and then ending the
+trace yields \textsc{satisfy}.  Reverse reachability gives
+\[
+\begin{array}{rcl}
+z\text{ is an accepting sink}
+&\Longleftrightarrow&
+\text{no rejecting state is reachable from }z,\\
+z\text{ is a trap}
+&\Longleftrightarrow&
+\text{no accepting state is reachable from }z.
+\end{array}
+\]
+The corresponding state cubes are translated into a fixed CILP readout with one
+hidden unit per reachable composite state.  This is a compiled state classifier
+rather than a compositional circuit; it labels the current state only and does
+not compute recurrence.
+
+We report this as a priced option rather than as part of the construction,
+because on the natural family it is more expensive than the object it avoids.
+The composite state contains the window, so its graph grows roughly as
+$2^{|\mathcal P|\cdot H}$: for $G(a\to(b\lor Xb\lor\cdots\lor X^4b))$ it has
+$613$ states, whereas $A_\varphi$ has $6$.  The default configuration of our
+implementation is therefore the construction of
+Theorem~\ref{thm:rulerunner-bounded-correct} --- a fixed static pipeline with no
+residual closure and no automaton --- and exact online timing is enabled
+explicitly.  Certification itself is precomputed offline for the same reason:
+running the product check inside compilation would charge the pipeline for a DFA
+construction it never uses at run time.
+
+\begin{corollary}
+\label{cor:rulerunner-bounded-online}
+After every non-empty prefix, the extrapolated bounded-event monitor returns a
+three-valued label identical to that of the canonical DFA for the original
+formula.
+\end{corollary}
+
+\begin{proof}
+For every reachable $z_t$, the composition argument of
+Theorem~\ref{thm:rulerunner-bounded-correct}, applied to every continuation of
+the prefix, shows that paths from $z_t$ end in an accepting state exactly for
+the continuations satisfying the original formula.  Hence absence of a
+reachable rejecting (respectively accepting) state is exactly the DFA
+accepting-sink (respectively trap) condition.
+\end{proof}
+
+\paragraph{Neural realization and relation to prior work.}
+The transducer is compiled into the same two neural organizations as
+RuleRunner.  A recurrent CILP layer implements the observation shift register.
+For every available suffix length $1,\ldots,H+1$, the bounded formulas are
+unrolled into two-valued Horn rules over literals $[\psi,k]T$ and $[\psi,k]F$,
+where $k$ is an offset in the window.  The flat realization pools these rules
+and iterates them to a fixpoint; the structured realization owns one module per
+$(\psi,k)$ and evaluates the modules in dependency order.  Their event outputs
+feed, respectively, the flat and structured CILP realizations of the certified
+original-RuleRunner skeleton.  The two networks therefore differ only in rule
+grouping, as do the two original RuleRunner implementations.
+
+Finite temporal horizons, maximal bounded separation formulas, and their
+evaluation through a pipeline are due to Finkbeiner and Kuhtz
+\cite{finkbeiner2009monitor}.  Their construction supports bounded Until and
+uses strong/weak truncated-path contexts together with an extrapolation circuit
+to recover the Boolean value under their finite truncated-path semantics.  We
+do not add their interval-indexed Until syntax: every fixed finite bound can be
+unrolled into the Boolean and Next fragment $\beta$, so native support would
+improve only the succinctness of the input and is immaterial to our construction.
+Our
+construction specializes the idea to the RuleRunner architecture: the
+unbounded prefix component is the original RuleRunner and is admitted only
+after exact certification.  Because our monitor interface instead uses
+permanent three-valued labels, we classify the reachable composite state as
+described above rather than equating truncated truth with a sink or trap.  The
+result is a strict middle construction: it repairs bounded-future aliasing
+without enumerating the full residual closure, while progression remains
+necessary when the certified skeleton is unsafe.  Exact online classification
+does enumerate the reachable composite states over the original observation
+alphabet; that cost is exponential in $|\mathcal P|\cdot H$ and is reported
+separately from the pipeline it labels.
+
+
 \subsection{Progression-Based Reactivation}
 \label{sec:rulerunner-progression}
 
@@ -113,6 +467,7 @@ Formally, formula progression is defined recursively as follows:
 \mathsf{prog}(\varphi_1\lor\varphi_2,s) &=&
     \mathsf{prog}(\varphi_1,s)\lor\mathsf{prog}(\varphi_2,s),\\
 \mathsf{prog}(X\varphi,s) &=& \varphi \land F \top,\\
+\mathsf{prog}(W\varphi,s) &=& \varphi \lor G \bot,\\
 \mathsf{prog}(\varphi_1U\varphi_2,s) &=&
     \mathsf{prog}(\varphi_2,s)\lor
     \bigl(\mathsf{prog}(\varphi_1,s)\land(\varphi_1U\varphi_2)\bigr).
@@ -129,6 +484,15 @@ The repaired monitor carries a single \emph{residual formula} $\rho_t \in cl(\va
 \]
 where $\mathsf{nf}$ is a semantics-preserving Boolean normalization discussed below. The verdict is read off the residual itself: $\rho_t \equiv \top$ means that every continuation satisfies $\varphi$, and the monitor halts with \textsc{satisfy}; $\rho_t \equiv \bot$ means that none does, and it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}.
 %
+In the eager realization, these equivalences are decided exactly from the
+completed residual graph.  Let $F$ be the residual states that accept the empty
+suffix.  A state is an accepting sink precisely when no state outside $F$ is
+reachable from it, and it is a trap precisely when no state in $F$ is
+reachable from it.  Both sets are computed once by reverse reachability.  The
+lazy realization instead halts early only when normalization exposes the
+literal constants $\top$ or $\bot$; this test is sound but may return
+\textsc{undecided} longer than necessary.
+%
 As in the original system, evaluating a formula at a time point is a bottom-up computation over its parse tree. In details, the RuleRunner state $S_t$ at time $t$ holds the observations of $\sigma_t$, the active rules $R[\psi]$, and the truth evaluations $[\psi]V$ for $\psi\in sub(\rho_t)$. 
 These are exactly the registers the original system used, only instantiated over the residual rather than over $\varphi$; and, exactly as before, they are \emph{flushed} at each time point rather than carried. What is carried across time is the residual alone. 
 Note that since only the residual is progressed, the undecided subformulas $[\psi]?$ of $\rho_t$ are not reactivated as before, but flushed as every other truth evaluation.
@@ -140,27 +504,41 @@ The residual is carried not as a monolithic formula but in \emph{factored} form,
 where $\mathsf{split}_\wedge(\chi_1\land\chi_2) = \mathsf{split}_\wedge(\chi_1)\cup\mathsf{split}_\wedge(\chi_2)$, $\mathsf{split}_\wedge(\top)=\emptyset$, and any formula that is not a top-level conjunction is kept as a single element. Progression is a homomorphism for conjunction, $\mathsf{prog}(\chi_1\land\chi_2,s) = \mathsf{prog}(\chi_1,s)\land\mathsf{prog}(\chi_2,s)$, so the elements of $\Sigma_t$ may be progressed independently and re-collected, leaving the update above unchanged. 
 %Disjunctions, by contrast, are never split: a residual such as $b\lor F(a\land Xb)$ is a single element of $\Sigma_t$, because it records a correlation between an immediate requirement and a still-open eventuality that is destroyed if its two sides are carried separately.
 %
-The factorization is used to reduce the size of the system. If we carry the whole residual, the monitor would need one register per reachable residual, i.e. it would have the size of $cl(\varphi)$. Carrying the conjuncts instead makes it a \emph{multi-hot} vector over the top-level conjuncts, and the gap can be exponential. For $\varphi = F a_1 \land ... \land Fa_n$ the reachable residuals is given by all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas the top-level conjuncts are the $n$ formulas $F a_i$, giving a linear bound on the number of registers needed.  
+The factorization is used to reduce the size of the system. If we carry the whole residual, the monitor needs one register per reachable residual, i.e. it has the size of $cl(\varphi)$. Let $\mathcal R_\varphi=\bigcup_{\rho\in cl(\varphi)}\mathsf{split}_\wedge(\rho)$ be the residual-root vocabulary. Carrying conjuncts instead gives a \emph{multi-hot} vector over $\mathcal R_\varphi$, and the gap can be exponential. For $\varphi = F a_1 \land \cdots \land F a_n$, the reachable residuals are all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas $|\mathcal R_\varphi|=n$.
 
-To summarize, the RuleRunner two-phase schema is repaired as followed:
+To summarize, the RuleRunner two-phase schema is repaired as follows:
 
 \begin{enumerate}
     \item \textbf{Evaluation.}
-    The observation $\sigma_t$ is injected into $S_t$ and the evaluation rules $R_E$ are fired bottom-up until a fixpoint is reached, computing $[\psi]V$ for every $\psi\in sub(\rho_t)$.
+    The observation $\sigma_t$ is injected into $S_t$ and the evaluation rules $R_E$ are fired bottom-up, computing $[\psi]V$ for the syntactic closure of the residual roots. These values provide the end-of-trace decision for the current cell; ongoing state evolution is performed by the progression-based reactivation below.
     \item \textbf{Reactivation.}
-    The residual is factorized and each top-level conjunct is progressed independently. The results are then re-collected into the new residual, i.e.,
+    The residual is factorized and each active root is progressed independently. Each result is normalized and split into top-level conjuncts, and the emitted roots are unioned into the next recurrent state:
     \[
-        \rho_{t+1} = \bigwedge_{\chi\in\Sigma_{t}} [\mathsf{nf}(\mathsf{prog}(\chi,\sigma_t))]
+        \Sigma_{t+1}
+        = \bigcup_{\chi\in\Sigma_t}
+          \mathsf{split}_\wedge\!\left(
+             \mathsf{nf}(\mathsf{prog}(\chi,\sigma_t))
+          \right),
+        \qquad
+        \rho_{t+1}=\bigwedge_{\eta\in\Sigma_{t+1}}\eta.
     \]
-    
 \end{enumerate}
+
+This update is the structured progression network's reactivation phase.  A
+clause owned by $\chi$ tests only $R[\chi]$ and the observations relevant to
+$\chi$, and emits the corresponding $R[\eta]$ registers.  No transition clause
+recognizes the complete set $\Sigma_t$.  Cross-root simplifications need not be
+performed for correctness: for example, $\{a,\neg a\}$ already denotes the
+unsatisfiable conjunction even if it is not rewritten to $\{\bot\}$.  The
+reachable sets of roots are nevertheless enumerated at compilation time to
+label traps and accepting sinks exactly; this fixed global readout determines
+only the online verdict and does not drive recurrence.
 
 \paragraph{The cost of the repair.}
 One may wonder whether the new RuleRunner construction comes with a cost. Actually, it depends on how the monitor is realized. 
 
-In the \emph{eager} realization, the residual closure $cl(\varphi)$ and its syntactic closure $sub(cl(\varphi)) = \bigcup_{\chi\in cl(\varphi)}sub(\chi)$ are computed once, and all corresponding evaluation and progression rules are compiled into a fixed finite rule system. Using the CILP translation, we can then map it to a recurrent network exactly as in the original RuleRunner approach. 
-The price is paid on two axes. The first is the closure itself, since the register set is bounded by $cl(\varphi)$, not $\varphi$ as before. The second axis comes from the progression schema, since $\mathsf{prog}(\chi,\sigma_t)$ depends on the observation.
-Compiling it into a fixed set of clauses therefore requires expanding over the observation space. In the worst case, the size of the monitor is $|cl(\varphi)| \cdot 2^{|\calP|}$. This is similar to what happens in the dense DeepDFA tensor (see Sec.~\ref{sec:deepdfa}).
+In the \emph{eager} realization, the residual closure $cl(\varphi)$ and its syntactic closure $sub(cl(\varphi)) = \bigcup_{\chi\in cl(\varphi)}sub(\chi)$ are computed once, and all corresponding evaluation and progression rules are compiled into a fixed finite rule system. Using the CILP translation, we can then map it to a recurrent network using the same two-phase scheme as the original RuleRunner. The flat realization compiles whole-residual transitions, whereas the structured realization above compiles one transition module per residual root and combines their outputs.
+The price is paid on two axes. First, the recurrent register set is bounded by $|\mathcal R_\varphi|$, rather than by the syntactic subformulae of $\varphi$. Second, $\mathsf{prog}(\chi,\sigma_t)$ depends on the observation, so compiling a root's transition clauses may require expanding over $2^{|\mathcal P_\chi|}$ valuations of the atoms relevant to that root. Exact early verdicts additionally require the reachable aggregate root sets to be classified by the fixed global readout. Both the root vocabulary and this aggregate-state graph can be exponential in the worst case. The observation expansion is analogous to the alphabet axis of the dense DeepDFA tensor (see Sec.~\ref{sec:deepdfa}).
 
 In the \emph{lazy} realization, only the closure $sub(\rho_t)$ of the current residual is instantiated, one time point at a time. Neither axis is ever enumerated: the set of registers is bounded by the parse tree of $\rho_t$, that is $sub(\rho_t)$, and the progression is computed only for that particular residual against the current observation, not expanded over $2^{|\calP|}$. 
 The cost here is that we cannot encode the monitor as a recurrent network, since the rule set is no longer fixed, but dynamically generated. Conversely, we can use a \emph{sequence of distinct feedforward neural networks}, once per time step. This means that cross-trace batching is lost, since traces in a batch hold different residuals and share no weight matrix.
@@ -174,7 +552,7 @@ Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (e
 \end{theorem}
 
 \begin{proof}
-Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite  trace. For $0\leq t<T$, let $\Sigma_t$ be the active root set before reading cell $\sigma_t$, that is, after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed. Let
+Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite trace. For $0\leq t\leq T$, let $\Sigma_t$ be the active root set after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed (and thus before reading $\sigma_t$ when $t<T$). Let
 \[
     \rho_t = \bigwedge_{\chi\in\Sigma_t}\chi
 \]
@@ -184,14 +562,14 @@ be the residual it denotes. By construction,
 \]
 and therefore $\rho_0$ is equivalent to $\varphi$.
 
-We first use the defining property of progression. For every formula $\chi$, every non-final cell $s$, and every  finite continuation $\boldsymbol{\tau}$,
+We first use the defining property of progression. For every formula $\chi$, every cell $s$, and every finite continuation $\boldsymbol{\tau}$, including the empty continuation $\epsilon$,
 \begin{equation}
 \label{eq:progression-step}
     s\cdot\boldsymbol{\tau}\models\chi
     \quad\Longleftrightarrow\quad
     \boldsymbol{\tau}\models\mathsf{prog}(\chi,s).
 \end{equation}
-This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, since $\boldsymbol{\tau}$ is , $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}\models\chi$, which is exactly the clause $\mathsf{prog}(X\chi,s)=\chi$. The weak-next case is identical on non-final cells. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
+This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}$ is non-empty and $\boldsymbol{\tau}\models\chi$. Since $F\top$ holds exactly on non-empty finite traces, this is equivalent to $\boldsymbol{\tau}\models\chi\land F\top$. Dually, $W\chi$ is true either when the suffix is empty or when $\chi$ holds at its first cell; $G\bot$ holds exactly on the empty trace, yielding $\mathsf{prog}(W\chi,s)=\chi\lor G\bot$. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
 \[
     \boldsymbol{\tau}\models
     \mathsf{prog}(\chi_2,s)\lor
@@ -206,9 +584,9 @@ We now prove the residual invariant:
     \quad\Longleftrightarrow\quad
     \boldsymbol{\tau}\models\rho_t
 \end{equation}
-for every $0\leq t<T$ and every  finite continuation $\boldsymbol{\tau}$.
+for every $0\leq t\leq T$ and every finite continuation $\boldsymbol{\tau}$.
 
-For $t=0$, the claim holds because $\rho_0$ is equivalent to $\varphi$. Assume it holds for some $t<T-1$. By the reactivation rule,
+For $t=0$, the claim holds because $\rho_0$ is equivalent to $\varphi$. Assume it holds for some $t<T$. By the reactivation rule,
 \[
     \rho_{t+1}
     \equiv
@@ -239,17 +617,13 @@ Therefore, for every  continuation $\boldsymbol{\tau}$,
 \]
 Thus the invariant holds at $t+1$.
 
-It remains to consider the last cell. Applying the invariant with $t=T-1$ and continuation $(\sigma_{T-1})$ gives
+After consuming all $T$ cells, repeated application of the invariant gives
 \[
     \boldsymbol{\sigma}\models\varphi
     \quad\Longleftrightarrow\quad
-    (\sigma_{T-1})\models\rho_{T-1}.
+    \epsilon\models\rho_T.
 \]
-By definition of $\mathsf{last}$, the right-hand side is equivalent to
-\[
-    \mathsf{last}(\rho_{T-1},\sigma_{T-1})=\top .
-\]
-The final evaluation rules compute precisely this value. Hence the monitor returns \textsc{satisfy} exactly on traces satisfying $\varphi$, and \textsc{violate} otherwise.
+The final evaluation rules compute precisely whether the residual accepts the empty trace. Hence the monitor returns \textsc{satisfy} exactly on traces satisfying $\varphi$, and \textsc{violate} otherwise.
 
 Finally, the operational register construction realizes the symbolic transition used in the proof. At time $t$, the state $S_t=sub(\rho_t)$ contains every subformula needed to evaluate and progress the active roots. Since the eager monitor allocates registers for all formulas in $sub(cl(\varphi))$, every such support formula has a corresponding register, and the bottom-up computation can be carried out by finitely many rules. Only the active roots in $\Sigma_t$ are reactivated, so support subformulas do not acquire an independent temporal meaning. Therefore the rule-based monitor implements exactly the residual update used in the invariant.
 
@@ -258,10 +632,31 @@ If an early verdict is returned, the current residual is respectively valid or u
 
 
 \paragraph{The role of normalization.}
-As described above, we use a Boolean normalization on the residual formulas produced by progression. It is important to notice that this is not strictly required for soundness, meaning that $\mathsf{nf}$ could be an the identity function and the monitor would still be sound. 
-What normalization buys is \emph{finiteness}. Progression's raw output may grow syntactically without bound. For instance, since $\mathsf{prog}(F\psi,s) = \mathsf{prog}(\psi,s)\lor F\psi$, a trace on which $\psi$ keeps failing produces $\bot\lor F\psi$, then $\bot\lor(\bot\lor F\psi)$, and so on. Without normalization, every time point would allocate fresh registers and the eager compilation may not terminate. In other words, the residual formulas are finite \emph{up to logical equivalence}, and $\mathsf{nf}$ is useful to make $cl(\varphi)$ a finite set of registers.
+As described above, we normalize residual formulas after progression.  This is
+not required for semantic soundness---taking $\mathsf{nf}$ to be the identity
+still preserves the progression invariant---but raw syntax may then grow
+without bound.  For instance, repeated failure of $\psi$ in
+$F\psi$ would produce $\bot\lor F\psi$, then
+$\bot\lor(\bot\lor F\psi)$, and so on.  Normalization removes this irrelevant
+growth and gives the eager construction a finite structural vocabulary.
 
-Furthermore, the normalization step can also help in keeping the residual formula compact and easy to evalutate. For compactness, note that $\mathsf{split}_\wedge$ only sees the conjuncts that $\mathsf{nf}$ exposes, so a normalization rewriting $(a\land b)\lor(a\land c)$ into $a\land(b\lor c)$ yields two conjuncts instead of just one. For evaluation, the normalization can be used to simplify the residual formulas, reducing the number of evaluation rules that need to be fired and detecting early termination.
+The implementation first applies smart-constructor identities that are valid
+also on the empty suffix: negations are pushed through the $X/W$, $F/G$, and
+$U/R$ dual pairs; $FF\psi=F\psi$ and $GG\psi=G\psi$;
+$X\bot=\bot$ and $W\top=\top$; and the safe constant cases
+$\top U\psi=F\psi$, $\psi U\bot=\bot$,
+$\bot R\psi=G\psi$, and $\psi R\top=\top$ are folded.  It then simplifies the
+Boolean skeleton while treating maximal temporal subformulas as opaque
+variables.  This keeps residuals compact, exposes more top-level conjuncts to
+$\mathsf{split}_\wedge$, and can expose $\top$ or $\bot$ for sound lazy early
+termination.
+
+This normal form is deliberately syntactic: it is not canonical modulo full
+\ltlf language equivalence.  Distinct residuals may therefore have the same
+right language, and raw closure size must not be presented as minimal-DFA
+size.  Exact eager early termination is unaffected, since it uses the
+graph-theoretic sink/trap test rather than relying on syntactic exposure of
+$\top$ or $\bot$.
 
 \paragraph{The counterexample revisited.}
 Consider again the formula $\varphi_b = F(a\land Xb)$ and the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$. The residual formulas before each time step are:
@@ -269,14 +664,14 @@ Consider again the formula $\varphi_b = F(a\land Xb)$ and the two traces $\bolds
 \[
 \begin{array}{lllll}
  & \rho_0 & \xrightarrow{\ \sigma_0\ } \rho_1 & \xrightarrow{\ \sigma_1\ } \rho_2 & \xrightarrow{\ \sigma_2\ } \rho_3 \\[0.5ex]
-\boldsymbol{\sigma}_A: & F(a \land Xb) & \xrightarrow{\ \{a\}\ } b \lor F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{b\}\ } false \\
-\boldsymbol{\sigma}_B: & F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{a\}\ } b \lor F(a \land Xb) & \xrightarrow{\ \{b\}\ } true
+\boldsymbol{\sigma}_A: & F(a \land Xb) & \xrightarrow{\ \{a\}\ } (b\land F\top) \lor F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{b\}\ } F(a \land Xb) \\
+\boldsymbol{\sigma}_B: & F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{a\}\ } (b\land F\top) \lor F(a \land Xb) & \xrightarrow{\ \{b\}\ } \top
 \end{array}
 \]
 
 
-For trace $\boldsymbol{\sigma}_A$, the residual $b\lor F(a \land Xb)$ appears after the first time step. At the second time step, $b$ is false, so the disjunct disappears and the residual becomes $F(a \land Xb)$ again. At the last time step, the trace contains $b$, but the remaining formula $F(a \land Xb)$ is false on this last step, since $a\land Xb$ is false there. Hence the verdict is \textsc{violate}, as expected.
+For trace $\boldsymbol{\sigma}_A$, the residual $(b\land F\top)\lor F(a \land Xb)$ appears after the first time step. The marker $F\top$ records that the pending $b$ obligation requires another cell. At the second time step, $b$ is false, so the disjunct disappears and the residual becomes $F(a \land Xb)$ again. After the last time step the same eventuality remains, and it is false on the empty suffix. Hence the verdict is \textsc{violate}, as expected.
 %
-For trace $\boldsymbol{\sigma}_B$, the residual $b\lor F(a \land Xb)$ appears one step later, immediately before the time step containing $b$. At the last time step, this residual is evaluated to true because the disjunct $b$ holds. Hence the verdict is \textsc{satisfy}.
+For trace $\boldsymbol{\sigma}_B$, the residual $(b\land F\top)\lor F(a \land Xb)$ appears one step later, immediately before the time step containing $b$. At the last time step, $b$ holds and $F\top$ progresses to true because that cell exists. Hence the residual becomes $\top$ and the verdict is \textsc{satisfy}.
 
-This is exactly the information lost by the original one-register construction. The repaired monitor does not try to store two incompatible truth evaluations in the single register $[Xb]$. Instead, it stores the residual formula $b\lor F(a\land Xb)$, and it occurs at different time points in the two traces.
+This is exactly the information lost by the original one-register construction. The repaired monitor does not try to store two incompatible truth evaluations in the single register $[Xb]$. Instead, it stores the residual formula $(b\land F\top)\lor F(a\land Xb)$, and it occurs at different time points in the two traces.

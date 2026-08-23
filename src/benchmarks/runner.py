@@ -14,6 +14,7 @@ monitoring comparison.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -56,6 +57,50 @@ def random_traces(
     ]
 
 
+def _compile_for_benchmark(
+    monitor_cls: type[Monitor],
+    formula: str,
+    device: str,
+    compile_kwargs: Mapping[str, object] | None = None,
+) -> Monitor:
+    """Compile without allowing a monitor to hide offline work in a run.
+
+    A monitor may declare ``benchmark_compile_kwargs`` for policies that the
+    timing harness must enforce.  The bounded-event RuleRunner uses this to
+    require its checked-in certificate: a missing artifact fails before the
+    measurement instead of triggering canonical-DFA construction.
+    """
+    options = dict(compile_kwargs or {})
+    required = dict(getattr(monitor_cls, "benchmark_compile_kwargs", {}))
+    conflicts = {
+        key: (options[key], value)
+        for key, value in required.items()
+        if key in options and options[key] != value
+    }
+    if conflicts:
+        details = ", ".join(
+            f"{key}={actual!r} (required {expected!r})"
+            for key, (actual, expected) in conflicts.items()
+        )
+        raise ValueError(
+            f"{monitor_cls.__name__} has incompatible benchmark compile "
+            f"options: {details}"
+        )
+    options.update(required)
+    monitor = monitor_cls.compile(formula, device=device, **options)
+
+    required_source = getattr(monitor_cls, "benchmark_certificate_source", None)
+    if required_source is not None:
+        actual_source = getattr(monitor, "certificate_source", None)
+        if actual_source != required_source:
+            raise RuntimeError(
+                f"{monitor_cls.__name__} benchmark compilation used "
+                f"certificate source {actual_source!r}; expected "
+                f"{required_source!r}"
+            )
+    return monitor
+
+
 def time_monitor(
     monitor_cls: type[Monitor],
     formula: BenchmarkFormula,
@@ -66,6 +111,7 @@ def time_monitor(
     seed: int = 42,
     device: str = "cpu",
     early_termination: bool = True,
+    compile_kwargs: Mapping[str, object] | None = None,
 ) -> TimingResult:
     """Time monitor_cls on formula over randomly generated traces.
 
@@ -88,11 +134,20 @@ def time_monitor(
                         pass (the early-termination confound; CLAUDE.md
                         Phase 0.1). The batched monitors already process all
                         cells, so this only affects the crisp symbolic walk.
+        compile_kwargs: Extra monitor-specific compilation options.  Policies
+                        declared by the monitor for benchmark hygiene cannot
+                        be overridden (for example, bounded RuleRunner
+                        certification must come from the offline cache).
     """
     rng = np.random.default_rng(seed)
     traces = random_traces(formula.atoms, trace_length, n_traces, rng)
 
-    monitor = monitor_cls.compile(formula.formula, device=device)
+    monitor = _compile_for_benchmark(
+        monitor_cls,
+        formula.formula,
+        device,
+        compile_kwargs,
+    )
 
     # Record the device the monitor ACTUALLY computes on, not the one requested.
     # The symbolic DFA walk and the structured RuleRunner are pure Python and

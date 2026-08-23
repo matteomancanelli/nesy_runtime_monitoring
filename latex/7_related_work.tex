@@ -1,1 +1,11 @@
 \section{Related Work}
+
+Finkbeiner and Kuhtz separate LTL specifications into maximal bounded-future
+subformulas and an unbounded prefix, evaluate the bounded part through a fixed
+pipeline, and compose both parts into a monitor circuit
+\cite{finkbeiner2009monitor}.  Our bounded-event RuleRunner adopts this temporal
+horizon and separation principle rather than claiming the pipeline itself as a
+new construction.  The difference lies in the prefix component and the
+guarantee used to compose it: we retain the original RuleRunner architecture
+only when an exact product check certifies its language equivalence and prefix
+soundness, and otherwise fall back to the complete progression repair.

@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear Temporal Logic over finite traces) with differentiable automata. The goal is an **ICLR submission** (venue decided with the supervisors, 2026-07): a *foundation* paper for neuro-symbolic LTLf monitoring — **modernizing and fixing RuleRunner** (the nested-temporal limitation and its progression-based repair) and **connecting it with the automata-based paradigms** (symbolic DFA, DeepDFA), with a strong crisp empirical section characterizing the efficiency landscape honestly.
+Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear Temporal Logic over finite traces) with differentiable automata. The goal is an **ICLR submission** (venue decided with the supervisors, 2026-07): a *foundation* paper for neuro-symbolic LTLf monitoring — **modernizing and fixing RuleRunner** (the published shared-register conflation defect, a bounded-event middle repair, and the complete progression repair) and **connecting it with the automata-based paradigms** (symbolic DFA, DeepDFA), with a strong crisp empirical section characterizing the efficiency landscape honestly.
+
+> **RuleRunner handoff:** read [docs/rulerunner_status.md](docs/rulerunner_status.md)
+> before older planning notes.  It is the authoritative cross-version status;
+> benchmark execution and result claims are currently deferred.
 
 **Scope decision (2026-07-13, supervisors' call): adaptation and probabilistic monitoring are OUT of this paper** — they are future work. Everything belonging to those threads (the uncertainty/calibration harness and experiments, the probabilistic-verdict theory section, the adaptation plan) lives in **[artur_future_work/](artur_future_work/)**, a self-contained fork with its own CLAUDE.md, ready to be extracted into its own repository. Do not re-grow those threads here; the paper mentions soft inputs and differentiability only as *affordances* motivating the paradigms (one paragraph, `latex/4_deepdfa.tex` §4.2) and defers the rest.
 
@@ -17,13 +21,15 @@ Three paradigms for LTLf runtime monitoring, compared theoretically and experime
 | Paradigm | How it works | Key property |
 |---|---|---|
 | **Symbolic DFA** | Compile LTLf → minimal DFA; track state explicitly | Fastest crisp single-trace; frozen; crisp boolean inputs only |
-| **RuleRunner** | Formula parse tree → extended truth tables → Horn clauses → CILP neural net | Learning-friendly syntactic locality; nested-temporal representational limit (**wrong verdicts** — our counterexample + repair is a core contribution); within-step sequential |
+| **Original RuleRunner** | Formula parse tree → extended truth tables → Horn clauses → CILP neural net | Faithful published baseline; one-register temporal-instance conflation is exactly certifiable formula-by-formula |
+| **Bounded-event RuleRunner** | Finite-horizon event pipeline → certified original-RuleRunner skeleton | Static middle repair; exact on admitted formulas; fixed offset-indexed event modules |
+| **Progression RuleRunner** | Residual roots → flat or structured evaluation/progression CILP modules | Complete for supported LTLf; exact permanent labels; residual/alphabet compilation cost |
 | **DeepDFA** | Compile LTLf → minimal DFA → differentiable transition matrix | Native GPU batching; differentiable; alphabet (2^|AP|) blowup |
 
 ### Framing — read before touching experiments or the paper narrative
 
 - **Do NOT anchor the paper on speed.** For crisp boolean monitoring the symbolic DFA is the theoretical optimum — a DFA walk is a dict lookup; nothing differentiable beats it. Symbolic dominating throughput is *expected*, not a threat. The experiments map **where each paradigm's cost grows and where it walls out** — an honest, complete efficiency landscape.
-- **Keep paradigms neutral.** Present a capability matrix and let it speak; do **not** pre-crown DeepDFA. Each paradigm has a distinct Achilles heel (symbolic = state blowup; RuleRunner = nested-temporal limit + within-step sequential cost, repaired at an alphabet cost; DeepDFA = 2^|AP| alphabet blowup + |Q|² step) — that balance is the honest three-way story.
+- **Keep paradigms neutral.** Present a capability matrix and let it speak; do **not** pre-crown DeepDFA. Each paradigm has a distinct Achilles heel (symbolic = state blowup; published RuleRunner = shared-register conflation + within-step sequential cost; complete progression repair = residual/alphabet compilation cost; DeepDFA = 2^|AP| alphabet blowup + |Q|² step) — that balance is the honest story.
 - **Still try for an honest speed win.** If a genuine batched-throughput advantage survives fair measurement (Colab GPU, not the 4 GB laptop), it's a bonus — reported neutrally. Exp 3/6 test this; either outcome is honest ("modest real win" or "GPU advantage needs larger automata/hardware").
 - **The ICLR challenge:** timing alone is thin for a pure-ML venue. The roadmap (Phases 2–4) lists the candidate additions, easiest → hardest; each gets scoped in a dedicated session before any code is written.
 
@@ -40,6 +46,8 @@ Split out the future-work threads into `artur_future_work/` (self-contained: ful
 ### Phase 1 — Efficiency landscape 🟡 (all *code* done; Colab re-runs + figure polish pending)
 
 Complete the fair timing comparison across all monitor variants and produce the paper's figure set. The measurement-hygiene mechanisms are implemented and verified; what remains is **re-running on Colab (CPU + T4 GPU runtimes)** under the early-termination-off + CUDA-sync mode and polishing walls/crossovers into lead figures.
+
+> ⚠ **The measured numbers in this section predate the RuleRunner faithfulness repairs (2026-08) and are pre-repair.** The rule system grew where the published qualifier tables were restored: `a U b` went from 11 to 28 rules, `G(a→Fb)`'s reactivation set from 10 to 15. The IJCNN family is byte-identical (107 eval / 25 react before and after), so exp2/exp3's RuleRunner figures still describe the current code, but exp1, exp5 and exp6 do not. Treat every figure below as an explanation of *which effect each mechanism has*, not as a current measurement.
 
 Key mechanisms already in place (details preserved here because they explain *why the numbers look the way they do*):
 
@@ -72,7 +80,7 @@ BDD/SDD-compiled guard circuits as the principled upgrade of the factored cube c
 
 - Port to the **ICLR template** (currently plain `article`).
 - Sec 1 intro: thesis = "a foundation for neuro-symbolic LTLf monitoring: fix RuleRunner, connect with automata-based approaches, characterize the landscape honestly." Resolve the red TODOs (incl. "other NeSy approaches" and the results summary).
-- Sec 3 RuleRunner: architecture + the nested-temporal counterexample + progression repair with soundness/completeness proof — **drafted**; polish.
+- Sec 3 RuleRunner: published architecture + shared-register counterexample + exact semantic boundary + bounded-event middle construction + progression repair with soundness/completeness proof — **drafted**; polish.
 - Sec 4 DeepDFA: architecture, affordance paragraph (§4.2 — keep short, points to future work), alphabet blowup, factored representation — **drafted**; polish.
 - Sec 5 theory comparison: three Achilles heels; **capability matrix TODO**; cite Bacchus–Kabanza + the LTLf 2EXP bound.
 - Sec 6 experiments: rewrite around Phase 1's regenerated figures; state early-termination handling and hardware explicitly.
@@ -93,7 +101,7 @@ nesy_runtime_monitoring/
 │   ├── monitors/
 │   │   ├── base.py            ✅ Abstract Monitor interface + Verdict enum (+ early_termination flag)
 │   │   ├── symbolic_dfa.py    ✅ Paradigm 1 — crisp DFA walk
-│   │   ├── rulerunner/        ✅ Paradigm 2 — original encoding (parse_tree, rules, engine, cilp, monitor, structured)
+│   │   ├── rulerunner/        ✅ Paradigm 2 — original encoding + exact certifier (+ certificates.json artifact) + bounded-event flat/structured repair
 │   │   ├── progression/       ✅ Paradigm 2 CORRECTED — progression-based RuleRunner (formula, progression, engine, eager, flat, structured)
 │   │   └── deep_dfa.py        ✅ Paradigm 3 — DeepDFA (dense + factored + scan; soft path kept as the affordance, unexercised here)
 │   └── benchmarks/
@@ -108,11 +116,11 @@ nesy_runtime_monitoring/
 │   ├── exp7_state_blowup.py   ✅ Per-cell cost + memory wall vs |Q| = 2ᵏ+1 (exponential family)
 │   ├── plots.py               ✅ All plotting, decoupled from runs (CSV→PNG; device overlays)
 │   └── make_all_plots.py      ✅ The merged / gpu_only / device figure sets from results/cpu + results/gpu
-├── tests/                     ✅ Full suite; 6 xfail-strict document the ORIGINAL RuleRunner's nested-temporal limit (by design — do not "fix")
+├── tests/                     ✅ Full suite; 6 xfail-strict document the ORIGINAL RuleRunner's shared-register conflation (by design — do not "fix")
 ├── results/                   ✅ cpu/ + gpu/ CSVs, figures/ PNGs (see results/README.md)
 ├── latex/                     🟡 The paper (main.tex + sections 1–8; dfa_script.py + gen_dfa_figs.sh for DFA figures)
 ├── demo/                      ✅ demo_monitors.py + demo_output/ — presentation aid (DFA rendering + RuleRunner run tables)
-├── docs/                      ✅ EXPERIMENT_MAP, nested_temporal_limitation, rulerunner_progression_analysis, richer_benchmark_findings, decision_diagram note, appendix_ideas
+├── docs/                      ✅ rulerunner_status (authoritative handoff), bounded_event_rulerunner, nested limitation, progression analysis, and experiment/design notes
 ├── scripts/run_all.sh         ✅ Run every timing experiment in sequence (resumable)
 ├── NeSy_Runtime_Monitoring.ipynb ✅ Colab entry point (CPU + GPU runtimes)
 ├── artur_future_work/         ✅ Self-contained future-work fork (probabilistic monitoring + adaptation) — own CLAUDE.md
@@ -137,6 +145,8 @@ Three-valued semantics (`UNDECIDED`) applies online — a trace mid-execution ma
 `final_verdict()` is a required separate method because response-style formulas like `G(a → F b)` have neither a trap state nor an accepting sink, so `step()` always returns `UNDECIDED`. The verdict is only binary at end-of-trace.
 
 ## Key Technical Details
+
+**Operator association follows ltlf2dfa, not convention.** `&`, `|` and `->` are left-folded; `U` and `R` are right-folded — that is what ltlf2dfa's MONA translation does. `->` in particular is **left**-associative (`a -> b -> c` ≡ `(a -> b) -> c`); our parse tree used to right-fold it, which made the rule-based paradigms monitor a different formula than the DFA-based ones. The DFA-based monitors are compiled from the formula *string* by ltlf2dfa, so association-sensitive formulas in `tests/test_semantic_oracle.py` fail whenever the two front ends diverge — keep them there.
 
 **LTLf → DFA compilation:** use `ltlf2dfa` (Python wrapper for MONA). `to_dfa()` returns a DOT string with transitions labeled by boolean expressions over atoms (`~a`, `a & ~b`, `b | ~a`, `true`). The compiler parses this DOT, converts MONA guard syntax to Python, and compiles each guard to a bytecode object once at construction time (compile-once, eval-many). The `DFA` dataclass exposes `states`, `atoms`, `initial`, `accepting`, `transitions`, `trap_states`, `accepting_sinks`, and a `step(state, obs) -> state` method.
 
@@ -177,7 +187,7 @@ Frozen-dataclass `Node` DAG with `(op, children, key, depth, atom)`. `key` = can
 
 `Literal(name, negated)`, `Rule(body, head)`, `RuleSystem(eval_rules, react_rules, initial_state, atoms, root_key)`. Literal naming is **string-based** with modes baked in as suffixes (e.g. `R[(a | F(b))]^B`) — matches IJCNN 2014's notation; CILP gets one neuron per mode-distinct literal.
 
-Per-operator templates: ATOM (no react rules); NOT (no reinstall); AND/OR/IMPLIES (modes B/L/R, no reinstall — a child's own `?` reactivation handles its subtree); EVENTUALLY/ALWAYS/UNTIL/RELEASE (reinstall operand subtree(s) — their operand's own reactivation doesn't fire when the operator is `?` because the operand was definite); NEXT/WEAK_NEXT (modes B/A, reinstall on I→A only).
+Per-operator templates: ATOM/constants (no react rules); NOT (direct observation rules for the published NNF case); AND/OR/IMPLIES (modes B/L/R); EVENTUALLY/ALWAYS (including `G`'s `K` qualifier); UNTIL (published A/B/L/R tables); RELEASE (an implementation extension); NEXT/WEAK_NEXT (unqualified initial mode and monitoring mode M). Fresh activation is computed recursively exactly as in Algorithm 2: in particular, `X`/`W` initially activate only their root and install their operand on the following cell.
 
 **Mode-tracking (AND/OR/IMPLIES):** mode B sees one child settled → transitions to L/R, dropping the settled child from monitoring (essential: without it `a ∨ ◇b` re-evaluates `a` every cell → wrong verdicts). L/R truth tables derive from B's column at the **pin value** (AND pins T; OR/IMPLIES pin F). ⚠ Initial bug: first draft pulled L/R from B's column at ψ=? instead of ψ=pin; fixed in [rules.py:152](src/monitors/rulerunner/rules.py#L152). **Assumption to revisit:** the pin derivation assumes each binary mode-B table has exactly one `(?, V) → ?L` and one `(V, ?) → ?R` cell (true for AND/OR/IMPLIES).
 
@@ -187,7 +197,7 @@ Atoms can never be `?` → any rule with `[a]?` in the body is pruned at templat
 
 Per cell: (1) inject `obs:a` literals (negation-as-failure for `~obs:a`); (2) evaluation phase — fire eval rules for `depth+1` passes (truth propagates one level per pass), break early on no new facts; (3) read root verdict; (4) if decided, freeze (absorbing); else fire react rules once in parallel, keep only `R[.]` literals.
 
-**End-of-trace resolution:** recursively resolve undecided subformulae per operator's end semantics. `F φ`/`G φ` = **recurse on child** (not unconditional F/T — `G(F b)` on `[F, F]` must be F); `U`/`R` = recurse on ψ; `X` = F, `WX` = T (FLTL strong/weak); binary L/R modes = resolve the active child, pin the settled one.
+**End-of-trace resolution:** recursively realizes the published END tables. `F φ`/`G φ` recurse on the child (`G`'s `?K` records the successful case); `U`/`R` recurse on ψ; an initial `X` is F and an initial `W` is T, while monitoring mode M mirrors the child's END value; binary L/R modes resolve the active child and pin the settled one. Empty-input semantics are handled separately.
 
 ### Step 3 — cilp.py
 
@@ -201,31 +211,80 @@ Thin Monitor-ABC adapter (`RuleRunnerMonitor` holds a `CILPRunner`). Smoke tests
 
 **Test-design lessons (keep):** (1) an xfail-strict sweep must use enough traces to deterministically hit the expected failure, or it XPASSes flakily (the 80-trace budget); (2) **never seed with `hash()`** — it is randomized per process (`PYTHONHASHSEED`); the sweeps use a stable MD5-based `_stable_seed(formula)`.
 
-### Fundamental limitation — nested temporal under F/G/U/R (a core paper contribution)
+### Fundamental limitation — shared-register temporal-instance conflation
 
-The IJCNN 2014 encoding uses **one literal per subformula**. For `F(a & X b)`, F's reactivation creates a fresh `(a & X b)` instance each cell while prior X-b instances are still resolving via mode A; both share the literal `[X b]`, and the binary operator's mode-R rules fire on **both**, corrupting the carry-over. A correct fix needs cell-scoped literals — a structural redesign beyond what IJCNN 2014 documents. The impossibility is sharp: two traces (`σ_A = ({a},∅,{b})` vs `σ_B = (∅,{a},{b})` for `F(a & Xb)`) reach the **identical** conflicted register state with opposite correct verdicts, so no output-layer repair exists. Full write-up: [docs/nested_temporal_limitation.md](docs/nested_temporal_limitation.md) and `latex/3_rulerunner.tex` §3.2.
+The IJCNN 2014 encoding uses **one literal per subformula**. For `F(a & X b)`, F's reactivation creates a fresh `(a & X b)` instance each cell while prior X-b instances are still resolving in monitoring mode M; both share the literal `[X b]`, and the binary operator's mode-R rules fire on **both**, corrupting the carry-over. Any correct repair must enrich the recurrent address space beyond the published one-slot choice. The impossibility is sharp: two traces (`σ_A = ({a},∅,{b})` vs `σ_B = (∅,{a},{b})` for `F(a & Xb)`) reach the **identical** conflicted register state with opposite correct verdicts, so no output-layer repair exists. This does not mean every fixed formula needs unbounded memory: the bounded-event and progression versions provide two finite enrichments. Full write-up: [docs/nested_temporal_limitation.md](docs/nested_temporal_limitation.md) and `latex/3_rulerunner.tex` §3.2.
 
 Three formulas in the equivalence sweep are marked `xfail(strict=True)`: `F (a & X b)`, `G (a -> F b)`, `G (a -> X b)`. **They test the OLD encoding and stay** (the progression monitors pass all three).
 
-Why this doesn't poison the timing experiments: Exp 2/3 use the flat IJCNN family (encoding correct); Exp 1 uses `G(a→Fb)` *because* it has no trap/sink — no early termination ever fires, so per-cell cost is well-defined regardless of verdict correctness (state this in the paper).
+**Evaluation status:** benchmark reruns and result claims are deferred.  When that
+phase resumes, every formula used with the original RuleRunner must carry its
+exact certificate, and timing-only use of an unsafe formula must be disclosed
+rather than treated as correctness evidence.
 
 ### Paradigm 2, CORRECTED — the progression-based RuleRunner (`src/monitors/progression/`)
 
-The nested-temporal limitation is a ceiling of the *one-literal-per-subformula* encoding, **not** of the rule-based idea. The **progression-based reformulation** (`latex/3_rulerunner.tex` §3.3, [docs/rulerunner_progression_analysis.md](docs/rulerunner_progression_analysis.md)) carries the *residual formula* (a multi-hot set of active top-level conjuncts) obtained by Bacchus–Kabanza progression, freshly re-derived each cell, so concurrent instances never share a slot. **Sound and complete on all LTLf** (theorem + proof in the paper) — matches `SymbolicDFAMonitor` on the full sweep including the three xfail formulas. Implemented as: lazy oracle (`ProgressionEngine`), eager residual-DFA + table oracle (`build_progression_dfa` / `ProgressionRuleRunnerEagerMonitor`, with cost metrics `n_states`/`n_roots`/`n_closure`), and two neural monitors mirroring the original pair — **`ProgressionRuleRunnerMonitor`** (flat CILP, batched CPU/CUDA — the experiment monitor) and **`ProgressionRuleRunnerStructuredMonitor`** (one CILP subnet per closure node). All wired into every timing experiment. **The price:** the eager construction enumerates the `2^|AP|` alphabet — progression's own wall, dual to the representational limit it fixes (capped at `DENSE_MAX_LEAVES` in exp2, `PROGRESSION_MAX_Q = 14` in exp6).
+The shared-register conflation is a ceiling of the *one-literal-per-subformula* encoding, **not** of the rule-based idea. The **progression-based reformulation** (`latex/3_rulerunner.tex` §3.3, [docs/rulerunner_progression_analysis.md](docs/rulerunner_progression_analysis.md)) carries the *residual formula* (a multi-hot set of active top-level conjuncts) obtained by Bacchus–Kabanza progression, freshly re-derived each cell, so concurrent instances never share a slot. **Sound and complete on all LTLf** (theorem + proof in the paper) — matches `SymbolicDFAMonitor` on the full sweep including the three xfail formulas. Implemented as: lazy oracle (`ProgressionEngine`), eager residual-DFA + table oracle (`build_progression_dfa` / `ProgressionRuleRunnerEagerMonitor`, with cost metrics `n_states`/`n_roots`/`n_closure`), and two neural monitors mirroring the original pair — **`ProgressionRuleRunnerMonitor`** (flat whole-residual CILP, batched CPU/CUDA) and **`ProgressionRuleRunnerStructuredMonitor`** (bottom-up per-node evaluation plus root-local progression/reactivation CILP modules). The structured recurrence never identifies a complete root set: each module reads one active root and its local guard, and all emitted successor roots are unioned. A separately compiled aggregate-state head supplies exact sink/trap labels without driving recurrence. The lazy engine's literal-constant early test remains sound but incomplete. The variants are available to the benchmark harness, but evaluation and result claims are deferred. **The price:** eager compilation still enumerates relevant observation alphabets and, for exact early labels, reachable aggregate states.
 
-> ⚠ **Measured 2026-07-10 (exp6, `bounded_response`) — `|cl(φ)|` is inflated by a non-canonical `nf`. An IMPLEMENTATION artifact, not a paradigm property; consistent with `latex/3_rulerunner.tex` §3.3 on every claim it makes.**
->
-> What blows up is `n_states` = reachable whole residuals: at deadline k = 8/10/12/14 it is 38/711/3776/16064 against minimal |Q| of 10/12/14/16, with build time following (≈5× per +2 in k, all inside `compile()`, dominated by `simplify_logic`). The *carried registers* (multi-hot top-level conjuncts) stay linear (`n_roots` 4→38, `n_closure` 11→203 over k=2..12) — exactly §3.3's factored bound. The paper already prices the eager realization at `|cl(φ)|·2^|P|` and never claims `|cl(φ)| ≤ |Q|`.
->
-> **But the measured number is not the real `|cl(φ)|`:** residuals are finite *up to logical equivalence*, and our `nf` (sympy `simplify_logic`, temporal subformulas opaque) cannot apply temporal subsumption (e.g. `(b ∨ Xb) ∧ (b ∨ Xb ∨ X²b) ≡ (b ∨ Xb)`). **Verified by behavioural signature: at k=10 the 711 residual states exhibit only 8 distinct behaviours.** With a canonicalizing `nf` (BDD over temporal literals, or Myhill–Nerode quotienting), `|cl(φ)|` collapses toward |Q|.
->
-> **Consequence:** do **not** report 16064 as progression's closure size — it overstates paradigm 2's wall and a reviewer who spots the subsumption will say so. Report the wall qualitatively (`|cl(φ)|·2^|P|`) or fix `nf` first. Mitigations: `build_progression_dfa` is `lru_cache`d (flat + structured share one BFS); exp6 caps both progression monitors at `PROGRESSION_MAX_Q = 14`.
+**Exact old-RuleRunner boundary and bounded-event middle repair.**
+`certify_rule_runner` (`src/monitors/rulerunner/equivalence.py`) decides
+formula-by-formula language equivalence with the canonical DFA by exact BFS over
+their product and returns a shortest counterexample.  It drives the engine
+through the public `RuleEngine.state()`/`load_state()` round trip; a guard test
+fails if `RuleEngine` grows a field that the round trip would silently drop.  It also separates sound
+early verdicts from exact online-label timing.  This corrected an older generated
+claim: `X(Xa)` is safe after the faithful Next repairs; `(Xa) & X(Xa)` is a real
+two-offset shared-register counterexample.  The executable semantic reference in
+`src/monitors/rulerunner/bounded.py` extracts maximal finite-horizon event
+islands, evaluates them through a fixed observation pipeline, flushes the finite
+suffix at end-of-trace, and feeds an exactly-certified old-RuleRunner skeleton.
+It repairs `G(Xa)`, `F(a & Xb)`, `G(a -> Xb)`, and `a U (b & Xc)` without full
+progression; `G(a -> Fb)` remains outside because eventization leaves its unsafe
+unbounded skeleton unchanged.  `src/monitors/rulerunner/bounded_cilp.py`
+implements the fixed pipeline neurally: a recurrent CILP observation shift
+register plus either a pooled/fixpoint event circuit and flat skeleton
+(`BoundedEventRuleRunnerMonitor`), or per-`(subformula, offset)` event modules
+and a structured skeleton (`BoundedEventStructuredRuleRunnerMonitor`).  Both
+wrappers require exact language and prefix-soundness certificates, **looked up
+from the offline artifact** `src/monitors/rulerunner/certificates.json`
+(regenerate with `python -m src.monitors.rulerunner.certificates --refresh`;
+each record is fingerprinted against the rule system, and a stale one is treated
+as absent).  Certifying inside `compile()` would charge the construction for a
+MONA DFA build it never uses at run time, so evaluation must pass
+`certificate="cached"`.  `batch_run` is fused: equal-length suffix windows are
+evaluated as tensor batches and the derived traces use the existing batched
+flat/structured skeleton runners.
 
-The original RuleRunner stays alongside in the experiments for the before/after comparison (the cost-of-correctness figure).
+**Two configurations, two guarantees — keep them separate in the paper.**
+The default (`exact_online=False`) is the construction Theorem 3.x describes: a
+fixed static pipeline, no residual closure, no automaton anywhere in compile.
+Its final verdicts are exact; its online labels are sound but **can lag
+arbitrarily — not by `H`** (`G(X a)` is unsatisfiable on every non-empty trace
+and its skeleton `G e` never sees this, so it stays UNDECIDED to the boundary).
+Opting in with `exact_online=True` builds `bounded_extrapolation.py`'s CILP head
+— one hidden unit per reachable composite state, classified by reverse
+reachability — which reproduces the original DFA's timing exactly but costs
+roughly `2^(|P|·H)`: 613 states for `G(a -> (b|Xb|X²b|X³b|X⁴b))` against a
+6-state DFA.  Report the two separately; never quote the cheap pipeline's cost
+next to the exact head's timing.  No bounded-event benchmark has yet been run.
+Exact statement: `docs/bounded_event_rulerunner.md`.
+
+> ⚠ **Implementation caveat, not an empirical result:** the current `nf` uses
+> Boolean simplification with temporal subformulas treated as opaque atoms.  It
+> cannot apply temporal subsumption, so raw syntactic residual counts can include
+> many language-equivalent states and must not be reported as an intrinsic
+> progression closure size.  Either canonicalize/quotient the residual graph or
+> keep the cost statement qualitative (`|cl(φ)|·2^|P|`).  Measurement and any
+> comparative result claim are deferred to the evaluation phase.
+
+The original RuleRunner remains available for a future certified before/after
+comparison.  The comparison and any “cost of correctness” result are deferred.
 
 ### Structured variant caveat
 
 `StructuredRuleRunnerMonitor` (IJCNN 2015 Fig. 5: one CILP subnet per parse-tree node) is device-aware and cross-trace batched, but within a cell it sweeps parse-tree nodes **sequentially** (a parent reads its children) — many small matmuls per cell, likely *less* GPU-friendly than the flat encoding's `depth+1` whole-network passes unless same-level siblings are fused (the tree parallelism IJCNN 2015 intends, which this naive sweep does not do). So exp3 contrasts *two batched RuleRunner encodings*, not batched-vs-unbatched.
+
+`ProgressionRuleRunnerStructuredMonitor` follows the same execution pattern over the residual closure: a sequential bottom-up evaluation sweep, then root-local reactivation modules whose outputs are OR-ed. Its fixed aggregate-state label head adds one further global pass for exact early verdicts. Neither structured implementation is a literal horizontally concatenated Fig. 5 tensor; both are functionally equivalent explicit module schedules.
 
 ## Paradigm 3 (DeepDFA) — implementation notes
 
@@ -237,7 +296,7 @@ DeepDFA originates in the Umili & Capobianco line (ECAI 2024) and is used in the
 
 ### The alphabet-blowup finding
 
-For non-mutually-exclusive propositional LTLf the transition tensor is indexed by `2^|atoms|` truth assignments. The IJCNN family's guards depend on **all n atoms**: dense is `2^n`, and only a guard's read-once circuit structure (which a flat DFA doesn't expose) permits sub-exponential evaluation. This is DeepDFA's structural weakness, dual to RuleRunner's nested-temporal limit and symbolic's state blowup — the clean three-way story. (The NeSy PPM paper sidesteps it only via the mutual-exclusivity assumption, which is false for our benchmark.)
+For non-mutually-exclusive propositional LTLf the transition tensor is indexed by `2^|atoms|` truth assignments. The IJCNN family's guards depend on **all n atoms**: dense is `2^n`, and only a guard's read-once circuit structure (which a flat DFA doesn't expose) permits sub-exponential evaluation. This is DeepDFA's structural weakness, dual to the published RuleRunner's shared-register conflation and symbolic's state blowup — the clean three-way story. (The NeSy PPM paper sidesteps it only via the mutual-exclusivity assumption, which is false for our benchmark.)
 
 ### Representations (all on `DeepDFAMonitor.compile(mode=)` or subclasses)
 

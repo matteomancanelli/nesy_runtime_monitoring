@@ -11,7 +11,7 @@ Literal naming convention (strings only — modes are baked in):
   obs:a               atom a is observed in the current cell
   R[<key>]            rule name without mode (single-mode operator)
   R[<key>]^<mode>     rule name with mode (B/L/R for and/or/implies,
-                      B/A/I for next/weak_next)
+                      A/B/L/R for until, M for next/weak_next)
   [<key>]T            truth value: subformula <key> is true
   [<key>]F            truth value: subformula <key> is false
   [<key>]?            truth value: undecided (single-mode operator)
@@ -54,7 +54,8 @@ class RuleSystem:
 
 
 _MODES_BLR: tuple[str, ...] = ("B", "L", "R")
-_MODES_NEXT: tuple[str, ...] = ("I", "A")
+_MODES_UNTIL: tuple[str, ...] = ("A", "B", "L", "R")
+_MODES_NEXT: tuple[str, ...] = ("", "M")
 
 
 def _R(key: str, mode: str = "") -> Literal:
@@ -80,8 +81,8 @@ def _obs(atom: str, observed: bool) -> Literal:
 def _initial_mode(node: Node) -> str:
     if node.op in (Op.AND, Op.OR, Op.IMPLIES):
         return "B"
-    if node.op in (Op.NEXT, Op.WEAK_NEXT):
-        return "B"
+    if node.op is Op.UNTIL:
+        return "A"
     return ""
 
 
@@ -90,8 +91,12 @@ def _undecided_modes(node: Node) -> tuple[str, ...]:
         return ()  # atoms always resolve to T or F at their cell
     if node.op in (Op.AND, Op.OR, Op.IMPLIES):
         return _MODES_BLR
+    if node.op is Op.UNTIL:
+        return _MODES_UNTIL
     if node.op in (Op.NEXT, Op.WEAK_NEXT):
         return _MODES_NEXT
+    if node.op is Op.ALWAYS:
+        return ("", "K")
     return ("",)
 
 
@@ -111,14 +116,37 @@ def _value_literals(node: Node, value: str) -> list[Literal]:
     raise ValueError(value)
 
 
-def _subtree_reinstall(node: Node) -> list[Literal]:
-    """R[ψ] literals to re-install when freshly monitoring node's subtree.
+def _initial_activation(node: Node) -> set[Literal]:
+    """Published RuleRunner initial state for the subsystem rooted at ``node``.
 
-    Used by ◇/□/U/R (which restart the operand each cell) and by X/WX in
-    the initial-defer transition (mode I → mode A). Each subformula is
-    re-installed in its operator's initial mode.
+    This is deliberately *not* every syntactic descendant.  In particular,
+    ``X phi`` and ``W phi`` initially activate only their own rule: ``phi`` is
+    installed by reactivation in the following cell (Algorithm 2, lines 24--29).
+    The same construction is reused whenever a temporal operator starts a fresh
+    operand instance.
     """
-    return [_R(n.key, _initial_mode(n)) for n in node.subformulae()]
+    root = {_R(node.key, _initial_mode(node))}
+    if node.op is Op.ATOM:
+        return root
+    if node.op is Op.NOT:
+        child = node.children[0]
+        # The published grammar is in NNF and evaluates !a directly from the
+        # observation.  General negation is a conservative implementation
+        # extension and therefore needs its child subsystem.
+        if child.op is Op.ATOM and child.atom not in ("true", "false"):
+            return root
+        return root | _initial_activation(child)
+    if node.op in (Op.NEXT, Op.WEAK_NEXT):
+        return root
+    out = set(root)
+    for child in node.children:
+        out |= _initial_activation(child)
+    return out
+
+
+def _subtree_reinstall(node: Node) -> list[Literal]:
+    """Re-install ``node`` using the same activation boundary as INITIALISE."""
+    return list(_initial_activation(node))
 
 
 # ---------------- per-operator templates ----------------
@@ -127,6 +155,10 @@ def _subtree_reinstall(node: Node) -> list[Literal]:
 def _atom(node: Node) -> tuple[list[Rule], list[Rule]]:
     assert node.atom is not None
     R = _R(node.key)
+    if node.atom == "true":
+        return ([Rule(frozenset({R}), _T(node.key))], [])
+    if node.atom == "false":
+        return ([Rule(frozenset({R}), _F(node.key))], [])
     return (
         [
             Rule(frozenset({R, _obs(node.atom, True)}), _T(node.key)),
@@ -139,6 +171,15 @@ def _atom(node: Node) -> tuple[list[Rule], list[Rule]]:
 def _not(node: Node) -> tuple[list[Rule], list[Rule]]:
     (child,) = node.children
     R = _R(node.key)
+    if child.op is Op.ATOM and child.atom not in ("true", "false"):
+        assert child.atom is not None
+        return (
+            [
+                Rule(frozenset({R, _obs(child.atom, True)}), _F(node.key)),
+                Rule(frozenset({R, _obs(child.atom, False)}), _T(node.key)),
+            ],
+            [],
+        )
     eval_rules: list[Rule] = [
         Rule(frozenset({R, _T(child.key)}), _F(node.key)),
         Rule(frozenset({R, _F(child.key)}), _T(node.key)),
@@ -201,9 +242,7 @@ def _binary_propositional(
         for q_lit in _value_literals(psi, qv):
             eval_rules.append(Rule(frozenset({R_R, q_lit}), head))
 
-    react_rules = [
-        Rule(frozenset({_U(K, m)}), _R(K, m)) for m in _MODES_BLR
-    ]
+    react_rules = [Rule(frozenset({_U(K, m)}), _R(K, m)) for m in _MODES_BLR]
     return eval_rules, react_rules
 
 
@@ -275,16 +314,17 @@ def _always(node: Node) -> tuple[list[Rule], list[Rule]]:
     (child,) = node.children
     R = _R(node.key)
     eval_rules: list[Rule] = [
-        Rule(frozenset({R, _T(child.key)}), _U(node.key)),
+        Rule(frozenset({R, _T(child.key)}), _U(node.key, "K")),
         Rule(frozenset({R, _F(child.key)}), _F(node.key)),
     ]
     for m in _undecided_modes(child):
         eval_rules.append(Rule(frozenset({R, _U(child.key, m)}), _U(node.key)))
 
-    react_body = frozenset({_U(node.key)})
-    react_rules = [Rule(react_body, R)] + [
-        Rule(react_body, lit) for lit in _subtree_reinstall(child)
-    ]
+    react_rules: list[Rule] = []
+    for mode in ("", "K"):
+        react_body = frozenset({_U(node.key, mode)})
+        react_rules.append(Rule(react_body, R))
+        react_rules.extend(Rule(react_body, lit) for lit in _subtree_reinstall(child))
     return eval_rules, react_rules
 
 
@@ -317,18 +357,63 @@ def _until_release(
 
 
 def _until(node: Node) -> tuple[list[Rule], list[Rule]]:
-    table = {
-        ("T", "T"): "T",
-        ("T", "F"): "?",
-        ("T", "?"): "?",
-        ("F", "T"): "T",
-        ("F", "F"): "F",
-        ("F", "?"): "?",
-        ("?", "T"): "T",
-        ("?", "F"): "?",
-        ("?", "?"): "?",
+    """The four published U evaluation tables (Figure 1: UA/UB/UL/UR)."""
+    phi, psi = node.children
+    K = node.key
+    eval_rules: list[Rule] = []
+
+    def head(tag: str) -> Literal:
+        if tag == "T":
+            return _T(K)
+        if tag == "F":
+            return _F(K)
+        return _U(K, tag[1])
+
+    tables = {
+        "A": {
+            ("T", "T"): "T",
+            ("T", "?"): "?A",
+            ("T", "F"): "?A",
+            ("?", "T"): "T",
+            ("?", "?"): "?A",
+            ("?", "F"): "?B",
+            ("F", "T"): "T",
+            ("F", "?"): "?R",
+            ("F", "F"): "F",
+        },
+        "B": {
+            ("T", "T"): "T",
+            ("T", "?"): "?A",
+            ("T", "F"): "?A",
+            ("?", "T"): "?L",
+            ("?", "?"): "?B",
+            ("?", "F"): "?B",
+            ("F", "T"): "F",
+            ("F", "?"): "F",
+            ("F", "F"): "F",
+        },
     }
-    return _until_release(node, table)
+    for mode, table in tables.items():
+        for (pv, qv), tag in table.items():
+            for p_lit, q_lit in product(
+                _value_literals(phi, pv), _value_literals(psi, qv)
+            ):
+                eval_rules.append(
+                    Rule(frozenset({_R(K, mode), p_lit, q_lit}), head(tag))
+                )
+
+    for mode, child in (("L", phi), ("R", psi)):
+        for value, tag in (("T", "T"), ("?", f"?{mode}"), ("F", "F")):
+            for lit in _value_literals(child, value):
+                eval_rules.append(Rule(frozenset({_R(K, mode), lit}), head(tag)))
+
+    react_rules: list[Rule] = []
+    reinstall = _subtree_reinstall(phi) + _subtree_reinstall(psi)
+    for mode in _MODES_UNTIL:
+        body = frozenset({_U(K, mode)})
+        react_rules.append(Rule(body, _R(K, mode)))
+        react_rules.extend(Rule(body, lit) for lit in reinstall)
+    return eval_rules, react_rules
 
 
 def _release(node: Node) -> tuple[list[Rule], list[Rule]]:
@@ -351,30 +436,28 @@ def _next_like(node: Node) -> tuple[list[Rule], list[Rule]]:
     which is handled by the wrapper, not here)."""
     (child,) = node.children
     K = node.key
-    R_B = _R(K, "B")
-    R_A = _R(K, "A")
+    R_initial = _R(K)
+    R_monitor = _R(K, "M")
 
-    # Mode B (cell 1): defer unconditionally.
-    eval_rules: list[Rule] = [Rule(frozenset({R_B}), _U(K, "I"))]
+    # Initial cell: defer unconditionally.  The unqualified `?` is what the
+    # END table distinguishes from monitoring mode `?M`.
+    eval_rules: list[Rule] = [Rule(frozenset({R_initial}), _U(K))]
 
-    # Mode A (cell 2+): mirror φ's truth value.
-    eval_rules.append(Rule(frozenset({R_A, _T(child.key)}), _T(K)))
-    eval_rules.append(Rule(frozenset({R_A, _F(child.key)}), _F(K)))
+    # Monitoring mode (cell 2+): mirror phi's truth value.
+    eval_rules.append(Rule(frozenset({R_monitor, _T(child.key)}), _T(K)))
+    eval_rules.append(Rule(frozenset({R_monitor, _F(child.key)}), _F(K)))
     for m in _undecided_modes(child):
-        eval_rules.append(Rule(frozenset({R_A, _U(child.key, m)}), _U(K, "A")))
+        eval_rules.append(Rule(frozenset({R_monitor, _U(child.key, m)}), _U(K, "M")))
 
     # Reactivation:
-    # ?^I  (just deferred) — install A-mode AND fresh φ subtree, since
-    #                       φ was evaluated at cell 1 but won't be re-
-    #                       installed by its own machinery for cell 2.
+    # ? (just deferred) installs monitoring mode and the child's *published
+    # initial state*.  ?M keeps only the wrapper alive; an undecided child
+    # reactivates its own active subsystem.
     react_rules: list[Rule] = []
-    init_body = frozenset({_U(K, "I")})
-    react_rules.append(Rule(init_body, R_A))
+    init_body = frozenset({_U(K)})
+    react_rules.append(Rule(init_body, R_monitor))
     react_rules.extend(Rule(init_body, lit) for lit in _subtree_reinstall(child))
-
-    # ?^A (still waiting on φ) — φ's own ? reactivation handles its
-    #                            subtree; just keep A-mode alive.
-    react_rules.append(Rule(frozenset({_U(K, "A")}), R_A))
+    react_rules.append(Rule(frozenset({_U(K, "M")}), R_monitor))
     return eval_rules, react_rules
 
 
@@ -403,13 +486,11 @@ def build_rules(root: Node) -> RuleSystem:
         e, r = _TEMPLATES[node.op](node)
         eval_rules.extend(e)
         react_rules.extend(r)
-        if node.op is Op.ATOM:
+        if node.op is Op.ATOM and node.atom not in ("true", "false"):
             assert node.atom is not None
             atoms.add(node.atom)
 
-    initial_state = frozenset(
-        _R(n.key, _initial_mode(n)) for n in root.subformulae()
-    )
+    initial_state = frozenset(_initial_activation(root))
 
     # Dedup by (body, head); CILP doesn't need duplicate clauses.
     eval_rules = list({(r.body, r.head): r for r in eval_rules}.values())

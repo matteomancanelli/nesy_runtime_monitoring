@@ -71,18 +71,18 @@ abbreviating `N=[X(b)]`, `G=[(a∧X b)]`, `D=[F(a∧X b)]`):
 
 | cell | obs | key literals after evaluation | carried `R[.]` → next cell |
 |---|---|---|---|
-| 0 | `{a}` | `[a]T, [b]F, N?^I, G?^R, D?` | `R[G]^B, R[G]^R, R[D], R[N]^A, R[N]^B, R[a], R[b]` |
-| 1 | `∅` | `[a]F, [b]F,` **`N F`** `,` **`N?^I`** `,` **`G F`** `,` **`G?^R`** `, D?` | `R[G]^B, R[G]^R, R[D], R[N]^A, R[N]^B, R[a], R[b]` |
-| 2 | `{b}` | `[b]T,` **`N T`** `,` **`G T`** `,` **`G F`** `, D T` → **SUCCESS** | — |
+| 0 | `{a}` | `[a]T, N?, G?^R, D?` | `R[G]^B, R[G]^R, R[D], R[N], R[N]^M, R[a], R[b]` |
+| 1 | `∅` | `[a]F, [b]F,` **`N F`** `,` **`N?`** `,` **`G F`** `,` **`G?^R`** `, D?` | `R[G]^B, R[G]^R, R[D], R[N], R[N]^M, R[a], R[b]` |
+| 2 | `{b}` | `[a]F, [b]T,` **`N T`** `,` **`N?`** `,` **`G T`** `,` **`G F`** `, D T` → **SUCCESS** | — |
 
 **Output: SATISFY — wrong** (ground truth VIOLATE).
 
 The smoking guns, all present in the real state:
 
-- **Cell 0 → 1 carry:** `R[X(b)]^A` **and** `R[X(b)]^B` — two live `X b`
+- **Cell 0 → 1 carry:** `R[X(b)]^M` **and** unqualified `R[X(b)]` — two live `X b`
   instances (one monitoring `b@1`, one freshly deferred to `b@2`) on one
   subformula.
-- **Cell 1:** the slot `[X(b)]` holds `F` **and** `?^I` simultaneously; the slot
+- **Cell 1:** the slot `[X(b)]` holds `F` **and** an unqualified `?` simultaneously; the slot
   `[a∧X b]` holds `F` **and** `?^R`. The single state asserts contradictory
   values.
 - **Cell 2:** `[a∧X b]` holds `T` **and** `F` at once — a flat violation of the
@@ -129,16 +129,16 @@ preserves** that invariant — and it does not.
 
 Walking `map` on the counterexample pinpoints the break:
 
-- **Cell 0** (`index 0`): `map(X b)` reads the single `N?^I` (`aux = I ≠ M`) →
+- **Cell 0** (`index 0`): `map(X b)` reads the single unqualified `N?` (initial mode, hence `aux ≠ M`) →
   `[u, 0 ⊨ X b]_F`. Well-defined; the proof holds here. ✓
-- **Cell 0 → 1 carry:** the state now contains `R[X(b)]^A` **and** `R[X(b)]^B`.
-  The clause `find R[X b]S` has **two** matches, `S ∈ {A, B}`:
-  - `aux = A (= M)` → `map(X b) = map(b)` (about `b@1`);
-  - `aux = B (≠ M)` → `[u,1 ⊨ X b]_F` (about `b@2`).
+- **Cell 0 → 1 carry:** the state now contains `R[X(b)]^M` **and** unqualified `R[X(b)]`.
+  The clause `find R[X b]S` has **two** matches, monitoring and initial:
+  - `aux = M` → `map(X b) = map(b)` (about `b@1`);
+  - initial `aux ≠ M` → `[u,1 ⊨ X b]_F` (about `b@2`).
   **`map(X b)` is no longer a function.** ← the exact failure point. The
   inductive hypothesis ("one judgement at one index") is now false: the state
   encodes two `X b` obligations at indices 0 and 1 on one slot.
-- **Cell 1:** the state holds `[X(b)]F` **and** `N?^I`. `map` checks `[φ]F`
+- **Cell 1:** the state holds `[X(b)]F` **and** unqualified `N?`. `map` checks `[φ]F`
   before `[φ]?S`, so it returns `⊥` and **silently discards** the pending fresh
   instance — `map` is now *lossy* by precedence.
 - **Cell 2:** `[a∧X b]` holds `T` and `F`; `map` (precedence `T > F`) returns
@@ -151,13 +151,16 @@ discharges the well-formedness obligation that the reactivated state stays in
 `map`'s single-instance domain — which is exactly the obligation the
 reactivation it reasons about violates.
 
-## 5. Empirical scope — which formulas actually flip
+## 5. Observed examples and the exact boundary
 
 The conflation *mechanism* needs **(1)** an inner subformula that defers across
 cells (`X`/`W`, or a non-in-cell temporal) and **(2)** an enclosing operator
 that reinstalls it while a prior instance is pending. But whether it produces an
-**observable wrong verdict** depends on the operators. Mismatches vs the exact
-DFA over 400 random traces each:
+**observable wrong verdict** depends on the complete context.  The table below
+records the exploratory mismatch sweep against the exact DFA; it is evidence
+for examples, not a grammar for the safe class.  The implemented
+`certify_rule_runner` product construction now decides the exact boundary for
+each supplied formula and returns a shortest witness when it fails.
 
 | formula | structure | mismatches/400 |
 |---|---|---|
@@ -166,7 +169,8 @@ DFA over 400 random traces each:
 | `F(F a)`, `F(G a)`, `G(F a)`, `G(G a)` | monotone whole-temporal nesting | **0** |
 | `F(X a)` | inner `X`, **existential** outer | **0** |
 | `G(X a)` | inner `X`, **universal** outer | **51** |
-| `X(X a)` | inner `X` under `X` (consecutive next) | **158** |
+| `X(X a)` | nested `X`, but each node is activated once | **0** |
+| `(X a) ∧ X(X a)` | the same deduplicated `X a` reached at two offsets | **fails; shortest witness length 2** |
 | `F(a∧X b)` | inner `X` under `∧` under `F` | 52 |
 | `G(a→X b)` | inner `X` under `→` under `G` | 58 |
 | `a U (b∧X c)` | inner `X` under `∧` under `U` | 48 |
@@ -174,23 +178,29 @@ DFA over 400 random traces each:
 
 Read-off:
 
-- **Flat temporal is always correct** (`F(a∧b)`, `a U b`, the IJCNN scalability
-  family `◇⋁(a₀∧aᵢ)`) — no inner deferral, so no second instance. This is why
-  our Exps 2/3 (which use the flat IJCNN family) are unaffected.
-- **The reliable trigger is `X`/`W` in the nested position.** A one-cell exact
-  defer is maximally prone to the `A`-mode (resolve now) vs `B`-mode (defer
-  again) collision.
+- **The flat-temporal fragment is correct**: the paper now proves correctness
+  and prefix soundness for the Boolean closure of temporal clauses whose
+  operands are propositional.  This includes `F(a∧b)`, `a U b`, `G(a→b)`, and
+  the IJCNN family `◇⋁(a₀∧aᵢ)`.  It is a sufficient fragment, not a maximal
+  grammar for the identity-sensitive semantic class.
+- **The reliable trigger is a shared register reached at different temporal
+  offsets.** `X`/`W` inside a reinstalling subtree is especially prone to the
+  fresh-versus-maturing collision, but an ordinary nested-Next chain uses
+  distinct nodes and is safe.
 - **Monotone `F`/`G`-only nestings tend to be immune**, and the
   existential/universal asymmetry is sharp: `F(X a) = 0` but `G(X a) = 51`.
   Existential `F` absorbs the spurious carry; universal `G`, `U`, and the
   binary-under-loop patterns expose it.
-- **Consecutive next `X(X a)` is among the worst** — and IJCNN 2014 explicitly
-  reports testing "consecutive next operators," but only for *timing*, never for
-  verdict correctness.
+- **Consecutive next `X(X a)` is not itself defective.** Earlier measurements
+  came from the pre-repair implementation that activated a Next operand too
+  early and used the wrong Next modes/end rules.
 
-So the limitation is **not** "any nested temporal regardless of operators." It is
-specifically a deferring temporal (`X`/`W`, or a non-in-cell temporal)
-reinstalled-while-pending under a non-existential operator.
+So the limitation is **not** "any nested temporal regardless of operators."
+Shared-register aliasing occurs when the same deferring subformula is reached at
+different temporal offsets, typically through reinstallation while an earlier
+instance is pending.  Whether that alias changes the language depends on the
+surrounding Boolean and temporal context; no simple maximal nesting criterion is
+claimed.  Use the exact certifier for a definitive formula-level answer.
 
 ## 6. Why it was never noticed in the papers
 
@@ -199,9 +209,10 @@ reinstalled-while-pending under a non-existential operator.
    (report Table 2) put the temporal operator under `∨` (non-reinstalling) or
    over an atom (no inner deferral).
 3. The papers **verdict-test only flat formulas.** Their own benchmark
-   `◇((a∧X b)∨(c∧W d))` (IJCNN 2014/2015) and the "consecutive next" tests have
-   the failing structure but appear **only in timing plots** — verdicts were
-   never checked.
+   `◇((a∧X b)∨(c∧W d))` (IJCNN 2014/2015) has the failing reinstalling structure
+   but appears only in timing plots; verdicts were never checked. Their
+   consecutive-Next timing cases are not counterexamples after faithful Next
+   activation.
 4. The formalism cannot even express the bug: `map` takes a single `index` and
    does `find R[φ]S`, structurally assuming one instance per subformula. The
    defect is invisible from inside the framework; it only shows against an
@@ -242,14 +253,35 @@ for both, so **no priority order, and no C2 relaxation, can be correct on both.*
 priority → right on A, wrong on B.) The deciding information — *which instance
 owns the value* — is precisely what the shared slot erased.
 
-## 9. The only real fix, and why it breaks the architecture
+## 9. Repairs require a richer recurrent address space
 
-Correctly separating the instances requires **instance- or cell-scoped slots**
-(e.g. `[X b @ now]` vs `[X b @ prev]`), hence an **unbounded** number of slots
-for `F`/`G`/`U`/`R`-horizon operands. That destroys the fixed-size,
-compile-time-static rule set / network that *defines* RuleRunner in all three
-papers. So within the approach as published, the limitation is a genuine
-architectural ceiling, not an implementation bug.
+No output priority can restore information already merged by the published
+one-slot-per-subformula state.  A correct repair must therefore enrich the
+recurrent address space, but it does **not** follow that every fixed formula
+needs an unbounded number of runtime slots: every LTLf formula has a finite-state
+monitor.  What fails is the published choice of exactly one bounded-domain slot
+for each syntactic subformula.
+
+Two implemented enrichments make the distinction precise:
+
+- the **bounded-event construction** uses finitely many
+  `(subformula, offset)` locations for maximal finite-horizon islands, then feeds
+  their derived event values to an exactly certified original-RuleRunner
+  skeleton; and
+- the **progression construction** addresses a finite reachable vocabulary of
+  residual roots.  It is complete for LTLf, but that vocabulary and its
+  aggregate state graph can be exponentially large and need not be canonical in
+  the current implementation.
+
+Thus the limitation is a genuine architectural ceiling of RuleRunner *as
+published*, not a Python/CILP implementation bug.  It does not imply that the
+only repair is a literal, indefinitely growing bank of timestamped copies.
+
+**Implemented middle repair — bounded-event RuleRunner
+([bounded_event_rulerunner.md](bounded_event_rulerunner.md)).**  This version
+repairs bounded-future aliasing while retaining a fixed compile-time pipeline.
+It deliberately rejects formulas whose remaining original-RuleRunner skeleton
+does not pass exact certification, such as `G(a→F b)`.
 
 **Implemented fix — the progression RuleRunner ([src/monitors/progression/](../src/monitors/progression/)).**
 The instance-scoping problem is exactly what **formula progression** solves: the
@@ -257,30 +289,37 @@ carried state is the *residual formula* (a set of active roots), which is
 freshly re-derived each cell, so concurrent instances never share a slot. It is
 **sound and complete on all LTLf** — the three formulas below match SymbolicDFA
 with **no xfails** — realized as `ProgressionRuleRunnerMonitor` (flat CILP,
-multi-hot roots) and `ProgressionRuleRunnerStructuredMonitor` (per-closure-node,
-the local-learning substrate), both wired into every timing experiment. The
+multi-hot roots) and `ProgressionRuleRunnerStructuredMonitor` (per-closure-node
+evaluation plus root-local progression/reactivation modules), both available
+through the public progression package. The
 architectural price is that the residual closure can grow to the DFA size and
 the eager construction enumerates the `2^|AP|` alphabet (progression's own wall,
 dual to this representational limit) — see
 [rulerunner_progression_analysis.md](rulerunner_progression_analysis.md) and the
-Progression subsection of [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md). So the paper
-tells a *before/after* story: the original encoding hits this ceiling; the
-progression reformulation clears it, at a quantified throughput/alphabet cost.
+Progression subsection of [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md).  These are
+structural and compile-time costs; empirical performance quantification is
+deferred.
 
 ## 10. Status in this project
 
-- **The ORIGINAL encoding's limitation is accepted and documented**, not worked
-  around; the **progression reformulation fixes it** (above). Three formulas are
+- **The ORIGINAL encoding's limitation is accepted and documented**, not hidden.
+  Three formulas are
   pinned as `xfail(strict=True)` in the *original* RuleRunner equivalence sweeps
   (`F(a∧X b)`, `G(a→F b)`, `G(a→X b)`); the progression monitors pass all three.
-- **Does not affect the experiments:** Exps 2/3 use the flat IJCNN family
-  (correct); Exp 1 uses `G(a→F b)`, chosen because it has no trap/sink so *early
-  termination never fires* and the per-cell **timing** is well-defined
-  regardless of verdict correctness.
+- **The bounded-event middle version** repairs examples such as `G(Xa)`,
+  `F(a∧Xb)`, and `G(a→Xb)` whenever eventization leaves a certified skeleton;
+  it correctly rejects `G(a→Fb)`.
+- **The progression reformulation** fixes the representation for the full
+  supported LTLf syntax and has both flat and comparable structured CILP forms.
+- **Evaluation is deferred.**  Do not infer benchmark outcomes from the old
+  exploratory mismatch sweep or from architectural cost bounds.
 - **It is a finding, not just a caveat:** the canonical BPM response pattern
   `G(a→F b)` is structurally simple, semantically central, and **the published
   rule encoding cannot monitor it correctly** — direct support for the paper's
   thesis that the automata-based representation is the more general foundation.
+
+The concise cross-version implementation status is maintained in
+[`rulerunner_status.md`](rulerunner_status.md).
 
 ---
 

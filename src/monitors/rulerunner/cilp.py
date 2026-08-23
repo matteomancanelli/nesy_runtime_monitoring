@@ -15,13 +15,15 @@ literals; [.]V truth values are transient per cell.
 Correctness oracle: the engine in [engine.py](engine.py). The
 equivalence sweep at the bottom of `test_rulerunner_cilp.py` checks
 that the network produces the same per-cell verdict as the engine
-(and therefore as `SymbolicDFAMonitor`, modulo the documented
-nested-temporal limitation).
+(and therefore as `SymbolicDFAMonitor` exactly on formulas admitted by
+the product certifier).  On rejected formulas it faithfully reproduces the
+published shared-register temporal-instance conflation.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -30,6 +32,22 @@ from src.formula.compiler import Observation
 from src.monitors.base import Verdict
 from src.monitors.rulerunner.parse_tree import Node, Op, parse
 from src.monitors.rulerunner.rules import Rule, RuleSystem, build_rules
+
+
+@dataclass(frozen=True)
+class SkeletonLabelState:
+    """Literal-level snapshot of a CILP runner, by literal name.
+
+    The bounded-event extrapolation head classifies the pipeline state without
+    driving recurrence, so it needs a read-only view of the skeleton's carried
+    and last-evaluated literals.  Exposing it as a value keeps that head
+    independent of whether the skeleton is the flat or the structured runner.
+    """
+
+    active: frozenset[str]
+    last_cell: frozenset[str]
+    seen_cell: bool
+    decided: Verdict | None
 
 # Sign activation works for any W > 0; W=1 is simplest.
 _W = 1.0
@@ -93,6 +111,10 @@ def _resolve_end(node: Node, in_state) -> bool:
         return False
 
     if node.op is Op.ATOM:
+        if node.atom == "true":
+            return True
+        if node.atom == "false":
+            return False
         return False
     if node.op is Op.NOT:
         return not _resolve_end(node.children[0], in_state)
@@ -103,8 +125,31 @@ def _resolve_end(node: Node, in_state) -> bool:
     if node.op in (Op.UNTIL, Op.RELEASE):
         return _resolve_end(node.children[1], in_state)
     if node.op is Op.NEXT:
+        if in_state(f"[{K}]?^M"):
+            return _resolve_end(node.children[0], in_state)
         return False
     if node.op is Op.WEAK_NEXT:
+        if in_state(f"[{K}]?^M"):
+            return _resolve_end(node.children[0], in_state)
+        return True
+    raise ValueError(node.op)
+
+
+def _holds_empty(node: Node) -> bool:
+    """LTLf value before any cell has been read."""
+    if node.op is Op.ATOM:
+        return node.atom == "true"
+    if node.op is Op.NOT:
+        return not _holds_empty(node.children[0])
+    if node.op is Op.AND:
+        return _holds_empty(node.children[0]) and _holds_empty(node.children[1])
+    if node.op is Op.OR:
+        return _holds_empty(node.children[0]) or _holds_empty(node.children[1])
+    if node.op is Op.IMPLIES:
+        return not _holds_empty(node.children[0]) or _holds_empty(node.children[1])
+    if node.op in (Op.NEXT, Op.EVENTUALLY, Op.UNTIL):
+        return False
+    if node.op in (Op.WEAK_NEXT, Op.ALWAYS, Op.RELEASE):
         return True
     raise ValueError(node.op)
 
@@ -151,12 +196,40 @@ class CILPRunner:
         self._state: torch.Tensor = self._initial_x.clone()
         self._last_cell: torch.Tensor = self._initial_x.clone()
         self._decided: Verdict | None = None
+        self._seen_cell = False
 
     @classmethod
     def from_formula(
         cls, formula: str, device: str | torch.device = "cpu"
     ) -> "CILPRunner":
         return cls(parse(formula), device=device)
+
+    # -- public state snapshot (bounded-event extrapolation head) --
+
+    def label_state(self, names: Iterable[str] | None = None) -> SkeletonLabelState:
+        """Snapshot the literals a fixed label head is allowed to read.
+
+        Exposed so that analyses outside this module do not have to reach into
+        the runner's tensors or index dictionary.  ``names`` restricts the
+        snapshot to the literals a caller declared interest in.
+        """
+        index = self._literal_index
+        selected = index.items() if names is None else (
+            (name, index[name]) for name in names if name in index
+        )
+        active: set[str] = set()
+        last: set[str] = set()
+        for name, position in selected:
+            if bool(self._state[position] > 0):
+                active.add(name)
+            if bool(self._last_cell[position] > 0):
+                last.add(name)
+        return SkeletonLabelState(
+            active=frozenset(active),
+            last_cell=frozenset(last),
+            seen_cell=self._seen_cell,
+            decided=self._decided,
+        )
 
     # -- compilation --
 
@@ -216,10 +289,12 @@ class CILPRunner:
         self._state = self._initial_x.clone()
         self._last_cell = self._initial_x.clone()
         self._decided = None
+        self._seen_cell = False
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
             return self._decided
+        self._seen_cell = True
 
         # Build the cell's input vector: -1 everywhere, copy R-state across,
         # then clamp obs:a literals from `obs`.
@@ -266,6 +341,8 @@ class CILPRunner:
     def final_verdict(self) -> Verdict:
         if self._decided is not None:
             return self._decided
+        if not self._seen_cell:
+            return Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
         return self._end_verdict(self._last_cell.cpu())
 
     # -- batched, device-aware path (CPU or CUDA) --
@@ -307,7 +384,8 @@ class CILPRunner:
         lengths = [len(t) for t in trace_list]
         maxL = max(lengths)
         if maxL == 0:  # all-empty traces -> end-of-trace on the initial state
-            return [self._end_verdict(self._initial_x.cpu())] * B
+            v = Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
+            return [v] * B
 
         atoms = self._rs.atoms
         n_atoms = len(atoms)
@@ -375,6 +453,11 @@ class CILPRunner:
 
         results: list[Verdict] = []
         for b in range(B):
+            if lengths[b] == 0:
+                results.append(
+                    Verdict.SATISFY if _holds_empty(self._root) else Verdict.VIOLATE
+                )
+                continue
             if bool(has_dec[b]):
                 results.append(
                     Verdict.SATISFY if int(first_v[b]) == 1 else Verdict.VIOLATE

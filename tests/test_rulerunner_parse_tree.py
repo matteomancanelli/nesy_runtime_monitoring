@@ -84,13 +84,20 @@ def test_until_right_associated() -> None:
     assert n.depth == 2
 
 
-def test_implies_right_associated() -> None:
+def test_implies_left_associated_like_ltlf2dfa() -> None:
+    """`->` follows ltlf2dfa, not the usual right-associative convention.
+
+    ltlf2dfa translates `a -> b -> c` exactly as `(a -> b) -> c`, and the
+    DFA-based monitors are compiled from the formula string by ltlf2dfa.  A
+    right fold here would make the paradigms monitor different formulas; the
+    disagreement is caught by tests/test_semantic_oracle.py.
+    """
     n = parse("a -> b -> c")
     assert n.op is Op.IMPLIES
     left, right = n.children
-    assert left.atom == "a"
-    assert right.op is Op.IMPLIES
-    assert tuple(c.atom for c in right.children) == ("b", "c")
+    assert right.atom == "c"
+    assert left.op is Op.IMPLIES
+    assert tuple(c.atom for c in left.children) == ("a", "b")
 
 
 def test_subformula_sharing() -> None:

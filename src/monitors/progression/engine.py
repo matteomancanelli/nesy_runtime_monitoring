@@ -16,15 +16,17 @@ here as one Boolean-simplified formula) and updates it by progression:
 Verdicts:
 
 * **Online (absorbing).** ``step`` reports an absorbing ``SATISFY`` when the
-  residual has become valid over *every* continuation — including the empty
-  one, i.e. the accepting-sink condition — which is exactly
-  ``prog(rho, obs) ≡ TRUE`` *and* ``last(rho, obs) = True``. Symmetrically for
-  ``VIOLATE`` (the trap condition). Because ``simplify`` only returns ``TRUE``/
+  residual has become valid over every continuation, which is detected when
+  ``prog(rho, obs)`` simplifies to ``TRUE``. Symmetrically for ``VIOLATE``.
+  Because ``simplify`` only returns ``TRUE``/
   ``FALSE`` on a genuine Boolean tautology / contradiction over the temporal
   leaves, these signals are *sound*; they may lag the true earliest verdict by
-  a few cells (the lazy under-approximation of §3.3), but never fire wrongly.
-* **End-of-trace.** ``final_verdict`` returns ``last(rho_before_last,
-  last_obs)`` — exact, so ``run`` matches ``SymbolicDFAMonitor`` on *every*
+  an arbitrary number of cells (the lazy under-approximation of §3.3), but
+  never fire wrongly.  For example, ``(a U b) -> F b`` is valid, but the
+  Boolean-only test need not expose that temporal implication.
+* **End-of-trace.** With total progression, ``final_verdict`` evaluates the
+  current residual on the empty suffix — exact, so ``run`` matches
+  ``SymbolicDFAMonitor`` on *every*
   formula, including the nested-temporal ones (``F(a & X b)``, ``G(a -> F b)``,
   ``G(a -> X b)``) where the original RuleRunner diverges.
 
@@ -39,7 +41,7 @@ from __future__ import annotations
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
 from src.monitors.progression.formula import Formula, Op, from_node, simplify
-from src.monitors.progression.progression import holds_empty, last, prog
+from src.monitors.progression.progression import holds_empty, prog
 from src.monitors.rulerunner.parse_tree import parse
 
 
@@ -49,15 +51,10 @@ class ProgressionEngine(Monitor):
     def __init__(self, phi: Formula) -> None:
         self._phi = simplify(phi)
         self._rho: Formula = self._phi
-        # Verdict this cell would yield if the trace ended here; None until the
-        # first `step`. `_decided` freezes an absorbing verdict once reached.
-        self._last_v: bool | None = None
         self._decided: Verdict | None = None
 
     @classmethod
-    def compile(
-        cls, formula: str, device: object = "cpu"
-    ) -> "ProgressionEngine":
+    def compile(cls, formula: str, device: object = "cpu") -> "ProgressionEngine":
         # `device` accepted for a uniform signature across paradigms; the lazy
         # realization is pure Python (no tensors), so it is ignored and
         # `effective_device` stays "cpu".
@@ -65,25 +62,20 @@ class ProgressionEngine(Monitor):
 
     def reset(self) -> None:
         self._rho = self._phi
-        self._last_v = None
         self._decided = None
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
             return self._decided
 
-        # Verdict if this cell were the last (exact, finite-trace boundary).
-        self._last_v = last(self._rho, obs)
-        # Residual for a non-empty continuation.
+        # Total residual: valid for every continuation, including empty.
         nxt = simplify(prog(self._rho, obs))
         self._rho = nxt
 
-        # Accepting sink: valid on every continuation, empty included.
-        if nxt.op is Op.TRUE and self._last_v:
+        if nxt.op is Op.TRUE:
             self._decided = Verdict.SATISFY
             return Verdict.SATISFY
-        # Trap: unsatisfiable on every continuation, empty included.
-        if nxt.op is Op.FALSE and not self._last_v:
+        if nxt.op is Op.FALSE:
             self._decided = Verdict.VIOLATE
             return Verdict.VIOLATE
         return Verdict.UNDECIDED
@@ -91,8 +83,4 @@ class ProgressionEngine(Monitor):
     def final_verdict(self) -> Verdict:
         if self._decided is not None:
             return self._decided
-        if self._last_v is None:
-            # No cell was ever read (empty trace): fall back to empty-word
-            # semantics on the original formula.
-            return Verdict.SATISFY if holds_empty(self._phi) else Verdict.VIOLATE
-        return Verdict.SATISFY if self._last_v else Verdict.VIOLATE
+        return Verdict.SATISFY if holds_empty(self._rho) else Verdict.VIOLATE

@@ -5,8 +5,16 @@ from src.monitors.deep_dfa import (
     DeepDFAMonitorFactored,
     DeepDFAMonitorScan,
 )
-from src.monitors.progression import ProgressionRuleRunnerMonitor
-from src.monitors.rulerunner import RuleRunnerMonitor
+from src.monitors.progression import (
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
+)
+from src.monitors.rulerunner import (
+    BoundedEventRuleRunnerMonitor,
+    BoundedEventStructuredRuleRunnerMonitor,
+    RuleRunnerMonitor,
+    StructuredRuleRunnerMonitor,
+)
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 __all__ = [
@@ -14,7 +22,11 @@ __all__ = [
     "Verdict",
     "SymbolicDFAMonitor",
     "RuleRunnerMonitor",
+    "StructuredRuleRunnerMonitor",
+    "BoundedEventRuleRunnerMonitor",
+    "BoundedEventStructuredRuleRunnerMonitor",
     "ProgressionRuleRunnerMonitor",
+    "ProgressionRuleRunnerStructuredMonitor",
     "DeepDFAMonitor",
     "DeepDFAMonitorDense",
     "DeepDFAMonitorFactored",

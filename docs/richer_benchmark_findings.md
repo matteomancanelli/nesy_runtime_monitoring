@@ -42,7 +42,7 @@ DeepDFA), this hits *both* paradigms — good for the neutrality mandate — but
 | paradigm | Achilles heel | which family exposes it |
 |---|---|---|
 | Symbolic | state blowup \|Q\| (storage/compile), crisp-only, frozen | `STATE_BLOWUP_SUITE` (later wall) |
-| RuleRunner | nested-temporal representational limit; within-step depth cost | (original) — corrected by progression at an alphabet cost |
+| RuleRunner | original shared-register conflation; within-step sequential cost | bounded-event partial repair; complete progression repair has residual/alphabet compilation cost |
 | DeepDFA | alphabet blowup 2^\|AP\| **and** state blowup \|Q\|² | `IJCNN` (alphabet) + `STATE_BLOWUP_SUITE` (state, earlier wall) |
 
 ---

@@ -18,6 +18,7 @@ import torch
 
 from src.monitors.base import Verdict
 from src.monitors.rulerunner import StructuredRuleRunnerMonitor
+from src.monitors.rulerunner.cilp import CILPRunner
 from src.monitors.rulerunner.structured import StructuredCILPRunner
 
 FORMULAS = [
@@ -25,7 +26,7 @@ FORMULAS = [
     "a U b",
     "G a",
     "F a",
-    "G(a -> F b)",        # nested (diverges from DFA) — must diverge identically
+    "G(a -> F b)",  # nested (diverges from DFA) — must diverge identically
     "F(a & X b)",
     "G(a -> X b)",
     "X(X a)",
@@ -63,6 +64,20 @@ def _check(formula: str, device: str) -> None:
 @pytest.mark.parametrize("formula", FORMULAS)
 def test_batch_matches_sequential_cpu(formula: str) -> None:
     _check(formula, "cpu")
+
+
+@pytest.mark.parametrize("formula", FORMULAS)
+def test_structured_matches_flat_cilp_per_cell(formula: str) -> None:
+    """The two old encodings differ only in how the same rules are grouped."""
+    structured = StructuredCILPRunner.from_formula(formula)
+    flat = CILPRunner.from_formula(formula)
+    traces = _random_traces(structured._rs.atoms, _seed(formula), 20, 7)
+    for trace in traces:
+        structured.reset()
+        flat.reset()
+        for obs in trace:
+            assert structured.step(obs) is flat.step(obs)
+        assert structured.final_verdict() is flat.final_verdict()
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device")

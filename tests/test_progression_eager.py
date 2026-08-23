@@ -1,9 +1,9 @@
 """Eager residual-DFA construction (Part 2a).
 
-The eager, table-driven monitor must be verdict-for-verdict identical to the
-lazy engine and to ``SymbolicDFAMonitor`` on the full sweep (including the
-nested-temporal formulas), the construction must terminate, and the
-cost-of-correctness metrics must be well-formed.
+The eager, table-driven monitor must have the same final verdict as the lazy
+engine and ``SymbolicDFAMonitor`` on the full sweep (including nested-temporal
+formulas), its graph labels must give exact early verdicts, the construction
+must terminate, and the cost-of-correctness metrics must be well-formed.
 """
 
 from __future__ import annotations
@@ -14,19 +14,32 @@ import numpy as np
 import pytest
 
 from src.benchmarks.runner import random_traces
+from src.monitors.base import Verdict
 from src.monitors.progression import (
     ProgressionEngine,
     ProgressionRuleRunnerEagerMonitor,
+    ProgressionRuleRunnerMonitor,
+    ProgressionRuleRunnerStructuredMonitor,
     build_progression_dfa,
 )
+from src.monitors.progression.formula import Op
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 _ALL = [
-    "a", "!a", "a & b", "a | b", "a -> b",
+    "a",
+    "!a",
+    "a & b",
+    "a | b",
+    "a -> b",
     "(a & b) | (!a & !b)",
-    "F a", "G a", "X a", "WX a",
-    "a U b", "a R b",
-    "F (a & b)", "G (a | b)",
+    "F a",
+    "G a",
+    "X a",
+    "WX a",
+    "a U b",
+    "a R b",
+    "F (a & b)",
+    "G (a | b)",
     "F ((a & b) | (a & c))",
     "(F a) -> (F b)",
     "G (!a | !b)",
@@ -57,6 +70,16 @@ def test_eager_matches_lazy_and_dfa(formula: str) -> None:
         assert ev is dv, f"eager vs dfa mismatch on {formula!r}, trace {trace}"
         assert lv is dv, f"lazy vs dfa mismatch on {formula!r}, trace {trace}"
 
+    # Final-verdict agreement alone would not establish exact online labels.
+    # Compare every prefix verdict directly with the independently compiled DFA.
+    for trace in traces[:10]:
+        eager.reset()
+        dfa.reset()
+        for obs in trace:
+            assert eager.step(obs) is dfa.step(obs), (
+                f"online mismatch on {formula!r}, prefix ending in {obs}"
+            )
+
 
 @pytest.mark.parametrize("formula", _ALL)
 def test_construction_terminates_and_metrics(formula: str) -> None:
@@ -67,6 +90,9 @@ def test_construction_terminates_and_metrics(formula: str) -> None:
     # every state has aligned tables
     assert len(dfa.trans) == dfa.n_states
     assert len(dfa.relevant) == dfa.n_states
+    assert len(dfa.online) == dfa.n_states
+    assert dfa.accepting_sinks <= dfa.accepting
+    assert dfa.trap_states.isdisjoint(dfa.accepting)
     # transitions land in-range
     for tr in dfa.trans:
         for j in tr.values():
@@ -79,8 +105,16 @@ def test_construction_terminates_and_metrics(formula: str) -> None:
 
 def test_eager_matches_dfa_short_traces() -> None:
     rng = np.random.default_rng(seed=11)
-    formulas = ["X a", "WX a", "F a", "G a", "a U b", "a R b",
-                "F (a & X b)", "G (a -> F b)"]
+    formulas = [
+        "X a",
+        "WX a",
+        "F a",
+        "G a",
+        "a U b",
+        "a R b",
+        "F (a & X b)",
+        "G (a -> F b)",
+    ]
     for L in (1, 2, 3):
         traces = random_traces(("a", "b"), trace_length=L, n_traces=40, rng=rng)
         for f in formulas:
@@ -106,3 +140,44 @@ def test_alphabet_blowup_cap() -> None:
     # force the cap low to exercise the guard.
     with pytest.raises(ValueError, match="alphabet-blowup"):
         build_progression_dfa("F ((a & b) | (a & c) | (a & d))", max_guard_atoms=2)
+
+
+def test_graph_labels_detect_nonliteral_sink_and_trap() -> None:
+    """Permanence is a language property, not a syntactic-constant test."""
+    valid = build_progression_dfa("(a U b) -> F b")
+    invalid = build_progression_dfa("(a U b) & G !b")
+
+    assert valid.states[valid.initial].op is not Op.TRUE
+    assert valid.initial in valid.accepting_sinks
+    assert invalid.states[invalid.initial].op is not Op.FALSE
+    assert invalid.initial in invalid.trap_states
+
+
+@pytest.mark.parametrize(
+    "monitor_cls",
+    [
+        ProgressionRuleRunnerEagerMonitor,
+        ProgressionRuleRunnerMonitor,
+        ProgressionRuleRunnerStructuredMonitor,
+    ],
+)
+def test_exact_graph_labels_drive_early_verdict(monitor_cls: type) -> None:
+    assert (
+        monitor_cls.compile("(a U b) -> F b").step({"a": True})
+        is Verdict.SATISFY
+    )
+    assert (
+        monitor_cls.compile("(a U b) & G !b").step({"a": True})
+        is Verdict.VIOLATE
+    )
+
+
+def test_lazy_early_detection_remains_sound_but_incomplete() -> None:
+    assert (
+        ProgressionEngine.compile("(a U b) -> F b").step({"a": True})
+        is Verdict.UNDECIDED
+    )
+    assert (
+        ProgressionEngine.compile("(a U b) & G !b").step({"a": True})
+        is Verdict.UNDECIDED
+    )

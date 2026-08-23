@@ -21,16 +21,25 @@ from src.monitors.progression import (
     ProgressionRuleRunnerEagerMonitor,
     ProgressionRuleRunnerMonitor,
     ProgressionRuleRunnerStructuredMonitor,
-    build_progression_dfa,
+    build_factorized_progression_graph,
 )
 from src.monitors.symbolic_dfa import SymbolicDFAMonitor
 
 _ALL = [
-    "a", "!a", "a & b", "a | b", "a -> b",
+    "a",
+    "!a",
+    "a & b",
+    "a | b",
+    "a -> b",
     "(a & b) | (!a & !b)",
-    "F a", "G a", "X a", "WX a",
-    "a U b", "a R b",
-    "F (a & b)", "G (a | b)",
+    "F a",
+    "G a",
+    "X a",
+    "WX a",
+    "a U b",
+    "a R b",
+    "F (a & b)",
+    "G (a | b)",
     "F ((a & b) | (a & c))",
     "(F a) -> (F b)",
     "G (!a | !b)",
@@ -65,6 +74,14 @@ def test_structured_matches_eager_flat_and_dfa(formula: str) -> None:
         assert sv is flat.run(trace), f"structured vs flat on {formula!r}, {trace}"
         assert sv is eager.run(trace), f"structured vs eager on {formula!r}, {trace}"
 
+    for trace in traces[:10]:
+        struct.reset()
+        dfa.reset()
+        for obs in trace:
+            assert struct.step(obs) is dfa.step(obs), (
+                f"online structured vs dfa on {formula!r}, {obs}"
+            )
+
 
 @pytest.mark.parametrize("formula", _ALL)
 def test_structured_batch_equals_sequential_cpu(formula: str) -> None:
@@ -79,8 +96,16 @@ def test_structured_batch_equals_sequential_cpu(formula: str) -> None:
 def test_structured_short_traces_match_dfa() -> None:
     """Length 1..3 stress the end-of-trace ``last`` bit and empty-word path."""
     rng = np.random.default_rng(seed=11)
-    formulas = ["X a", "WX a", "F a", "G a", "a U b", "a R b",
-                "F (a & X b)", "G (a -> F b)"]
+    formulas = [
+        "X a",
+        "WX a",
+        "F a",
+        "G a",
+        "a U b",
+        "a R b",
+        "F (a & X b)",
+        "G (a -> F b)",
+    ]
     for L in (1, 2, 3):
         traces = random_traces(("a", "b"), trace_length=L, n_traces=40, rng=rng)
         for f in formulas:
@@ -102,6 +127,12 @@ def test_structured_ragged_batch() -> None:
         [{"a": True, "b": False}, {"a": False, "b": False}],
     ]
     assert struct.batch_run(traces) == [struct.run(t) for t in traces]
+
+
+def test_structured_mixed_batch_preserves_empty_trace_semantics() -> None:
+    struct = ProgressionRuleRunnerStructuredMonitor.compile("G a")
+    traces = [[], [{"a": False}], [{"a": True}]]
+    assert struct.batch_run(traces) == [struct.run(trace) for trace in traces]
 
 
 def test_structured_counterexample() -> None:
@@ -132,18 +163,68 @@ def test_structured_effective_device_is_cpu() -> None:
 
 
 def test_structured_exposes_per_node_subnetworks() -> None:
-    """The local-learning substrate: one eval subnetwork per non-atom closure
-    node, and the closure/roots are exposed in bottom-up order."""
+    """Evaluation and recurrence expose syntactically-owned subnetworks."""
     struct = ProgressionRuleRunnerStructuredMonitor.compile("G (a -> F b)")
     net = struct._net
-    dfa = build_progression_dfa("G (a -> F b)")
-    n_non_atom = sum(1 for n in dfa.closure if n.op.name != "ATOM")
-    assert len(net.eval_layers) == n_non_atom
+    graph = build_factorized_progression_graph("G (a -> F b)")
+    assert set(net.eval_net) == {node.key for node in graph.closure}
+    assert set(net.react_net) == {root.key for root in graph.roots}
     # closure is bottom-up: every child precedes its parent
-    pos = {n.key: i for i, n in enumerate(dfa.closure)}
-    for n in dfa.closure:
+    pos = {n.key: i for i, n in enumerate(graph.closure)}
+    for n in graph.closure:
         for c in n.args:
             assert pos[c.key] < pos[n.key]
+
+
+def test_reactivation_modules_depend_on_one_root_only() -> None:
+    """No progression clause recognizes the complete aggregate root set."""
+    net = ProgressionRuleRunnerStructuredMonitor.compile("F (a & X b) & G c")._net
+    for source, root in enumerate(net.roots):
+        W_ih = net.react_net[root.key][0]
+        used_root_columns = set(
+            torch.nonzero(W_ih[:, : net.n_roots], as_tuple=False)[:, 1].tolist()
+        )
+        assert used_root_columns <= {source}
+
+
+def test_local_reactivation_matches_factorized_graph() -> None:
+    """Every reachable aggregate transition is the union of root modules."""
+    net = ProgressionRuleRunnerStructuredMonitor.compile(
+        "F (a & X b) & G (c -> F a)"
+    )._net
+    graph = net.graph
+    for state_index, state in enumerate(graph.states):
+        relevant = tuple(
+            sorted({atom for root in state for atom in graph.relevant[root]})
+        )
+        for symbol, expected_index in graph.trans[state_index].items():
+            root_state = torch.full((1, net.n_roots), -1.0)
+            for root in state:
+                root_state[0, root] = 1.0
+            atoms = torch.full((1, net.n_atoms), -1.0)
+            for j, atom in enumerate(relevant):
+                if (symbol >> j) & 1:
+                    atoms[0, net.atom_index[atom]] = 1.0
+            react_input = torch.cat([root_state, atoms], dim=1)
+            actual = torch.full_like(root_state, -1.0)
+            for root in net.roots:
+                output = net._forward(net.react_net[root.key], react_input)
+                actual = torch.maximum(actual, output[:, : net.n_roots])
+            actual_set = frozenset(
+                torch.nonzero(actual[0] > 0, as_tuple=False).flatten().tolist()
+            )
+            assert actual_set == graph.states[expected_index]
+
+
+def test_global_head_only_labels_factorized_states() -> None:
+    net = ProgressionRuleRunnerStructuredMonitor.compile("(X a) & (X !a)")._net
+    for index, state in enumerate(net.graph.states):
+        row = torch.full((1, net.n_roots), -1.0)
+        for root in state:
+            row[0, root] = 1.0
+        labels = net._forward(net.label_layer, row)
+        assert bool(labels[0, 0] > 0) is (index in net.graph.accepting_sinks)
+        assert bool(labels[0, 1] > 0) is (index in net.graph.trap_states)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")

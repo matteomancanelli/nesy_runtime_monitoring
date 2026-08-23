@@ -28,7 +28,8 @@ core empirical story:
 | Paradigm | Strength | Achilles heel |
 |---|---|---|
 | Symbolic | fastest crisp; exact | state blowup `\|Q\|` (storage/compile); frozen |
-| RuleRunner (original) | learning-friendly syntactic locality | **within-step** depth-linear cost; nested-temporal representational limit (wrong verdicts) |
+| RuleRunner (original) | syntactic rule locality | **within-step** sequential structure; shared-register temporal-instance conflation (wrong verdicts on rejected formulas) |
+| RuleRunner (bounded event) | static offset-indexed middle repair | exact only when the remaining skeleton certifies; composite-state extrapolation cost; **not yet benchmarked** |
 | RuleRunner (progression) | sound + complete on all LTLf | residual-closure/alphabet cost of the fix |
 | DeepDFA | native GPU batching; differentiable | **alphabet blowup** `2^{\|AP\|}` + `\|Q\|²` per-step cost |
 
@@ -40,13 +41,17 @@ All are crisp-input timing experiments. `MONITORS` lists are at the top of each
 script; the device auto-selects `cuda` when available; `EARLY_TERMINATION` is
 OFF (Phase-0 fix) for the per-cell-cost figures.
 
-Every experiment runs the **full monitor set**: Symbolic, RuleRunner-CILP,
+The existing experiment scripts run the following monitor set: Symbolic, RuleRunner-CILP,
 RuleRunner-Structured, **Progression-RR-flat, Progression-RR-structured** (the
 corrected paradigm 2), DeepDFA-dense, DeepDFA-factored (exp2 caps dense **and
 both progression monitors** at n≤16 — they share the 2^|AP| alphabet wall; exp1
 and exp3 also run DeepDFA-scan). The `modes` column names the *primary*
 curve(s) each experiment is designed around; the extra variants are
 within-paradigm reference lines.
+
+The bounded-event variants are intentionally absent from this map until the
+deferred evaluation phase is resumed.  The rows and expectations below are an
+experiment plan, not current evidence or result claims.
 
 | Exp | Axis (x) | Formula | Primary modes | Expect | If it disappoints |
 |---|---|---|---|---|---|
@@ -67,11 +72,12 @@ within-paradigm reference lines.
 - **Exponential** (`kth_from_last`, exp7): the genuine blowup; the shared-wall
   finding ([docs/richer_benchmark_findings.md](richer_benchmark_findings.md)).
 
-**Cost of correctness** (the paradigm-2 paper number):
+**Planned cost of correctness analysis (deferred):**
 `plots.correctness_cost_table` / `plot_correctness_cost` report the
 corrected/original per-cell-time **ratio** on exp2's flat IJCNN family (where
 the *original* RR is also correct, so the ratio isolates the encoding's
-throughput cost, not the verdict fix). >1 = the fix is slower.
+throughput cost, not the verdict fix).  Do not quote or interpret this ratio
+until the evaluation phase is explicitly resumed and rerun.
 
 ---
 

@@ -1,66 +1,40 @@
-"""Structured (per-closure-node) CILP network for the progression RuleRunner.
+"""Factorized structured CILP network for progression RuleRunner.
 
-The *flat* progression monitor (``flat.py``) enumerates every residual
-transition into one hidden layer that identifies the current residual state
-and reads the verdict off precomputed heads. This module is the **structured**
-counterpart, analogous to the original RuleRunner's
-[structured.py](../rulerunner/structured.py): it decomposes the per-cell
-computation into **one small CILP subnetwork per node of the residual closure
-C_phi**, composed by an explicit bottom-up (post-order) sweep. That per-node
-decomposition is the substrate for *local* (single-node) learning — the
-Paper-B adaptation setting — where parameters attach to syntactically-local
-subnetworks rather than to an opaque flat transition layer.
+This is the progression counterpart of
+``rulerunner.structured.StructuredCILPRunner``.  Both realizations use the same
+two-phase organization:
 
-What is structured, and what is not (the honest boundary)
----------------------------------------------------------
-For the *original* RuleRunner both phases — evaluation and reactivation —
-decompose cleanly per parse-tree node. For the **progression** reformulation
-that is only half true, because the state update is formula *progression*
-followed by Boolean *canonicalization*, and canonicalization is inherently
-**cross-root**: e.g. the residual ``(X a) & (X ~a)`` progresses to
-``a & ~a`` which simplifies to ``FALSE`` (a VIOLATE that neither root produces
-alone). A per-root progression that merely unions each root's successors would
-miss such collapses, so the transition *cannot* be a sound per-node circuit.
-We therefore split the cell as:
+* a bottom-up collection of per-node CILP evaluation subnetworks; and
+* a collection of per-root reactivation subnetworks whose outputs are OR-ed
+  into the recurrent state for the next trace cell.
 
-* **Evaluation — genuinely per node.** A bottom-up sweep of one CILP
-  subnetwork per closure node computes each node's ``last`` truth value (its
-  single-cell / end-of-trace semantics) from its children's truth values plus
-  the cell observation. This is the modular, locally-learnable part, and it
-  mirrors the original structured monitor's evaluation sweep exactly.
+The difference is exactly the RuleRunner repair.  The original monitor indexes
+its recurrent registers by subformulae of the input parse tree; this monitor
+indexes them by roots in the *progression closure*.  For each active residual
+root ``chi`` and local observation symbol, its reactivation module emits
+``split_conj(nf(prog(chi, obs)))``.  Since progression distributes over
+conjunction, unioning those outputs represents the exact successor residual.
+No hidden unit has to recognize the complete active root set.
 
-* **Recurrence — the shared global canonicalization.** The next residual state
-  (a multi-hot vector over the roots ``R_phi``, the same state representation as
-  ``flat.py``) is produced by the compiled state-identifying transition — this
-  is the irreducibly-global step. We reuse ``flat._FlatNet`` for it.
+Cross-root simplification is deliberately not part of recurrence.  A state
+such as ``{a, !a}`` denotes the correct (unsatisfiable) conjunction even when it
+is not rewritten to the literal ``FALSE``.  Whole reachable root sets are
+enumerated only at compile time to classify accepting sinks and traps.  A
+small, fixed state-label head provides exact early verdicts; it does not drive
+the recurrent update.  This preserves local, syntactically-owned transition
+modules while retaining exact online monitoring.
 
-The online verdict is then *derived* from those two, so the per-node evaluation
-genuinely drives the verdict rather than being dead weight:
-
-* **SATISFY** iff the next state is the accepting sink (``TRUE`` — an *empty*
-  root set) **and** the end-of-trace ``last`` bit holds;
-* **VIOLATE** iff the next state is the trap (``FALSE`` root active) **and** the
-  ``last`` bit fails.
-
-Both conditions are exactly the eager table's ``online`` codes (verified
-bit-for-bit against the eager / lazy / flat / symbolic monitors), so the
-structured monitor is verdict-for-verdict identical to the others while keeping
-the per-node organization Paper B needs.
-
-Framing (mirrors the original structured monitor). This is the
-**modular / local-learning contrast, not the throughput path**: CPU/GPU and
-single-vs-batched are *implementation* choices, not fundamentals. It is
-device-aware and batches across traces exactly like ``flat.py``, but its per-cell
-evaluation is a *sequential post-order sweep over closure nodes* (many tiny
-matmuls), so it issues more, smaller kernels per cell than the flat network's
-single state-identify pass — deliberately, to keep the per-node subnetworks
-addressable for adaptation. ``effective_device`` truthfully reports where the
-(torch) subnetworks compute.
+As in the old structured implementation, the modules are executed explicitly
+in Python rather than literally concatenated into one sparse recurrent tensor.
+They are a functionally equivalent factorization: every module is a CILP layer
+over a shared literal space, and their outputs are combined monotonically.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 import torch
@@ -68,16 +42,168 @@ import torch
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
 from src.monitors.progression.eager import (
-    ProgressionDFA,
-    build_progression_dfa,
+    MAX_GUARD_ATOMS,
+    _sink_trap_labels,
 )
-from src.monitors.progression.flat import _FlatNet
-from src.monitors.progression.formula import Formula, Op
+from src.monitors.progression.formula import (
+    Formula,
+    Op,
+    atoms_of,
+    from_node,
+    simplify,
+    split_conj,
+)
+from src.monitors.progression.progression import holds_empty, prog
 from src.monitors.rulerunner.cilp import _layer_matrices, _step_activation
+from src.monitors.rulerunner.parse_tree import parse
 from src.monitors.rulerunner.rules import Literal, Rule
 
 # A per-node CILP weight bundle: (W_ih, b_h, W_ho, b_o).
 _Layer = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+@dataclass(frozen=True)
+class FactorizedProgressionGraph:
+    """Compile-time graph supporting a root-local recurrent realization.
+
+    ``root_trans`` is the actual recurrence: one source root and its local
+    observation symbol map to a set of successor roots. ``states`` / ``trans``
+    enumerate reachable *sets* of roots only to compute exact online labels.
+    """
+
+    formula: Formula
+    atoms: tuple[str, ...]
+    roots: tuple[Formula, ...]
+    initial: frozenset[int]
+    relevant: tuple[tuple[str, ...], ...]
+    root_trans: tuple[dict[int, frozenset[int]], ...]
+    closure: tuple[Formula, ...]
+    states: tuple[frozenset[int], ...]
+    trans: tuple[dict[int, int], ...]
+    accepting: frozenset[int]
+    trap_states: frozenset[int]
+    accepting_sinks: frozenset[int]
+
+    def root_symbol(self, root: int, obs: Observation) -> int:
+        symbol = 0
+        for j, atom in enumerate(self.relevant[root]):
+            if obs.get(atom, False):
+                symbol |= 1 << j
+        return symbol
+
+
+def _postorder(f: Formula, seen: set[str], out: list[Formula]) -> None:
+    if f.key in seen:
+        return
+    seen.add(f.key)
+    for child in f.args:
+        _postorder(child, seen, out)
+    out.append(f)
+
+
+@lru_cache(maxsize=None)
+def build_factorized_progression_graph(
+    formula: str, max_guard_atoms: int = MAX_GUARD_ATOMS
+) -> FactorizedProgressionGraph:
+    """Build root-local transitions and the reachable aggregate label graph."""
+    phi = simplify(from_node(parse(formula)))
+    atoms = tuple(sorted(atoms_of(phi)))
+
+    roots: list[Formula] = []
+    root_index: dict[str, int] = {}
+
+    def intern_root(root: Formula) -> int:
+        index = root_index.get(root.key)
+        if index is None:
+            index = len(roots)
+            root_index[root.key] = index
+            roots.append(root)
+        return index
+
+    initial = frozenset(intern_root(root) for root in split_conj(phi))
+    relevant: list[tuple[str, ...]] = []
+    root_trans: list[dict[int, frozenset[int]]] = []
+
+    head = 0
+    while head < len(roots):
+        root = roots[head]
+        head += 1
+        rel = tuple(sorted(atoms_of(root)))
+        if len(rel) > max_guard_atoms:
+            raise ValueError(
+                f"Residual root {root.key!r} has {len(rel)} guard atoms; "
+                f"enumerating 2^{len(rel)} observations exceeds "
+                f"MAX_GUARD_ATOMS={max_guard_atoms}."
+            )
+        row: dict[int, frozenset[int]] = {}
+        for symbol in range(1 << len(rel)):
+            obs = {rel[j]: bool((symbol >> j) & 1) for j in range(len(rel))}
+            successor = simplify(prog(root, obs))
+            row[symbol] = frozenset(
+                intern_root(next_root) for next_root in split_conj(successor)
+            )
+        relevant.append(rel)
+        root_trans.append(row)
+
+    closure: list[Formula] = []
+    seen_closure: set[str] = set()
+    for root in roots:
+        _postorder(root, seen_closure, closure)
+
+    # Enumerate aggregate root sets only for exact sink/trap classification.
+    states: list[frozenset[int]] = [initial]
+    state_index: dict[frozenset[int], int] = {initial: 0}
+    trans: list[dict[int, int]] = []
+    head = 0
+    while head < len(states):
+        state = states[head]
+        head += 1
+        rel = tuple(sorted({atom for root in state for atom in relevant[root]}))
+        if len(rel) > max_guard_atoms:
+            raise ValueError(
+                f"Factorized residual state has {len(rel)} guard atoms; "
+                f"enumerating 2^{len(rel)} observations exceeds "
+                f"MAX_GUARD_ATOMS={max_guard_atoms}."
+            )
+        row: dict[int, int] = {}
+        for symbol in range(1 << len(rel)):
+            obs = {rel[j]: bool((symbol >> j) & 1) for j in range(len(rel))}
+            successor_roots: set[int] = set()
+            for root in state:
+                local_symbol = 0
+                for j, atom in enumerate(relevant[root]):
+                    if obs.get(atom, False):
+                        local_symbol |= 1 << j
+                successor_roots.update(root_trans[root][local_symbol])
+            successor = frozenset(successor_roots)
+            next_index = state_index.get(successor)
+            if next_index is None:
+                next_index = len(states)
+                state_index[successor] = next_index
+                states.append(successor)
+            row[symbol] = next_index
+        trans.append(row)
+
+    accepting = frozenset(
+        i
+        for i, state in enumerate(states)
+        if all(holds_empty(roots[root]) for root in state)
+    )
+    trap_states, accepting_sinks = _sink_trap_labels(trans, accepting)
+    return FactorizedProgressionGraph(
+        formula=phi,
+        atoms=atoms,
+        roots=tuple(roots),
+        initial=initial,
+        relevant=tuple(relevant),
+        root_trans=tuple(root_trans),
+        closure=tuple(closure),
+        states=tuple(states),
+        trans=tuple(trans),
+        accepting=accepting,
+        trap_states=trap_states,
+        accepting_sinks=accepting_sinks,
+    )
 
 
 def _last_rules(node: Formula) -> list[Rule]:
@@ -119,22 +245,17 @@ def _last_rules(node: Formula) -> list[Rule]:
 
 
 class _StructuredNet:
-    """Per-closure-node CILP evaluation + reused flat recurrence.
+    """Per-node evaluation plus per-root progression/reactivation modules."""
 
-    Evaluation: one subnetwork per closure node over a shared truth-literal
-    space (indexed by ``Formula.key``), swept bottom-up so each node sees its
-    children's fresh truth. Recurrence: delegated to ``flat._FlatNet`` (the
-    global canonicalization). The current residual state is a multi-hot vector
-    over the flat network's roots ``R_phi``, carried across cells.
-    """
-
-    def __init__(self, dfa: ProgressionDFA, device: torch.device) -> None:
-        self.dfa = dfa
+    def __init__(self, graph: FactorizedProgressionGraph, device: torch.device) -> None:
+        self.graph = graph
         self.device = device
-        self.flat = _FlatNet(dfa, device)  # shared recurrence + root indexing
+        self.roots = graph.roots
+        self.n_roots = len(self.roots)
+        self.root_index = {root.key: i for i, root in enumerate(self.roots)}
 
         # Truth-literal space over the closure nodes (children before parents).
-        self.closure = dfa.closure
+        self.closure = graph.closure
         self.truth_index: dict[str, int] = {
             n.key: i for i, n in enumerate(self.closure)
         }
@@ -142,95 +263,151 @@ class _StructuredNet:
 
         # Atom truth slots are clamped straight from the observation.
         self.atom_cols: dict[str, int] = {
-            n.key: self.truth_index[n.key]
-            for n in self.closure
-            if n.op is Op.ATOM
+            n.key: self.truth_index[n.key] for n in self.closure if n.op is Op.ATOM
         }
 
-        # One CILP subnetwork per non-atom node, in post-order. Each writes only
-        # its own truth slot; OR-accumulating into the shared vector touches only
-        # that slot. Placed on the device once, at build time.
-        self.eval_layers: list[_Layer] = []
+        # Same organization as the old structured runner: one addressable
+        # evaluation module per closure node, all over one shared truth space.
+        self.eval_net: dict[str, _Layer] = {}
         for node in self.closure:
             rules = _last_rules(node)
-            if node.op is Op.ATOM:
-                continue  # clamped, not computed
             layer = _layer_matrices(tuple(rules), self.truth_index, self.n_truth)
-            self.eval_layers.append(tuple(t.to(device) for t in layer))
+            self.eval_net[node.key] = tuple(t.to(device) for t in layer)
 
-        # Map each flat root register -> its truth slot (for the last bit), and
-        # locate the trap/sink markers in the flat root indexing.
-        inv = {i: k for k, i in self.flat.root_keys.items()}
+        # Root-local progression clauses. A module tests only whether its own
+        # source root is active and the atoms relevant to that root. It never
+        # inspects any other root register.
+        self.n_atoms = len(graph.atoms)
+        self.atom_index = {atom: i for i, atom in enumerate(graph.atoms)}
+        self.react_index = {
+            **{f"R[{root.key}]": i for i, root in enumerate(self.roots)},
+            **{f"obs:{atom}": self.n_roots + i for i, atom in enumerate(graph.atoms)},
+        }
+        react_width = self.n_roots + self.n_atoms
+        self.react_net: dict[str, _Layer] = {}
+        for source, root in enumerate(self.roots):
+            rules: list[Rule] = []
+            rel = graph.relevant[source]
+            for symbol, successors in graph.root_trans[source].items():
+                body = {Literal(f"R[{root.key}]")}
+                body.update(
+                    Literal(f"obs:{atom}", negated=not bool((symbol >> j) & 1))
+                    for j, atom in enumerate(rel)
+                )
+                for successor in successors:
+                    rules.append(
+                        Rule(
+                            frozenset(body),
+                            Literal(f"R[{self.roots[successor].key}]"),
+                        )
+                    )
+            layer = _layer_matrices(tuple(rules), self.react_index, react_width)
+            self.react_net[root.key] = tuple(t.to(device) for t in layer)
+
+        # Map each residual-root register to its truth slot for the boundary bit.
         self.root_truth_idx = torch.tensor(
-            [self.truth_index[inv[r]] for r in range(self.flat.n_roots)],
+            [self.truth_index[root.key] for root in self.roots],
             dtype=torch.long,
             device=device,
         )
-        self.false_root = self.flat.root_keys.get("false")  # trap root, or None
 
-        self.n_atoms = self.flat.n_atoms
-        self.atom_index = self.flat.atom_index  # atom -> flat recurrence column
-        self.initial_state = self.flat.initial_state
+        initial = torch.full((self.n_roots,), -1.0, device=device)
+        for root in graph.initial:
+            initial[root] = 1.0
+        self.initial_state = initial
+
+        # Fixed global label head. It recognizes reachable aggregate root sets
+        # after the local recurrence, solely to expose exact sink/trap verdicts.
+        n_states = len(graph.states)
+        W_label_ih = torch.empty((n_states, self.n_roots), device=device)
+        for i, state in enumerate(graph.states):
+            for root in range(self.n_roots):
+                W_label_ih[i, root] = 1.0 if root in state else -1.0
+        b_label_h = torch.full((n_states,), -(self.n_roots - 0.5), device=device)
+        W_label_ho = torch.zeros((2, n_states), device=device)
+        for state in graph.accepting_sinks:
+            W_label_ho[0, state] = 1.0
+        for state in graph.trap_states:
+            W_label_ho[1, state] = 1.0
+        b_label_o = torch.tensor(
+            [
+                max(0, len(graph.accepting_sinks)) - 1.0,
+                max(0, len(graph.trap_states)) - 1.0,
+            ],
+            device=device,
+        )
+        if not graph.accepting_sinks:
+            b_label_o[0] = -1.0
+        if not graph.trap_states:
+            b_label_o[1] = -1.0
+        self.label_layer: _Layer = (
+            W_label_ih,
+            b_label_h,
+            W_label_ho,
+            b_label_o,
+        )
 
     def _eval(self, truth0: torch.Tensor) -> torch.Tensor:
         """Bottom-up per-node sweep. ``truth0`` is the truth vector with atom
         slots already clamped (``(B, n_truth)`` in {+1,-1}, non-atoms -1);
         returns the completed truth vector (all closure nodes resolved)."""
         x = truth0
-        for W_ih, b_h, W_ho, b_o in self.eval_layers:
+        for node in self.closure:
+            W_ih, b_h, W_ho, b_o = self.eval_net[node.key]
             h = _step_activation(x @ W_ih.t() + b_h)
             y = _step_activation(h @ W_ho.t() + b_o)
             x = torch.maximum(x, y)
         return x
 
+    @staticmethod
+    def _forward(layer: _Layer, x: torch.Tensor) -> torch.Tensor:
+        W_ih, b_h, W_ho, b_o = layer
+        hidden = _step_activation(x @ W_ih.t() + b_h)
+        return _step_activation(hidden @ W_ho.t() + b_o)
+
     def advance(
-        self, state: torch.Tensor, truth0: torch.Tensor, flat_atoms: torch.Tensor
+        self, state: torch.Tensor, truth0: torch.Tensor, atoms: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """One batched cell. ``state`` (B, n_roots), ``truth0`` (B, n_truth)
-        (closure-atom slots clamped, rest -1), ``flat_atoms`` (B, n_atoms) the
-        recurrence's atom encoding — all in {+1,-1}. Returns
+        (closure-atom slots clamped, rest -1), and ``atoms`` (B, n_atoms) the
+        recurrence guard encoding — all in {+1,-1}. Returns
         (next_state, sat, vio, last), the last three as (B,) bool tensors.
 
-        The recurrence (next_state) comes from the shared flat transition; the
-        ``last`` bit and online verdicts are derived from the per-node eval
-        sweep and the next state's absorbing type."""
-        # Recurrence: reuse the flat state-identify transition (global step).
-        # We take only the next state and re-derive the verdicts structurally.
-        nxt, _sat_f, _vio_f, _last_f = self.flat.advance(state, flat_atoms)
-
-        # Evaluation: per-node last-truth of every closure node.
+        Evaluation and recurrence are both factorized into syntactically-owned
+        modules. Only the final sink/trap readout examines the whole root set."""
+        # Evaluation: one bottom-up node sweep, as in the old structured runner.
         truth = self._eval(truth0)
-        # last bit = AND over active roots r of truth[r]; inactive roots impose
-        # nothing (an active root must be true, matching last(AND of roots)).
         root_truth = truth.index_select(1, self.root_truth_idx)  # (B, n_roots)
         active = state > 0
         last = ((~active) | (root_truth > 0)).all(dim=1)
 
-        # Online verdict from the next state's absorbing type:
-        #   next state empty  <=> TRUE  sink  -> SATISFY (with last)
-        #   FALSE root active  <=> FALSE trap  -> VIOLATE (with not last)
-        next_empty = (nxt <= 0).all(dim=1)
-        if self.false_root is None:
-            next_false = torch.zeros_like(next_empty)
-        else:
-            next_false = nxt[:, self.false_root] > 0
-        sat = next_empty & last
-        vio = next_false & ~last
+        # Reactivation: each active root independently emits its progressed
+        # successor roots; OR the module outputs into the next multi-hot state.
+        react_input = torch.cat([state, atoms], dim=1)
+        nxt = torch.full_like(state, -1.0)
+        for root in self.roots:
+            output = self._forward(self.react_net[root.key], react_input)
+            nxt = torch.maximum(nxt, output[:, : self.n_roots])
+
+        labels = self._forward(self.label_layer, nxt)
+        sat = labels[:, 0] > 0
+        vio = labels[:, 1] > 0
         return nxt, sat, vio, last
 
 
 class ProgressionRuleRunnerStructuredMonitor(Monitor):
     """Structured (per-closure-node) progression-based RuleRunner.
 
-    The modular counterpart to ``ProgressionRuleRunnerMonitor`` (flat): the
-    per-cell residual truth is evaluated by one CILP subnetwork per closure
-    node, swept bottom-up, while the residual-state recurrence reuses the flat
-    transition (see the module docstring for why the recurrence stays global).
-    Verdict-for-verdict identical to the flat / eager / lazy / symbolic monitors.
+    The modular counterpart to ``ProgressionRuleRunnerMonitor`` (flat): both
+    evaluation and residual reactivation are split into addressable CILP
+    modules, following the same execution pattern as the old structured
+    RuleRunner while replacing its input-subformula state with residual roots.
+    Exact online labels come from a fixed aggregate-state readout.
 
-    Kept as the **local-learning** data point (Paper B): each ``eval_layers``
-    subnetwork is an addressable, syntactically-local set of weights. CPU/CUDA
-    and single/batched are implementation choices, not fundamentals.
+    Kept as the **local-learning** data point (Paper B): each ``eval_net`` or
+    ``react_net`` subnetwork is an addressable, syntactically-local set of
+    weights. CPU/CUDA and single/batched are implementation choices, not
+    fundamentals.
     """
 
     def __init__(self, net: _StructuredNet) -> None:
@@ -243,8 +420,8 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
     def compile(
         cls, formula: str, device: str | torch.device = "cpu"
     ) -> "ProgressionRuleRunnerStructuredMonitor":
-        dfa = build_progression_dfa(formula)
-        return cls(_StructuredNet(dfa, torch.device(device)))
+        graph = build_factorized_progression_graph(formula)
+        return cls(_StructuredNet(graph, torch.device(device)))
 
     @property
     def effective_device(self) -> str:
@@ -265,7 +442,7 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
         return row
 
     def _atom_row(self, obs: Observation) -> torch.Tensor:
-        """(1, n_atoms) recurrence atom vector, in the flat network's ordering."""
+        """(1, n_atoms) observation vector used by recurrence guards."""
         row = torch.full((1, self._net.n_atoms), -1.0, device=self._net.device)
         for a, j in self._net.atom_index.items():
             if obs.get(a, False):
@@ -276,10 +453,8 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
         if self._decided is not None:
             return self._decided
         truth0 = self._truth_row(obs)
-        flat_atoms = self._atom_row(obs)
-        nxt, sat, vio, last = self._net.advance(
-            self._state.unsqueeze(0), truth0, flat_atoms
-        )
+        atoms = self._atom_row(obs)
+        nxt, sat, vio, last = self._net.advance(self._state.unsqueeze(0), truth0, atoms)
         self._state = nxt.squeeze(0)
         self._last_v = bool(last.item())
         if bool(sat.item()):
@@ -294,9 +469,7 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
         if self._decided is not None:
             return self._decided
         if self._last_v is None:
-            from src.monitors.progression.progression import holds_empty
-
-            empty = holds_empty(self._net.dfa.formula)
+            empty = holds_empty(self._net.graph.formula)
             return Verdict.SATISFY if empty else Verdict.VIOLATE
         return Verdict.SATISFY if self._last_v else Verdict.VIOLATE
 
@@ -310,7 +483,7 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
         """Vectorised cross-trace monitoring on ``self._net.device``.
 
         Each cell is one bottom-up sweep of batched per-node matmuls plus the
-        shared flat recurrence, over the whole batch; identical verdicts to
+        root-local recurrence modules, over the whole batch; identical verdicts to
         ``[run(t) ...]``. All traces advance uniformly (decided traces are not
         frozen); per-trace early-termination / end-of-trace are replayed
         afterwards — the first decided cell within a trace's length wins, else
@@ -327,9 +500,7 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
         lengths = [len(t) for t in trace_list]
         maxL = max(lengths)
         if maxL == 0:
-            from src.monitors.progression.progression import holds_empty
-
-            v = Verdict.SATISFY if holds_empty(net.dfa.formula) else Verdict.VIOLATE
+            v = Verdict.SATISFY if holds_empty(net.graph.formula) else Verdict.VIOLATE
             return [v] * B
 
         # Encode observations once, into both the closure-truth space (atom
@@ -370,6 +541,13 @@ class ProgressionRuleRunnerStructuredMonitor(Monitor):
 
         results: list[Verdict] = []
         for b in range(B):
+            if lengths[b] == 0:
+                results.append(
+                    Verdict.SATISFY
+                    if holds_empty(net.graph.formula)
+                    else Verdict.VIOLATE
+                )
+                continue
             if bool(has_dec[b]):
                 results.append(
                     Verdict.SATISFY if int(first_v[b]) == 1 else Verdict.VIOLATE

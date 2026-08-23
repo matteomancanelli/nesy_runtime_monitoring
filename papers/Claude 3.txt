@@ -1,0 +1,80 @@
+Hai detto: 
+Now, im running the experiments. Does it make sense that symbolic > RuleRunner > DeepDFA in experiments 1 and 2? Is it expected that DeepDFA is way worse in exp2 than RuleRunner?
+
+Claude ha risposto:
+Diagnosing implementation artifacts versus fundamental computational properties
+Diagnosing implementation artifacts versus fundamental computational properties
+Mostly yes, but the two experiments are telling you different things, and only one of the orderings is a real signal.
+
+Symbolic fastest in both: fully expected, and don't let it worry you. It's a dict/array lookup plus a set-membership test per cell, in pure Python with zero framework overhead. Both neural paradigms pay PyTorch dispatch (and, on the RTX 3050, kernel-launch and host↔device sync) on every cell. At batch size 1 that fixed overhead swamps the actual arithmetic, so the symbolic monitor wins the single-trace and per-step axes by construction. This is consistent with your thesis, not a threat to it — your own theory table predicts DeepDFA's advantage only materialises under batching (Exp 3). Symbolic being the single-trace champion is the expected shape.
+
+Exp 1, RuleRunner faster than DeepDFA: this is overhead noise, not a finding. The whole point of Exp 1 is flatness vs trace length, not the ranking between paradigms. The constant offsets between the three curves are fixed per-cell overhead: lowest for symbolic (Python), higher for the two torch monitors. Which of RuleRunner/DeepDFA sits higher at batch=1 is sensitive to things that have nothing to do with the computational model — how many kernel launches per cell, whether you force a GPU→CPU sync each cell to read the verdict, whether the symbol index σ is computed in Python each step, and crucially which device each monitor actually runs on at batch=1. Running a tiny single-trace matmul on the GPU is a pessimisation; CPU is faster there. I'd check: does DeepDFA's step() honour the device the same way batch_run does, and is it on CUDA while RuleRunner's per-cell path is effectively on CPU? Try forcing dense DeepDFA to CPU for Exp 1 and re-measure — it may well drop below RuleRunner, because dense is one op/cell against RuleRunner's depth+1 passes. Either way, don't report this ordering as meaningful.
+
+Exp 2, DeepDFA "way worse": expected given your current implementation, but it's an artifact you flagged yourself, and reporting it naively would misrepresent the paper. Your CLAUDE.md says it outright: factored step rebuilds soft_matrix from Python closures every cell, ~1.8 ms/cell at n=32 vs ~5–12 µs/cell dense — that's 100–360× slower, and it grows with n because more atoms mean more closure evaluation. So factored DeepDFA will be the slowest by a wide margin and will climb with n. But that curve is measuring unvectorised Python, not DeepDFA's computational model. The model says DeepDFA pays one matmul per cell independent of formula depth — flat — and its genuine weakness is the alphabet blowup (2^n memory, forcing the factored fallback in the first place), not per-cell compute.
+
+That distinction matters because Exp 2 is your within-step-parallelism figure, and the intended story is: symbolic flat, RuleRunner linear in depth (its real signature — the depth+1 convergence loop, and for the ◇⋁(a₀∧aᵢ) family the left-folded disjunction makes depth grow ~linearly in n, so this part is correct and clean), DeepDFA flat-in-depth. If the figure instead shows DeepDFA as a steep Python-bound climb, a reviewer reads "the differentiable paradigm is hopelessly slow" — the opposite of your thesis.
+
+Three ways to handle it, best first:
+
+Vectorise the factored soft_matrix as your own note prescribes (precompute per-edge require-true/require-false integer masks, tensor-product over atoms). This makes per-cell cost reasonable and lets Exp 2 show the intended flat-ish DeepDFA curve. Right fix if the ~month allows.
+Run Exp 2 with dense DeepDFA capped at small n (where it's fast and flat), and let it visibly drop out at the n where the 2^n tensor OOMs — then the figure shows the alphabet blowup as the real finding, with factored noted as the fallback. Your CLAUDE.md already suggests adding this dense-capped variant. This turns the limitation into the point of the experiment.
+Report factored numbers but explicitly frame them as Python-overhead-bound, not asymptotic. Weakest — invites skepticism.
+I'd do (2) as the framing and (1) if you have time, so the figure separates compute (flat) from memory (the 2^n wall) cleanly.
+
+The one ordering you genuinely need to come out "right" is Exp 3: if batched DeepDFA does not pull ahead there, that's the real problem, because that's the figure carrying the thesis. Exp 1 and 2 orderings are fine — partly expected, partly artifact. Have you run Exp 3 yet?
+
+Hai detto:
+i'm new to this experiment. can you explain the difference between CPU and GPU computation? What happens when you use cuda? And the parallelization is implicit/automatic or you have to manually deal with it?
+
+Claude ha risposto:
+Synthesized CPU/GPU architecture differences and parallelization concepts for educational context
+Synthesized CPU/GPU architecture differences and parallelization concepts for educational context
+Good question to nail down before you interpret timing numbers, because the whole CPU/GPU split is what's generating the orderings you're seeing.
+
+The architectural difference. A CPU has a handful of cores (say 8–16), each one very fast, with large caches, branch prediction, and out-of-order execution. It's latency-optimised: built to finish a single chain of dependent operations as quickly as possible, and it handles irregular, branchy, sequential code well. A GPU has thousands of tiny cores that are individually slow and dumb. It's throughput-optimised: built to do the same operation on enormous amounts of data at once. The mental model I'd hold onto: the CPU is a sports car and the GPU is a freight train. For one passenger, take the car. For ten thousand passengers going the same way, the train wins easily despite taking longer to get moving.
+
+The GPU's execution model is SIMT — single instruction, multiple threads. Threads run in lockstep groups (warps of 32 on NVIDIA); all 32 execute the same instruction on different data each clock. This is why GPUs love big uniform array math and dislike branchy code: if threads in a warp take different if branches, the hardware has to run both branches and mask, so divergence is expensive. A DFA transition matmul is exactly the uniform workload it wants; a Python loop with per-cell verdict checks is exactly what it doesn't.
+
+What actually happens when you use cuda. Two physically separate memories exist: host RAM (system memory, where CPU tensors live) and device VRAM (on the GPU board, where cuda tensors live). When you call .cuda() or device="cuda", the tensor's bytes are copied across the PCIe bus into VRAM. From then on, each operation on that tensor is launched as a kernel — a little program shipped to the GPU. Three taxes come with this:
+
+Transfer cost — moving data host↔device over PCIe is slow relative to compute. You pay it on the way in and again whenever you bring results back.
+Kernel-launch overhead — every operation costs a few microseconds just to tell the GPU "do this now," independent of how much work it is. A matmul on a 4×4 matrix and on a 4000×4000 matrix have nearly the same launch cost; the small one is almost all overhead.
+Synchronisation stalls — GPU execution is asynchronous. When you launch kernels, the CPU queues them and moves on without waiting. But the moment you read a value back — .item(), .cpu(), an if on a GPU scalar, a print — the CPU must block until the GPU has actually finished. Do that every cell and you serialise everything, destroying the throughput advantage.
+This is the concrete reason I suspected your batch=1 DeepDFA should run on CPU. At batch size 1, each cell is a tiny matmul using a sliver of the thousands of cores, and if you read the verdict each step you also force a sync. You pay all three taxes for almost no parallel work, so the CPU's plain fast arithmetic wins. The GPU only pays off once the per-op work is large enough to amortise the fixed costs.
+
+Implicit or manual? Both — and the split is the key insight. The low-level parallelism is automatic. When you call torch.matmul or bmm on cuda tensors, PyTorch dispatches to NVIDIA's cuBLAS, which spreads the arithmetic across the cores for you. You never write thread code or manage cores. That part is genuinely implicit.
+
+What is not automatic is creating enough parallel work to fill the machine. The GPU can't parallelise something you've expressed as ten thousand tiny sequential operations — it can only parallelise within each operation. So your job is to restructure the computation so that one big operation replaces many small ones. That restructuring is manual and it's exactly what your batch_run does: instead of looping run(trace) over 1000 traces (1000 sequential sets of tiny ops), it stacks all 1000 traces as rows and does one bmm per cell across the whole batch. Now the per-cell operation is large, the cores are busy, and the launch/transfer overhead is divided across 1000 traces. That's the regime where the freight train beats the sports car — and it's why Exp 3 (batch-size axis) is the figure that's supposed to show DeepDFA pulling ahead, while Exp 1 (batch=1) is not.
+
+Two corollaries that bear directly on your numbers. First, the manual side also means keep data on-device and don't sync per cell — encode the whole batch to cuda once, run all cells, read verdicts back at the end, not each step. A per-cell .item() will make even a well-batched DeepDFA look terrible. Second, this is exactly why RuleRunner stays bottlenecked even when batched: its depth+1 convergence passes per cell are dependent — each pass needs the previous one's result — so you can't collapse them into one kernel. You get cross-trace batching (the rows) but you still launch depth+1 sequential kernels per cell, each with its own launch and dependency. DeepDFA launches one. That surviving within-step sequential dependency, not the trace count, is the real architectural difference your Exp 2 and Exp 3 are trying to expose.
+
+So when you read your CSVs: low batch favours CPU and favours symbolic; the GPU's advantage is something you engineer into existence by batching and by not syncing, and it should appear as the batch axis grows. Want me to sketch what the three Exp 3 curves should look like as batch size scales (where each crosses over), so you have an expected shape to check your real numbers against?
+
+Hai detto: 
+1781015270002_image.png
+These are results for exp 3. Only partially good I guess
+
+Claude ha risposto:
+You're reading it right — partially good. There's a genuine, defensible result in here, but the headline ordering is the opposite of what your thesis predicts, and you need to understand why before you frame it.
+
+What's actually happening. Look at the left panel, which is the one that matters for absolute cost. At every batch size, DeepDFA (blue) is faster per trace than RuleRunner (orange) — at batch=1 it's ~110 ms vs ~1180 ms, and they only converge around batch 32–64. RuleRunner isn't winning; it's catching up to DeepDFA from far behind. The right panel showing RuleRunner with the spectacular near-linear speedup is measuring something almost meaningless: speedup is relative to each monitor's own batch=1, and RuleRunner's batch=1 is catastrophically slow (the 1180 ms). When your baseline is terrible, your "speedup" looks heroic. That's the classic speedup-plot trap — a 10× speedup on a slow monitor can still be slower in absolute terms than a 2× speedup on a fast one. Always read the speedup panel with the absolute panel next to it.
+
+So the real finding is: DeepDFA is the fastest paradigm in absolute terms across the whole range, and it's essentially flat — it barely needs batching because it was already cheap per cell. RuleRunner has huge headroom because it started so slow, and batching reclaims that headroom. That's actually consistent with your computational story (DeepDFA = one matmul/cell; RuleRunner = depth+1 dependent passes), just expressed as "DeepDFA has nothing to gain" rather than "DeepDFA gains the most."
+
+The problem. Your thesis figure was supposed to show DeepDFA's throughput scaling pulling away as batch grows — the freight train overtaking. Instead DeepDFA's speedup curve is flat (~2×) and below both the ideal line and RuleRunner. A reviewer glancing only at the right panel concludes "DeepDFA doesn't benefit from batching" — the opposite of the point. The flatness is the symptom. Two likely causes, and they're fixable:
+
+DeepDFA is saturating the tiny GPU almost immediately, or isn't really on the GPU. On a 4 GB / 70W / few-SM 3050 Laptop, ijcnn_n8 (256 symbols, small |Q|) is a tiny matmul; the card fills at batch 4–8 and then per-trace time stops dropping. That flat blue curve from batch 8 onward is consistent with "already saturated" — or with DeepDFA spending all its time in per-cell Python/launch/sync overhead rather than the matmul, so batching the matmul doesn't move the wall-clock. Given our WSL/overhead discussion, I'd check this first.
+A per-cell sync or Python loop is dominating both neural monitors at low batch. If you .item() the verdict each cell, you serialise the GPU and the matmul size barely matters — which would also explain why DeepDFA is flat and why RuleRunner's absolute numbers are so extreme at batch=1.
+Diagnostics before you re-run anything:
+
+Confirm where DeepDFA actually executes: next(monitor.parameters()).device (or print the transition tensor's .device) at batch=1 vs 1024. If batch=1 silently runs on CPU and large batches on CUDA, the curves aren't comparable.
+Check the per-cell sync: is the verdict read back to host every cell, or once at end-of-trace? Our earlier point — encode batch to device once, run all cells, read verdicts at the end.
+Re-run with torch.cuda.synchronize() only around the whole timed region, not per cell. Async kernels otherwise make the timing meaningless.
+Try DeepDFA dense on CPU for this experiment too, as a fourth curve. If CPU-DeepDFA tracks GPU-DeepDFA closely, you've proven the workload is too small to benefit from the GPU on this card — which is a legitimate, reportable finding, not a failure.
+How to frame it regardless of what the diagnostics show. You have two honest stories available:
+
+If the workload is genuinely too small for this GPU: report it plainly. "On entry-level hardware with a small automaton, DeepDFA is already near-optimal per cell and batching yields little additional gain; RuleRunner benefits most from batching precisely because its within-step sequential passes make its unbatched cost high. DeepDFA remains fastest in absolute terms throughout." That's defensible and matches the 4 GB/70W reality you already disclose.
+If it's a sync/device artifact: fix it and the blue throughput curve should lift, giving you the intended figure.
+Either way, lead with the left panel, not the right. The absolute time-per-trace plot tells the true story (DeepDFA cheapest everywhere, RuleRunner converging down to it); the speedup panel is genuinely misleading as the headline and I'd either demote it to secondary or annotate it explicitly with the batch=1 baselines so no one misreads RuleRunner's curve as "fastest."
+
+One more thing worth testing if you want the throughput figure to actually showcase DeepDFA: this experiment uses ijcnn_n8, which is small. The GPU advantage grows with per-cell work (larger |Q|, more atoms). A formula with a bigger DFA might give DeepDFA the room to pull ahead on the speedup axis that ijcnn_n8 doesn't. But fix the device/sync question first — no point re-running on a bigger formula if a per-cell .item() is capping everything.

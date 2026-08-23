@@ -11,9 +11,9 @@ determinized automaton). This module builds it and exposes:
   tables the batched network (Part 2b) and the fast eager monitor consume;
 * ``build_progression_dfa`` — the BFS that constructs it;
 * ``ProgressionRuleRunnerEagerMonitor`` — a fast, table-driven *reference*
-  monitor (verdict-for-verdict identical to ``ProgressionEngine`` and to
-  ``SymbolicDFAMonitor``), used as a correctness oracle for the flat neural
-  monitor; it is not a headline experimental paradigm.
+  monitor (same final verdict as ``ProgressionEngine``, with exact early
+  verdicts matching ``SymbolicDFAMonitor``), used as a correctness oracle for
+  the flat neural monitor; it is not a headline experimental paradigm.
 
 The neural monitor the experiments run is ``ProgressionRuleRunnerMonitor``
 (the flat CILP network, ``flat.py``), which is *built from* this construction.
@@ -27,10 +27,11 @@ dense). ``MAX_GUARD_ATOMS`` caps this so an infeasible build fails loudly
 rather than hanging.
 
 **Cost of correctness.** ``ProgressionDFA`` records ``n_states`` (reachable
-residual states, ~ the minimal DFA size), ``n_roots`` (distinct ``∧``-conjunct
-obligations), and ``n_closure`` (their subformula support) — the numbers that
-quantify how far the residual closure grows beyond the original ``|sub(phi)|``,
-i.e. the price the corrected monitor pays for handling nested temporal.
+syntactically normalized residual states), ``n_roots`` (distinct
+``∧``-conjunct obligations), and ``n_closure`` (their subformula support) — the
+numbers that quantify how far the raw residual closure grows beyond the
+original ``|sub(phi)|``.  ``n_states`` may substantially exceed the minimal DFA
+size because normalization is not a quotient by full LTLf language equivalence.
 """
 
 from __future__ import annotations
@@ -41,8 +42,6 @@ from functools import lru_cache
 from src.formula.compiler import Observation
 from src.monitors.base import Monitor, Verdict
 from src.monitors.progression.formula import (
-    FALSE,
-    TRUE,
     Formula,
     atoms_of,
     from_node,
@@ -50,7 +49,7 @@ from src.monitors.progression.formula import (
     split_conj,
     subformulae,
 )
-from src.monitors.progression.progression import holds_empty, last, prog
+from src.monitors.progression.progression import holds_empty, prog
 from src.monitors.rulerunner.parse_tree import parse
 
 MAX_GUARD_ATOMS = 20  # 2^20 ~ 1e6 guard rows per state; refuse beyond this.
@@ -61,22 +60,26 @@ _UNDECIDED, _SATISFY, _VIOLATE = 0, 1, 2
 
 @dataclass(frozen=True)
 class ProgressionDFA:
-    formula: Formula                       # simplify(phi); the initial residual
-    atoms: tuple[str, ...]                 # all atoms of phi (global order)
-    states: tuple[Formula, ...]            # index -> canonical residual state
+    formula: Formula  # simplify(phi); the initial residual
+    atoms: tuple[str, ...]  # all atoms of phi (global order)
+    states: tuple[Formula, ...]  # index -> syntactically normalized residual
     initial: int
     relevant: tuple[tuple[str, ...], ...]  # state -> guard atoms (local order)
-    trans: tuple[dict[int, int], ...]      # state -> {local symbol -> next state}
-    online: tuple[dict[int, int], ...]     # state -> {local symbol -> verdict code}
-    last_accept: tuple[dict[int, bool], ...]  # state -> {local symbol -> last()}
+    trans: tuple[dict[int, int], ...]  # state -> {local symbol -> next state}
+    online: tuple[dict[int, int], ...]  # state -> {local symbol -> verdict code}
+    accepting: frozenset[int]  # residuals that accept the empty suffix
+    trap_states: frozenset[int]  # no accepting residual is reachable
+    accepting_sinks: frozenset[int]  # every reachable residual is accepting
+    # Acceptance of the total successor residual on the empty suffix.
+    last_accept: tuple[dict[int, bool], ...]
     # --- residual closure C_phi / roots R_phi (structured encoding, Part 3) ---
-    roots: tuple[Formula, ...]             # distinct top-level conjuncts (R_phi)
-    closure: tuple[Formula, ...]           # C_phi in bottom-up (post) order
+    roots: tuple[Formula, ...]  # distinct top-level conjuncts (R_phi)
+    closure: tuple[Formula, ...]  # C_phi in bottom-up (post) order
     # --- cost-of-correctness metrics ---
     n_states: int
     n_roots: int
     n_closure: int
-    n_input_sub: int                       # |sub(phi)| of the ORIGINAL formula
+    n_input_sub: int  # |sub(phi)| of the ORIGINAL formula
 
     def symbol(self, state: int, obs: Observation) -> int:
         s = 0
@@ -99,6 +102,41 @@ def _postorder(f: Formula, seen: dict[str, Formula], out: list[Formula]) -> None
     out.append(f)
 
 
+def _sink_trap_labels(
+    trans: list[dict[int, int]], accepting: frozenset[int]
+) -> tuple[frozenset[int], frozenset[int]]:
+    """Classify the residual graph by right-language permanence.
+
+    A trap cannot reach an accepting state.  An accepting sink cannot reach a
+    rejecting state.  Reverse reachability computes both sets in O(|Q|+|E|)
+    over the distinct successor graph (guard symbols leading to the same state
+    do not add work).
+    """
+    n_states = len(trans)
+    predecessors: list[set[int]] = [set() for _ in range(n_states)]
+    for src, row in enumerate(trans):
+        for dst in set(row.values()):
+            predecessors[dst].add(src)
+
+    def backward_reachable(seeds: set[int]) -> set[int]:
+        reached = set(seeds)
+        stack = list(seeds)
+        while stack:
+            state = stack.pop()
+            for pred in predecessors[state]:
+                if pred not in reached:
+                    reached.add(pred)
+                    stack.append(pred)
+        return reached
+
+    all_states = set(range(n_states))
+    can_reach_accepting = backward_reachable(set(accepting))
+    can_reach_rejecting = backward_reachable(all_states - set(accepting))
+    traps = all_states - can_reach_accepting
+    sinks = all_states - can_reach_rejecting
+    return frozenset(traps), frozenset(sinks)
+
+
 @lru_cache(maxsize=None)
 def build_progression_dfa(
     formula: str, max_guard_atoms: int = MAX_GUARD_ATOMS
@@ -118,7 +156,6 @@ def build_progression_dfa(
     index: dict[str, int] = {phi.key: 0}
     relevant: list[tuple[str, ...]] = []
     trans: list[dict[int, int]] = []
-    online: list[dict[int, int]] = []
     last_accept: list[dict[int, bool]] = []
 
     head = 0
@@ -134,18 +171,11 @@ def build_progression_dfa(
                 f"DeepDFA dense) for {formula!r}."
             )
         tr: dict[int, int] = {}
-        on: dict[int, int] = {}
         la: dict[int, bool] = {}
         for sym in range(1 << len(rel)):
             obs = {rel[j]: bool((sym >> j) & 1) for j in range(len(rel))}
             nxt = simplify(prog(rho, obs))
-            v_now = last(rho, obs)
-            if nxt.op is TRUE.op and v_now:
-                on[sym] = _SATISFY
-            elif nxt.op is FALSE.op and not v_now:
-                on[sym] = _VIOLATE
-            else:
-                on[sym] = _UNDECIDED
+            v_now = holds_empty(nxt)
             la[sym] = v_now
             key = nxt.key
             j = index.get(key)
@@ -156,8 +186,26 @@ def build_progression_dfa(
             tr[sym] = j
         relevant.append(rel)
         trans.append(tr)
-        online.append(on)
         last_accept.append(la)
+
+    # Exact three-valued online labels come from the completed transition
+    # graph, not from whether Boolean normalization happened to turn a
+    # residual into the literal constants TRUE/FALSE.
+    accepting = frozenset(i for i, state in enumerate(states) if holds_empty(state))
+    trap_states, accepting_sinks = _sink_trap_labels(trans, accepting)
+    online = tuple(
+        {
+            sym: (
+                _VIOLATE
+                if dst in trap_states
+                else _SATISFY
+                if dst in accepting_sinks
+                else _UNDECIDED
+            )
+            for sym, dst in row.items()
+        }
+        for row in trans
+    )
 
     # --- roots R_phi + subformula closure C_phi over all states ---
     # Roots are the distinct top-level conjuncts (first-seen order); the closure
@@ -180,7 +228,10 @@ def build_progression_dfa(
         initial=0,
         relevant=tuple(relevant),
         trans=tuple(trans),
-        online=tuple(online),
+        online=online,
+        accepting=accepting,
+        trap_states=trap_states,
+        accepting_sinks=accepting_sinks,
         last_accept=tuple(last_accept),
         roots=tuple(roots.values()),
         closure=tuple(closure_order),
@@ -194,9 +245,9 @@ def build_progression_dfa(
 class ProgressionRuleRunnerEagerMonitor(Monitor):
     """Table-driven eager realization of the progression-based RuleRunner.
 
-    Verdict-for-verdict identical to ``ProgressionEngine`` (lazy) and to
-    ``SymbolicDFAMonitor``: ``step`` is an O(1) table lookup, so early
-    termination is exact (no lazy lag). Pure Python / CPU (no tensors →
+    It has the same final verdict as ``ProgressionEngine`` (lazy), and exact
+    online verdicts matching ``SymbolicDFAMonitor``: ``step`` is an O(1) table
+    lookup, so there is no lazy early-verdict lag. Pure Python / CPU (no tensors →
     honestly ``effective_device`` "cpu"). Used as a test oracle for the flat
     neural monitor, not as an experimental paradigm."""
 

@@ -1,11 +1,13 @@
 # Repairing RuleRunner via Formula Progression — Analysis & Paper Positioning
 
-*A self-contained hand-off note. Read this together with
+*A design-analysis note. Read this together with
 [`docs/nested_temporal_limitation.md`](nested_temporal_limitation.md), which
 documents the bug this note analyzes. This note answers: **can RuleRunner be made
 correct for all of LTLf, what does the fix cost, and is the fixed thing distinct
-enough from the DFA to be worth a paper?** It is analysis only — no code was
-written or run to produce it.*
+enough from the DFA to be worth a paper?** It began as analysis, but its
+constructions have since been implemented and tested.  The authoritative
+implementation status is [`rulerunner_status.md`](rulerunner_status.md); this
+file remains the longer design argument.*
 
 ---
 
@@ -25,29 +27,26 @@ written or run to produce it.*
     `2^(2^|φ|)` (doubly-exponential) prefix classes (LTLf→DFA is 2EXP). So **no**
     construction that keeps the one-slot-per-subformula representation can be
     complete on all of LTLf.
-- **A bounded partial fix exists for the `X`/`W` slice** (§2.5): a static
-  shift-register of slots (depth = compile-time X-nesting depth) instead of one
-  shared `[X b]` slot. Repairs the worst empirical offenders (`X(Xa)`, `G(Xa)`,
-  `F(a∧Xb)`, …) **while keeping RuleRunner's architecture** (fixed-size, static).
-  It does **not** cover `F`/`G`/`U`/`R` temporal-under-temporal nesting, whose
-  in-flight instance count is unbounded — that needs progression. The fix is also
-  the clean empirical separator of L1 from L2.
+- **A bounded-event partial fix exists** (§2.5): maximal finite-horizon
+  subformulas are evaluated by a fixed observation pipeline and supplied as
+  derived atoms to an exactly-certified old-RuleRunner skeleton.  This repairs
+  `G(Xa)`, `F(a∧Xb)`, and related bounded-future aliases while remaining static.
+  `X(Xa)` itself is already correct after the paper-faithful Next repairs.
 - **The complete fix for L1/L2 is formula progression**, and progression's reachable
   state set (quotiented by equivalence) **is** a DFA. So "repair RuleRunner to
   completeness" provably **converges to the automaton**. There is no
   complete-and-strictly-more-succinct stopping point, because the minimal DFA is
   the Myhill–Nerode floor.
-- **CILP is orthogonal to all of this.** CILP encodes a *fixed* rule set; its
-  static-neuron requirement *forces* you to materialize the reachable state set
-  = build the DFA. So "RuleRunner-eval + progression + CILP" is a differentiable
-  DFA with a *compositional construction* — essentially DeepDFA reached from the
-  rule side.
-- As **monitors**, the repaired RuleRunner and DeepDFA are interchangeable (same
-  verdicts; on crisp throughput the symbolic DFA is optimal anyway). They are
-  **not** interchangeable as **learnable objects**: DeepDFA adapts an opaque
-  transition tensor; the progression/CILP form adapts a **structured,
-  subformula-indexed specification**. That difference — not speed — is the reason
-  both can exist and the reason the fix is worth publishing.
+- **CILP is orthogonal to all of this.** CILP requires a finite neuron
+  vocabulary, but those neurons may encode a factored pipeline or residual roots
+  rather than one neuron per complete DFA state.  Exact global permanence can
+  still require aggregate-state analysis; recurrence itself need not.
+- As exact **crisp monitors**, the repaired RuleRunner and the DFA-derived
+  encodings are semantically interchangeable.  A possible future distinction is
+  their learning parameterization: an automaton tensor is state-indexed, whereas
+  CILP rules are syntactically indexed.  Neither learning route is implemented or
+  evaluated in this repository, so adaptation remains a hypothesis for a
+  separate paper rather than a contribution or result here.
 
 ---
 
@@ -69,15 +68,15 @@ across cells.** Concretely, the conjunction of:
 1. `parse_tree.subformulae()` deduplicates by `Node.key` → **one slot per
    distinct syntactic subformula**;
 2. `rules._subtree_reinstall` (called by `_eventually`, `_always`,
-   `_until_release`, `_next_like`) reinstalls a **fresh** operand instance onto
+   `_until`, `_until_release`, `_next_like`) reinstalls a **fresh** operand instance onto
    the **same** `Node.key`;
 3. the reactivation write-back in `engine.step`
    (`self._state = {lit … startswith("R[")}`) overwrites that shared slot.
 
 The slot is addressed by **subformula identity**, but correctness requires
-addressing by **(subformula, temporal context / instance)**. The `A`/`B` modes
-in `_next_like` are a partial attempt to distinguish "the maturing instance"
-from "a freshly deferred instance," but they share the `[X b]` slot, and the
+addressing by **(subformula, temporal context / instance)**. The unqualified
+initial mode and `M` mode in `_next_like` distinguish "freshly deferred" from
+"monitoring the operand," but overlapping instances still share the `[X b]` slot, and the
 CILP OR-merge (condition C2) fuses them the wrong way. The eval phase is
 intra-cell and fine; the defect is purely in the **cross-cell carry**
 (reactivation) collapsing distinct temporal contexts onto one address.
@@ -88,7 +87,7 @@ intra-cell and fine; the defect is purely in the **cross-cell carry**
 
 ### L1 — Instance conflation: a construction defect
 
-Every empirically-failing formula (`F(a∧Xb)`, `G(a→Xb)`, `X(Xa)`, `G(a→Fb)`;
+Every confirmed failing formula (`F(a∧Xb)`, `G(a→Xb)`, `(Xa)∧X(Xa)`, `G(a→Fb)`;
 see the mismatch table in `nested_temporal_limitation.md` §5) has a **tiny**
 minimal DFA — a handful of states monitors each exactly. Therefore the required
 computation **is** representable by a fixed-size machine (the DFA proves it
@@ -141,58 +140,35 @@ bug" is **construction** (L1); full-LTLf completeness is separately blocked by a
 
 ---
 
-## 2.5 The bounded partial fix (X/W family) — stays *inside* RuleRunner
+## 2.5 The bounded-event partial fix — stays static
 
-Before jumping to progression (the complete fix that *leaves* the architecture),
-there is a cheaper, **incomplete** fix that repairs the worst empirical offenders
-while keeping RuleRunner's defining properties: fixed-size, compile-time-static,
-no runtime state growth. It is the concrete construction-level repair for the
-`X`/`W` slice of L1.
+The verified intermediate construction is not a bank attached only to `[Xb]`.
+That would lose the correlation between `a@t` and `Xb@t` in `F(a∧Xb)`.  Instead,
+identify each maximal finite-horizon subtree, evaluate that complete subtree
+from a fixed observation pipeline, and feed its delayed Boolean value as an
+event atom to the remaining RuleRunner skeleton.
 
-**The idea.** The `A`/`B` modes in `_next_like` are already *trying* to
-distinguish "the instance maturing from the previous cell" (mode `A`, must read
-`b` now) from "a freshly deferred instance" (mode `B`, must *not* read `b` yet) —
-they just make both share the one `[X b]` slot, and the CILP OR-merge fuses them.
-The fix is to **stop sharing the slot**: give the next-operator a small
-**shift-register** of slots instead of one.
+The skeleton is admitted only if exact product checking proves that old
+RuleRunner and the canonical DFA accept the same finite words.  This separates
+the exact semantic condition from any conservative grammar proposed for the
+paper.  The pipeline then gives a simple composition theorem: exact bounded
+events plus a correct skeleton imply a correct final verdict for the original
+formula.  End-of-trace flushes the last horizon cells using strong/weak Next
+boundary values; early permanent decisions remain sound but may be delayed.
 
-**Why it is bounded and static.** Under `k` nested `X`s, the number of instances
-of an operand that can be simultaneously "in flight" (staggered across cells) is
-at most `k+1`, and **`k` is known at compile time** from the parse tree. So
-allocate `k+1` slots per next-chain (equivalently: the minimal DFA of `X^k b` is
-a `(k+2)`-state shift register — that is literally what you are re-deriving).
-Each cell, values shift by one position; the maturing value lands in the slot
-mode `A` reads, the fresh defer goes to a *distinct* slot. No OR-merge, no
-conflation. The rule set stays finite and compile-time-static; the state stays
-fixed-size. **This does not use progression and does not touch the automaton.**
+This covers `G(Xa)`, `F(a∧Xb)`, `G(a→Xb)`, and `a U (b∧Xc)`.  It does not alter
+`G(a→Fb)`, whose relevant nested formula has unbounded horizon and whose
+unchanged skeleton fails certification.  This is a limitation of the bounded
+construction, not a proof that every formula with an unbounded island requires
+progression: semantic absorption still makes examples such as `F(Fa)` safe.
 
-**What it covers.** The reliable `X`/`W` triggers — the worst rows of the
-`nested_temporal_limitation.md` §5 table: `X(Xa)` (158/400), `G(Xa)` (51),
-`F(a∧Xb)` (52), `a U (b∧Xc)` (48), `G(a→Xb)` (58). All have a *deferring next*
-as the conflated inner operator, and a **statically bounded** in-flight count.
+Crucially, `X(Xa)` needs no repair.  Exact checking certifies nested Next chains;
+the paper-faithful initial activation installs each child once at the correct
+cell.  A genuine small shared-register example is `(Xa)∧X(Xa)`, where the same
+deduplicated `Xa` register is reached at two offsets.
 
-**What it does NOT cover, and why.** Nesting whose inner deferring operator is an
-**unbounded-horizon** temporal (`F`/`G`/`U`/`R`) — e.g. `G(a→Fb)` (the BPM
-response pattern, 29/400). There the number of concurrently-live operand
-instances is **trace-dependent and unbounded in the naming**, so no static slot
-count suffices. The obligations are still *mergeable in principle* (◇ is
-idempotent: "does any pending ◇-obligation survive" is a bounded summary — which
-is why the DFA stays finite), but the correct merge is operator-specific and, in
-general, entangles into disjunctions of obligations. That is exactly where the
-bounded shift-register stops and you need the full boolean-combination state of
-progression (§3). So:
-
-- **`X`/`W` nesting** → fixed with a static shift-register, architecture intact.
-  This is the paper-defensible "we repair a slice the three original papers get
-  silently wrong, at no architectural cost."
-- **`F`/`G`/`U`/`R` temporal-under-temporal nesting** → needs progression → needs
-  DFA-sized state (L2). No bounded fix.
-
-**This is the empirical separator of L1 from L2.** After the shift-register fix,
-`X(Xa)`/`G(Xa)`/`F(a∧Xb)` should go to **0** mismatches while `G(a→Fb)` stays
-**> 0** — proof that the two limitations are distinct (bounded-construction
-defect vs succinctness ceiling), not one phenomenon. (This is the experiment in
-§8.1.)
+The complete formalization and executable reference are in
+`bounded_event_rulerunner.md` and `src/monitors/rulerunner/bounded.py`.
 
 ---
 
@@ -208,13 +184,14 @@ per operator, then boolean-simplified:
 progress(a, s)     = ⊤ if a∈s else ⊥
 progress(¬φ, s)    = ¬progress(φ, s)
 progress(φ∧ψ, s)   = progress(φ,s) ∧ progress(ψ,s)
-progress(Xφ, s)    = φ                              ← key: X "falls through" to its operand
+progress(Xφ, s)    = φ ∧ F⊤                        ← F⊤ requires a non-empty suffix
+progress(Wφ, s)    = φ ∨ G⊥                        ← G⊥ admits the empty suffix
 progress(◇φ, s)    = progress(φ,s) ∨ ◇φ
 progress(□φ, s)    = progress(φ,s) ∧ □φ
 progress(φUψ, s)   = progress(ψ,s) ∨ (progress(φ,s) ∧ φUψ)
 ```
 
-(plus end-of-trace handling for the finite semantics). The carried state is a
+(with end-of-trace handled by evaluating the residual on the empty suffix). The carried state is a
 **formula** — a point in the free boolean algebra over obligations, **not** a
 cube. That is exactly why it can hold the disjunctions RuleRunner cannot.
 
@@ -265,57 +242,72 @@ hold disjunctions of obligations. Same choice, two sides.
 
 ---
 
-## 4. CILP is orthogonal — and forces materialization to the DFA
+## 4. CILP is orthogonal — and requires a finite residual vocabulary
 
 CILP is only a way to compile a **fixed** rule set into a net (one hidden unit
 per rule; `sign`/`tanh`), differentiable when you swap `sign→tanh`. It does **not**
 require the one-slot-per-subformula state — that is RuleRunner's choice.
 
-The sharp consequence:
+The sharp consequence is more nuanced than the earlier version of this note
+claimed:
 
-> **CILP needs a static neuron set ⟹ a fixed, finite state vocabulary ⟹ you must
-> materialize the reachable progression states ⟹ that set is the DFA.**
+> **CILP needs a static neuron set, but those neurons may denote residual roots
+> rather than whole deterministic states.**
 
 Lazy progression rewrites formula syntax on the fly, so it is *not* a fixed
-propositional rule set and is not CILP-encodable as-is (you cannot assign neurons
-to states you have not enumerated). The moment you want CILP, you must precompute
-the reachable set and index states — and that is the DFA, with rules
-"state × guard → state." **CILP does not prevent the merge; it forces it to the
-DFA.** For the adaptation goal (Paper B) this is fine — desirable, even.
+propositional rule set and is not CILP-encodable as-is.  A fixed CILP monitor
+must precompute a finite vocabulary, but it can precompute the roots occurring
+in progressed formulae and carry a multi-hot conjunction of them.  Because
+progression distributes over conjunction, each active root can transition
+independently.  Whole root sets need be enumerated only for operations that
+genuinely quantify over the complete future language, such as exact sink/trap
+classification.
 
-The honest merged design, "RuleRunner-eval + progression + CILP":
+The implemented merged design, "RuleRunner-eval + progression + CILP":
 
 - **intra-cell**: keep RuleRunner's factorized, correct evaluation (parallel rule
   firing over subformula truth values — never the bug; cheap, CILP-friendly);
-- **cross-cell**: replace the lossy reactivation (collapse to one R-literal per
-  subformula) with a **progressed-state → progressed-state** transition over the
-  materialized reachable set (an automaton-state carry, not a cube);
-- encode the whole transition in CILP with `tanh` for differentiability.
+- **cross-cell**: replace the lossy reactivation with one local transition
+  module per residual root.  An active root independently emits the top-level
+  conjuncts of its progressed successor; all module outputs are unioned into
+  the next multi-hot residual state;
+- compile those modules as CILP layers over one shared literal space.  A module
+  reads only its own root register and local observation guard, rather than
+  recognizing the complete aggregate state.
 
-The result **is** a differentiable DFA with a **compositional construction** —
-essentially **DeepDFA reached from the rule side**. What survives of the
-RuleRunner flavor: (a) the compositional per-operator construction, (b)
-differentiability/adaptation. What is irrecoverably lost: the
-one-slot-per-subformula succinctness (L2 forbids keeping it while complete).
+Once the reachable residual graph is materialized, exact online permanence is
+also a graph property. Mark residuals accepting on the empty suffix; a trap is
+a state from which no accepting residual is reachable, and an accepting sink
+is one from which no rejecting residual is reachable. Reverse reachability
+precomputes both sets.  The flat monitor labels its whole-residual transitions;
+the structured monitor uses a separate fixed aggregate-state label head.  That
+head does not participate in recurrence. A lazy simplifier that stops only on
+literal `true`/`false` remains sound but can detect the same permanent verdict
+later.  The implemented normalizer also recognizes negation-normal-form
+temporal dualities, idempotence of `F`/`G`, and finite-boundary-safe constant
+identities.  These improve syntactic sharing but do not decide full LTLf
+equivalence; for example, the valid implication `(a U b) -> F b` need not
+reduce to literal `true`.
 
-**Practical middle ground worth building:** a *lazy* progression monitor with
-boolean simplification that materializes **only reachable** states. Complete,
-often far smaller than the dense product (simplification quotients; you visit
-only the reachable portion), CILP-encodable over the reachable fragment,
-differentiable. Worst-case it still collapses to DFA size — nothing beats
-Myhill–Nerode — but the typical/structured case can be exponentially smaller.
+The resulting monitor is deterministic and finite-state, but its recurrent
+vector is a structured multi-hot residual formula rather than a one-hot opaque
+DFA state.  In the worst case the root vocabulary or the reachable aggregate
+sets can still be exponential; in structured cases the recurrent register set
+can be exponentially smaller than the number of aggregate states.  This is the
+implemented middle ground: eager/static compilation with factorized runtime
+recurrence, alongside a global fixed readout only where exact online permanence
+requires it.
 
 ---
 
 ## 5. Repaired-RuleRunner vs DeepDFA — where they genuinely differ
 
-### As monitors: interchangeable (concede this loudly)
+### As monitors: semantically interchangeable
 
-Once complete, the progression-RuleRunner **is** the DFA: same verdicts on every
-crisp trace. On crisp throughput the symbolic DFA (dict lookup) is the optimum,
-and the rule form pays `depth+1` within-step passes per cell — pure overhead.
-**RuleRunner-form never wins on monitoring speed**; do not try to defend it there
-(it is exactly the speed trap the project's `CLAUDE.md` warns against).
+Once complete, progression and the canonical DFA recognize the same language
+and return the same permanent verdicts on every crisp trace.  Their executable
+representations and costs differ.  No RuleRunner speed advantage is claimed in
+this note: comparative throughput and compilation measurements are deferred.
 
 The real differences are three, in increasing importance.
 
@@ -345,28 +337,32 @@ compresses a different blow-up dimension."
   determinization blow-up at compile time even if runtime visits three states.
   Some formulas have a doubly-exp minimal DFA and **MONA OOMs at compile time** —
   DeepDFA does not even start.
-- **Progression** is intrinsically **lazy**: materializes only reachable states
-  on the fly, never builds the full DFA. For formulas whose full DFA explodes but
-  whose *actually-visited* portion is small, it monitors without ever paying the
-  worst case (classic on-the-fly vs explicit-state advantage).
+- **The progression semantics admits a lazy realization.**  The implemented
+  `ProgressionEngine` materializes only the residual reached by the current
+  trace.  The eager table, flat CILP, and structured CILP monitors instead
+  compile reachable residual/aggregate graphs in advance because they require a
+  fixed neural vocabulary and exact permanent labels.
 
 If a reviewer says "you could make DeepDFA lazy too" — that *reinforces* the
 thesis: the lazy construction of DeepDFA **is** the progression rules. The two
 paradigms meet exactly there. That is the boundary, not a hole.
 
-### Axis 3 — Adaptation: the real reason to keep both (bridge to Paper B)
+### Axis 3 — possible future adaptation distinction (not implemented here)
 
-Here they are **not** interchangeable. The question: when you backprop, *what*
-are you adapting and *what does the gradient mean?*
+The current DeepDFA monitor is a fixed tensor realization, and the current CILP
+monitors are hard-threshold exact encodings.  Neither trains parameters.  A
+future project could ask: when a differentiable parameterization is introduced,
+*what* is adapted and *what does the gradient mean?*  The following are design
+hypotheses, not established properties of this implementation:
 
-- **DeepDFA**: learnable = transition-tensor entries (`soft_matrix`) and
-  accepting/rejecting vectors. The gradient adapts **transition probabilities
+- **A DeepDFA-style learner** could parameterize transition-tensor entries and
+  accepting/rejecting vectors. The gradient would adapt **transition probabilities
   between opaque states** (`q7` has no semantic label). Consequences:
   `|Q|²·|Σ|` parameters, no structural inductive bias, hard to regularize toward
   "sensible specs," and the learned object drifts into an **arbitrary weighted
   automaton** — no longer guaranteed to correspond to an LTLf formula. You cannot
   re-extract a readable spec.
-- **Progression/CILP**: learnable parameters sit on the **rules**, indexed by
+- **A future progression/CILP learner** could place parameters on the **rules**, indexed by
   **subformula** and **operator**, attached at the **symbolic construction level**
   (before determinization closure). You parameterize a guard, an atom threshold,
   which operator governs a node; the determinized automaton is then a
@@ -380,17 +376,13 @@ are you adapting and *what does the gradient mean?*
     `|Q|²·|Σ|`;
   - **closure in spec space** — you can constrain the result to remain valid LTLf.
 
-**Net thesis:** the two are interchangeable **as monitors** and **not as
-learnable objects**. DeepDFA adapts an opaque automaton; the progression form
-adapts a structured specification. The gradient means different things. For the
-NeSy dream — correct a wrong spec from data and hand back a readable one — the
-structured form is the right substrate; for fast crisp/soft batched monitoring,
-DeepDFA (or symbolic) is.
+**Future hypothesis:** the two are semantically interchangeable as crisp
+monitors but could expose different inductive biases as learnable objects.  That
+hypothesis requires an actual parameterization, training objective, and
+evaluation before it can support a paper claim.
 
-This fills the project's **Phase 3.2 empty cell** ("exact + fast at runtime
-*and* differentiable for adaptation," the hybrid paradigm): the progression/CILP
-form is the "structured *and* differentiable" corner — not a faster monitor, a
-**structured learner**.
+The present work therefore establishes only the exact structured substrate.  It
+does not establish a “structured learner” or any adaptation result.
 
 Minor axis (mention, do not lean on it): on non-read-once guards the two soft
 semantics can diverge, because the factored form tracks boolean structure instead
@@ -398,87 +390,86 @@ of marginalizing over `Q` — ties into Phases 3.1/3.3, but subtle.
 
 ---
 
-## 6. Do both make sense? Yes — split by lifecycle stage
+## 6. Possible future lifecycle split
 
 Frame it by **lifecycle**, not "which is better":
 
 - **Deployment / monitoring**: symbolic DFA (crisp, optimal) or DeepDFA
   (soft-input, GPU batch). Fast, explicit, spec **frozen**.
-- **Spec-engineering from data / repair / learning**: progression-CILP form.
-  Structured, interpretable, localized adaptation that returns a specification.
-  Spec **alive**.
+- **Spec-engineering from data / repair / learning**: a future
+  progression-CILP learner could test whether syntactically indexed parameters
+  enable localized, interpretable repair.
 
-One watches a fixed spec; the other **repairs** it when data contradicts it.
-Neither makes the other redundant — like an optimizing compiler does not make an
-IDE redundant.
+Only the fixed-spec monitoring side exists in this repository.  The repair side
+is deferred and must not be described as an implemented capability.
 
 ---
 
-## 7. How to present the fix in the paper without "there's the DFA, why bother?"
+## 7. Current paper positioning
 
 Three moves, in order:
 
-1. **Concede the monitoring equivalence first, loudly.** "As a monitor the
-   repaired RuleRunner *is* the DFA, and on crisp throughput the symbolic DFA is
-   optimal — we do not propose this form for speed." Remove the objection before
-   it is raised. Defending RuleRunner on its weakest ground invites the takedown.
-2. **Relocate the contribution from the monitor to the adaptable specification.**
-   The reason to keep the RuleRunner lineage is not runtime: its representation
-   carries **subformula-/operator-indexed structure that survives as a learning
-   parameterization**. DeepDFA gives a differentiable automaton with opaque
-   states; the progression form gives a differentiable **specification** with
-   interpretable, localizable parameters. For "adapt/repair a spec and return
-   readable LTLf" they are not interchangeable. This is Paper B's reason to exist.
-3. **Sell the fix as a theoretical result, not a product.** Even if nobody runs
-   the repaired monitor, the **analysis** is the contribution: "the minimal
-   repair that makes the compositional rule encoding complete provably converges
-   to the automaton, and the L1 (construction) / L2 (expressivity) decomposition
-   says exactly where and why." You are **mapping the paradigm boundary with a
-   theorem**, and answering the reviewer's own question ("why not just the DFA?")
-   with a result instead of an excuse. The DFA is not the rival that beats you —
-   it is the fixed point every correct compositional repair provably tends to,
-   which is exactly the argument that supports Paper A's thesis (the
-   automata-based representation is the more general foundation).
+1. **State semantic equivalence precisely.**  Progression residuals induce a
+   deterministic finite-state monitor recognizing the same language as the
+   canonical DFA; the reachable residual graph is not automatically minimal.
+2. **Locate the contribution in the representation analysis.**  The project
+   identifies the information lost by the published RuleRunner address space,
+   supplies an exact formula-level boundary certifier, derives a static bounded
+   middle construction, and gives a complete progression construction while
+   preserving rule-local recurrence.
+3. **Separate present results from future motivation.**  Syntactically indexed
+   rules may be a useful substrate for later adaptation, but no learning or
+   performance advantage is claimed here.  Evaluation and adaptation require
+   their own experiments and arguments.
 
-One-line intro framing: *we do not save RuleRunner as a monitor — we show that
-repairing it turns it into a differentiable DFA with a compositional
-construction, and that it is that compositional structure, not speed, that makes
-it an adaptation substrate the opaque DFA is not.*
+One-line intro framing: *we retain RuleRunner's compositional rule structure,
+identify exactly where its published recurrent state loses information, and
+recover correctness either for bounded event islands or for all LTLf through
+progression; any adaptation advantage is future work, not a present result.*
 
 ---
 
-## 8. Concrete next steps (when moving from analysis to code)
+## 8. Implementation status and deferred extensions
 
-Analysis only so far. When implementing:
+The construction work proposed by the original version of this note is now
+complete:
 
-1. **Bounded X/W repair (validates L1 ≠ L2 empirically).** Give the next-operator
-   a small **static shift-register** (depth = static X-nesting depth) instead of a
-   single `[X b]` slot shared between the maturing and freshly-deferred instances.
-   Re-run the mismatch sweep of `nested_temporal_limitation.md` §5: expect
-   `X(Xa)`, `G(Xa)`, `F(a∧Xb)` → **0** mismatches while `G(a→Fb)` (nesting of
-   `F`, not `X`) stays **> 0**. That is the clean empirical proof L1 and L2 are
-   separate.
-2. **State-space growth measurement (materializes L2).** On a family with known
-   state blow-up (deep nested `X`, or a pattern forcing exponential
-   determinization), measure the size of the progression **reachable set** vs
-   `#subformulae`. Expect the `singly-exp → doubly-exp` gap to appear exactly
-   where L2 predicts, and stay small (≈ `#subformulae`) on the flat fragment
-   where RuleRunner was already correct.
-3. **Adaptation A/B (materializes Axis 3).** Take a wrong spec (wrong
-   atom/threshold), adapt via gradient in **both** forms, and compare **not**
-   recovered accuracy (likely similar) but: **parameter count, interpretability of
-   the result, and whether the DeepDFA form stays a valid LTLf spec or drifts into
-   a weighted automaton.** That is where the difference becomes a figure rather
-   than a claim.
+1. **Original boundary:** `certify_rule_runner` performs exact product checking
+   against the canonical DFA and returns shortest witnesses.  It distinguishes
+   language equivalence, prefix soundness, and exact online-label timing.
+2. **Bounded-event CILP:** both the pooled/fixpoint flat organization and the
+   per-`(subformula, offset)` structured organization are implemented, including
+   the recurrent observation window and finite-suffix circuits.
+3. **Exact extrapolation and batching:** a fixed CILP readout classifies the
+   reachable composite pipeline state by reverse reachability, and equal-length
+   windows are evaluated in fused cross-trace batches.
+4. **Progression:** lazy, eager, flat CILP, and structured root-local CILP
+   versions are implemented.  The eager/neural variants use exact permanent
+   labels; the lazy oracle deliberately keeps its sound but incomplete
+   syntactic early test.
+
+Remaining work is extension or evaluation, not a missing correctness step:
+
+- optionally seek a more permissive readable grammar for the original
+  RuleRunner; the draft now proves a conservative flat-temporal fragment and
+  the exact semantic boundary is already supplied by the certifier;
+- optionally improve progression residual quotienting before treating raw
+  closure sizes as right-language counts.  The current form is deterministic
+  for its Boolean-skeleton/temporal-rewrite theory, not canonical modulo full
+  LTLf equivalence;
+- run benchmarks and formulate empirical performance claims only in the
+  explicitly deferred evaluation phase;
+- study adaptation separately.  No differentiable-learning result is claimed
+  by the current RuleRunner implementation work.
 
 ---
 
 ## 9. Provenance
 
-This note distills a design conversation (2026-07-01). It is analysis and
-argument, cross-checked against the repository's implementation
-(`rules.py`, `engine.py`, `parse_tree.py`, `deep_dfa.py`) and against
-`nested_temporal_limitation.md`. The worked progression traces (§3) were computed
-by hand and should be re-verified against `SymbolicDFAMonitor` before being
-quoted in the paper. The LTLf→DFA 2EXP fact and the Bacchus–Kabanza progression
-rules are standard; cite primary sources in the paper rather than this note.
+This note began with a design conversation (2026-07-01). Its implementation
+claims are now cross-checked against `rules.py`, `engine.py`, `equivalence.py`,
+the bounded CILP/extrapolation modules, `src/monitors/progression/`, and the
+independent semantic-oracle tests.  Hand-worked traces remain explanatory
+examples rather than primary evidence.  The LTLf-to-DFA 2EXP fact and the
+Bacchus--Kabanza progression rules still require primary citations wherever
+they are used in the paper; this note is not a citation source.

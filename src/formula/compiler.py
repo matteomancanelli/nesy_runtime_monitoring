@@ -11,6 +11,8 @@ cost a single set membership check per step.
 from __future__ import annotations
 
 import re
+import tempfile
+import threading
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Callable
@@ -71,6 +73,9 @@ class MonaFailure(RuntimeError):
     """MONA did not produce a usable DFA for the formula."""
 
 
+_MONA_LOCK = threading.Lock()
+
+
 @lru_cache(maxsize=None)
 def compile_ltlf(formula: str) -> DFA:
     """Compile an LTLf formula string to a minimal DFA.
@@ -81,15 +86,25 @@ def compile_ltlf(formula: str) -> DFA:
     callers (monitors hold their current state separately).
     """
     parser = LTLfParser()
-    dot = parser(formula).to_dfa()
+    # ltlf2dfa writes a fixed `automa.mona` beside its installed sources.
+    # That directory is commonly read-only and the fixed filename also races
+    # under concurrent compilation.  Serialize the call and temporarily point
+    # the package at an isolated writable directory.
+    import ltlf2dfa.ltlf2dfa as ltlf2dfa_impl
+
+    with _MONA_LOCK, tempfile.TemporaryDirectory(prefix="ltlf2dfa-") as tmp:
+        old_package_dir = ltlf2dfa_impl.PACKAGE_DIR
+        try:
+            ltlf2dfa_impl.PACKAGE_DIR = tmp
+            dot = parser(formula).to_dfa()
+        finally:
+            ltlf2dfa_impl.PACKAGE_DIR = old_package_dir
     # ltlf2dfa runs MONA with a hardcoded 30 s subprocess timeout and returns
     # False on expiry; on other failures it returns a stub DOT with no edges
     # (a lone `init -> 1`). Both must raise rather than yield a silently
     # degenerate 2-state DFA — Exp 6 plots the measured |Q| as its x-axis.
     if not isinstance(dot, str):
-        raise MonaFailure(
-            f"MONA timed out (ltlf2dfa's 30 s limit) on: {formula!r}"
-        )
+        raise MonaFailure(f"MONA timed out (ltlf2dfa's 30 s limit) on: {formula!r}")
     dfa = _parse_mona_dot(dot)
     if not dfa.transitions:
         raise MonaFailure(
@@ -119,7 +134,8 @@ def _parse_mona_dot(dot: str) -> DFA:
     block = _DOUBLECIRCLE_BLOCK_RE.search(dot)
     accepting = (
         frozenset(int(s) for s in _DIGIT_RE.findall(block.group(1)))
-        if block else frozenset()
+        if block
+        else frozenset()
     )
 
     m = _INIT_RE.search(dot)
@@ -162,19 +178,27 @@ def _compile_guard(label: str) -> Guard:
         return lambda obs: True
     if stripped == "false":
         return lambda obs: False
-    
-    py_src = label.replace("~", " not ").replace("&", " and ").replace("|", " or ")
+
+    # Compile every proposition access as obs.get(name, False), enforcing the
+    # public sparse-observation convention without allocating a dense mapping
+    # on every DFA step.
+    def replace_identifier(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name == "true":
+            return "True"
+        if name == "false":
+            return "False"
+        return f"obs.get({name!r}, False)"
+
+    py_src = _IDENT_RE.sub(replace_identifier, label)
+    py_src = py_src.replace("~", " not ").replace("&", " and ").replace("|", " or ")
     code = compile(py_src.strip(), f"<dfa-guard:{label}>", "eval")
 
     def guard(obs: Observation, _code: object = code) -> bool:
-        try:
-            return bool(eval(_code, {"__builtins__": {}}, obs))
-        except NameError as e:
-            raise ValueError(
-                f"Observation {obs!r} is missing an atom required by guard {label!r}"
-            ) from e
+        return bool(eval(_code, {"__builtins__": {}}, {"obs": obs}))
 
     return guard
+
 
 def _reachable_from(q0: int, succ: dict[int, set[int]]) -> set[int]:
     seen = {q0}
@@ -186,6 +210,7 @@ def _reachable_from(q0: int, succ: dict[int, set[int]]) -> set[int]:
                 seen.add(q2)
                 stack.append(q2)
     return seen
+
 
 def _compute_sink_labels(
     states: frozenset[int],
