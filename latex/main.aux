@@ -57,58 +57,75 @@
 \newlabel{eq:rulerunner-residual-invariant}{{4}{14}}
 \citation{deepdfa_ecai2024}
 \citation{mezini2025neuro}
+\citation{mezini2025neuro}
 \citation{gumb_sftmx_1}
 \citation{gumb_sftmx_2}
+\citation{mezini2025neuro}
 \@writefile{toc}{\contentsline {paragraph}{The role of normalization.}{15}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{The counterexample revisited.}{15}{}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {4}Automata-based Neuro-Symbolic Monitoring: DeepDFA}{15}{}\protected@file@percent }
 \newlabel{sec:deepdfa}{{4}{15}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Architecture}{15}{}\protected@file@percent }
 \newlabel{sec:deepdfa-arch}{{4.1}{15}}
+\citation{NesyA}
 \newlabel{eq:deepdfa-crisp}{{5}{16}}
+\newlabel{prop:deepdfa-crisp-equivalence}{{1}{16}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Soft Observations and Differentiability}{16}{}\protected@file@percent }
 \newlabel{sec:deepdfa-soft}{{4.2}{16}}
-\newlabel{eq:deepdfa-soft}{{6}{16}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}The Alphabet Blow-up}{16}{}\protected@file@percent }
-\newlabel{sec:deepdfa-alphabet}{{4.3}{16}}
-\citation{darwiche2002knowledge}
+\newlabel{eq:valuation-weight}{{6}{16}}
+\newlabel{eq:expected-transition-wmc}{{7}{16}}
+\newlabel{eq:deepdfa-soft}{{8}{16}}
+\newlabel{prop:deepdfa-exact-wmc}{{2}{17}}
+\newlabel{prop:deepdfa-trace-marginal}{{3}{17}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}The Alphabet Blow-up}{17}{}\protected@file@percent }
+\newlabel{sec:deepdfa-alphabet}{{4.3}{17}}
 \citation{NesyA}
-\citation{t_ilr_2025}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}The Factored Transition Representation}{17}{}\protected@file@percent }
-\newlabel{sec:deepdfa-factored}{{4.4}{17}}
-\@writefile{toc}{\contentsline {paragraph}{Crisp path: disjoint cube cover.}{17}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Soft path: recursive guard probabilities.}{18}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Theoretical Comparison}{18}{}\protected@file@percent }
-\newlabel{sec:theory-cmp}{{5}{18}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Three Achilles Heels}{18}{}\protected@file@percent }
-\newlabel{sec:theory-heels}{{5.1}{18}}
+\citation{darwiche2002knowledge}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}The Factored Transition Representation}{18}{}\protected@file@percent }
+\newlabel{sec:deepdfa-factored}{{4.4}{18}}
+\@writefile{toc}{\contentsline {paragraph}{Exact path: disjoint cube cover.}{18}{}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Complexity of the implemented DeepDFA transition paths. The cube implementation stores dense require-true/require-false masks of length $n$, hence $\Theta (Cn)$ rather than the number of mentioned literals.}}{19}{}\protected@file@percent }
+\newlabel{tab:deepdfa-complexity}{{1}{19}}
+\@writefile{toc}{\contentsline {paragraph}{Recursive approximation.}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implementation-level complexity.}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Artifact interface.}{19}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Theoretical Comparison}{20}{}\protected@file@percent }
+\newlabel{sec:theory-cmp}{{5}{20}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Three Achilles Heels}{20}{}\protected@file@percent }
+\newlabel{sec:theory-heels}{{5.1}{20}}
 \citation{fuggitti-ltlf2dfa}
 \citation{perotti2014neural}
 \citation{finkbeiner2009monitor}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Experimental Comparison}{19}{}\protected@file@percent }
-\newlabel{sec:experiments}{{6}{19}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Experimental Comparison}{21}{}\protected@file@percent }
+\newlabel{sec:experiments}{{6}{21}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Related Work}{21}{}\protected@file@percent }
+\citation{deepdfa_ecai2024}
+\citation{mezini2025neuro}
+\citation{NesyA}
+\citation{t_ilr_2025}
 \bibstyle{plain}
 \bibdata{citations}
-\bibcite{monitorability_LTL}{1}
-\bibcite{darwiche2002knowledge}{2}
-\bibcite{LTLf}{3}
-\bibcite{finkbeiner2009monitor}{4}
-\bibcite{fuggitti-ltlf2dfa}{5}
-\bibcite{gumb_sftmx_1}{6}
-\bibcite{lichtenstein1985glory}{7}
-\bibcite{gumb_sftmx_2}{8}
-\@writefile{toc}{\contentsline {section}{\numberline {7}Related Work}{20}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion and Future Work}{20}{}\protected@file@percent }
-\newlabel{sec:conclusion}{{8}{20}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Transformers}{20}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Specification Adaptation}{20}{}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Process Model Repair}{20}{}\protected@file@percent }
-\bibcite{NesyA}{9}
-\bibcite{manna1995temporal}{10}
-\bibcite{mezini2025neuro}{11}
-\bibcite{perotti2015runtime}{12}
-\bibcite{perotti2014neural}{13}
-\bibcite{perotti2015neural}{14}
-\bibcite{LTL}{15}
-\bibcite{deepdfa_ecai2024}{16}
-\gdef \@abspage@last{21}
+\bibcite{t_ilr_2025}{1}
+\bibcite{monitorability_LTL}{2}
+\bibcite{darwiche2002knowledge}{3}
+\bibcite{LTLf}{4}
+\@writefile{toc}{\contentsline {paragraph}{Differentiable temporal knowledge.}{22}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion and Future Work}{22}{}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{22}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Transformers}{22}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Specification Adaptation}{22}{}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Process Model Repair}{22}{}\protected@file@percent }
+\bibcite{finkbeiner2009monitor}{5}
+\bibcite{fuggitti-ltlf2dfa}{6}
+\bibcite{gumb_sftmx_1}{7}
+\bibcite{lichtenstein1985glory}{8}
+\bibcite{gumb_sftmx_2}{9}
+\bibcite{NesyA}{10}
+\bibcite{manna1995temporal}{11}
+\bibcite{mezini2025neuro}{12}
+\bibcite{perotti2015runtime}{13}
+\bibcite{perotti2014neural}{14}
+\bibcite{perotti2015neural}{15}
+\bibcite{LTL}{16}
+\bibcite{deepdfa_ecai2024}{17}
+\gdef \@abspage@last{24}

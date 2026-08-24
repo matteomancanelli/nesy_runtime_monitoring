@@ -1,5 +1,6 @@
 from src.monitors.base import Monitor, Verdict
 from src.monitors.deep_dfa import (
+    DeepDFAArtifactStats,
     DeepDFAMonitor,
     DeepDFAMonitorDense,
     DeepDFAMonitorFactored,
@@ -27,6 +28,7 @@ __all__ = [
     "BoundedEventStructuredRuleRunnerMonitor",
     "ProgressionRuleRunnerMonitor",
     "ProgressionRuleRunnerStructuredMonitor",
+    "DeepDFAArtifactStats",
     "DeepDFAMonitor",
     "DeepDFAMonitorDense",
     "DeepDFAMonitorFactored",

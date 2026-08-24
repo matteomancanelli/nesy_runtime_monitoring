@@ -91,9 +91,10 @@ until the evaluation phase is explicitly resumed and rerun.
 | **factored** | vectorized cube-mask reduction (no `2^{\|AP\|}` tensor) | ~2–5× dense | **all** | scales past where dense fits (n up to 32); elsewhere a constant-overhead reference line |
 | **scan** (`DeepDFAMonitorScan`) | Hillis–Steele prefix product over per-cell matrices | O(log L) launches, ×`\|Q\|` FLOPs | exp1, exp3 | wins only where launch overhead ≫ arithmetic (GPU + small `\|Q\|` + long traces); loses on CPU / large `\|Q\|` — honest caveat stays |
 
-The differentiable `soft_matrix` path still exists in the source (it is the
-affordance the paper points to as future work) but is **not exercised by any
-experiment in this repo** — its harness lives in `artur_future_work/`.
+The tensor-native differentiable path uses exact disjoint-cube WMC by default;
+the historical recursive approximation remains available explicitly. Neither
+is exercised by an experiment in this repo — the probabilistic harness lives in
+`artur_future_work/`.
 
 ### RuleRunner — two encodings × two constructions
 

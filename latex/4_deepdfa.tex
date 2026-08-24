@@ -4,45 +4,139 @@
 \subsection{Architecture}
 \label{sec:deepdfa-arch}
 
-DeepDFA \cite{deepdfa_ecai2024} keeps the automaton of the symbolic paradigm but replaces its explicit state walk with a differentiable, tensorized one; we adopt the same forward formulation used for predictive monitoring of business processes by \cite{mezini2025neuro}. In its original formulation DeepDFA is a \emph{probabilistic relaxation} of a DFA: a probabilistic finite automaton whose transition tensor is real-valued and \emph{learnable}, with each transition row constrained to the probability simplex (e.g.\ through a softmax or a Gumbel--Softmax relaxation of discrete choices \cite{gumb_sftmx_1,gumb_sftmx_2}), and the crisp automaton recovered only in the zero-temperature, one-hot limit. Accordingly, starting from the minimal DFA $A_\varphi = (2^\calP, Q, q_0, \delta, F)$ of Section~\ref{sec:ltlf}, the general object is a three-way tensor $T \in [0,1]^{|Q| \times |2^\calP| \times |Q|}$ that is row-stochastic in its last index, $\sum_{q'} T[q, \sigma, q'] = 1$, together with an acceptance vector $v_o \in [0,1]^{|Q|}$. When the automaton is instead \emph{compiled} from a known \ltlf formula --- the setting of this paper's monitoring experiments --- these parameters are fixed to their exact one-hot values, $T \in \{0,1\}^{|Q| \times |2^\calP| \times |Q|}$ with $T[q, \sigma, q'] = 1$ iff $\delta(q, \sigma) = q'$, and $v_o \in \{0,1\}^{|Q|}$ with $v_o[q] = 1$ iff $q \in F$; this crisp instantiation is what the monitor uses, while the real-valued parameterization is the substrate for gradient-based specification adaptation, which we defer to future work (Section~\ref{sec:conclusion}). In either case the monitor state is no longer a single automaton state but a row vector $\mathbf{q}_t \in [0,1]^{|Q|}$ over states, initialized to the one-hot vector $\mathbf{q}_0 = v_i$ of $q_0$. Writing $T_\sigma = T[\,\cdot\,, \sigma, \cdot\,] \in [0,1]^{|Q| \times |Q|}$ for the (row-stochastic) transition matrix of symbol $\sigma$, a step is a single vector--matrix product
+DeepDFA \cite{deepdfa_ecai2024} keeps the automaton of the symbolic paradigm but replaces its explicit state walk with a differentiable, tensorized one; we adopt the same forward formulation used for predictive monitoring of business processes by \cite{mezini2025neuro}. In its original formulation DeepDFA is a \emph{probabilistic relaxation} of a DFA: a probabilistic finite automaton whose transition logits and acceptance logits are real-valued and \emph{learnable}. Temperature-scaled softmax constrains each transition row to the probability simplex, temperature-scaled sigmoid produces the acceptance vector, and annealing drives both toward the one-hot/Boolean limit. This is distinct from the Gumbel--Softmax estimator used by \cite{mezini2025neuro} to sample differentiable near-symbolic \emph{inputs} for a fixed automaton \cite{gumb_sftmx_1,gumb_sftmx_2}. Accordingly, starting from the minimal DFA $A_\varphi = (2^\calP, Q, q_0, \delta, F)$ of Section~\ref{sec:ltlf}, the general object is a three-way tensor $T \in [0,1]^{|Q| \times |2^\calP| \times |Q|}$ that is row-stochastic in its last index, $\sum_{q'} T[q, \sigma, q'] = 1$, together with an acceptance vector $v_o \in [0,1]^{|Q|}$. When the automaton is instead \emph{compiled} from a known \ltlf formula --- the setting of this paper's monitoring experiments, and the fixed knowledge layer of \cite{mezini2025neuro} --- these quantities are fixed to their exact one-hot values, $T \in \{0,1\}^{|Q| \times |2^\calP| \times |Q|}$ with $T[q, \sigma, q'] = 1$ iff $\delta(q, \sigma) = q'$, and $v_o \in \{0,1\}^{|Q|}$ with $v_o[q] = 1$ iff $q \in F$. Learning them is unnecessary for monitoring a known specification; a separate real-valued parameterization would instead be needed for the specification-adaptation problem deferred to Section~\ref{sec:conclusion}. In either case the monitor state is no longer a single automaton state but a row vector $\mathbf{q}_t \in [0,1]^{|Q|}$ over states, initialized to the one-hot vector $\mathbf{q}_0 = v_i$ of $q_0$. Writing $T_\sigma = T[\,\cdot\,, \sigma, \cdot\,] \in [0,1]^{|Q| \times |Q|}$ for the (row-stochastic) transition matrix of symbol $\sigma$, a step is a single vector--matrix product
 \begin{equation}
   \mathbf{q}_t = \mathbf{q}_{t-1}\, T_{\sigma_t},
   \qquad
   \mathrm{acc}_t = \mathbf{q}_t \cdot v_o,
   \label{eq:deepdfa-crisp}
 \end{equation}
-where $\mathrm{acc}_t \in [0,1]$ is the acceptance score of the prefix read so far. On the compiled tensor every $T_{\sigma_t}$ is a $0/1$ deterministic-transition matrix and, on crisp observations, $\mathbf{q}_t$ stays one-hot, so the update reproduces the symbolic walk exactly: $\mathbf{q}_t$ is the indicator of $\delta^*(q_0, \sigma_1 \cdots \sigma_t)$. The three-valued verdict and early termination are then read off exactly as in Section~\ref{sec:symbolic}, by testing membership of $\argmax_q \mathbf{q}_t[q]$ in the precomputed trap and accepting-sink sets, and the final verdict tests its acceptance.
+where $\mathrm{acc}_t \in [0,1]$ is the acceptance score of the prefix read so far. The following elementary invariant records exactly what is preserved by the tensorization.
+
+\begin{proposition}[Crisp equivalence]
+\label{prop:deepdfa-crisp-equivalence}
+Let $\sigma_{1:t}=\sigma_1\cdots\sigma_t$ be a crisp prefix and let $\mathbf q_t$ be obtained from Equation~\eqref{eq:deepdfa-crisp} using the compiled one-hot tensor. Then
+\[
+  \mathbf q_t=e_{\delta^*(q_0,\sigma_{1:t})},
+\]
+where $e_q$ is the indicator vector of state $q$. Consequently the fixed DeepDFA monitor and the symbolic DFA visit the same state after every prefix and return identical early and final verdicts.
+\end{proposition}
+
+\begin{proof}
+At $t=0$, $\mathbf q_0=e_{q_0}$. If $\mathbf q_{t-1}=e_q$, the compiled row $T[q,\sigma_t,\cdot]$ has its unique one at $\delta(q,\sigma_t)$, hence $\mathbf q_t=e_qT_{\sigma_t}=e_{\delta(q,\sigma_t)}$. Induction proves the invariant. Trap, accepting-sink, and final-state membership are functions of this same reached state, so the verdicts coincide.
+\end{proof}
 
 \subsection{Soft Observations and Differentiability}
 \label{sec:deepdfa-soft}
 
-Beyond crisp monitoring, the tensorization buys two affordances that the symbolic walk fundamentally lacks. First, Equation~\eqref{eq:deepdfa-crisp} extends verbatim to \emph{probabilistic} observations: if a time point is delivered not as a crisp assignment but as a vector of per-atom probabilities $\mathbf{p}_t \in [0,1]^{\calP}$ (as produced by a neural perceptor or a noisy sensor), the one-hot symbol selection is replaced by an \emph{expected} transition matrix $M(\mathbf{p}_t) \in [0,1]^{|Q| \times |Q|}$, whose entry $(q, q')$ is the probability that the guard of edge $q \to q'$ is satisfied under $\mathbf{p}_t$, computed compositionally over the boolean structure of the guard under an atom-independence assumption ($P(a) = p_a$, $P(\lnot \psi) = 1 - P(\psi)$, $P(\psi_1 \land \psi_2) = P(\psi_1)P(\psi_2)$, $P(\psi_1 \lor \psi_2) = 1 - (1 - P(\psi_1))(1 - P(\psi_2))$), leaving the update and acceptance score unchanged:
+Beyond crisp monitoring, the tensorization admits probabilistic observations. For $\mathbf p\in[0,1]^{\calP}$ and valuation $\sigma\subseteq\calP$, define the independent-Bernoulli weight
+\begin{equation}
+  w_{\mathbf p}(\sigma)
+  =\prod_{a\in\sigma}p_a\prod_{a\in\calP\setminus\sigma}(1-p_a).
+  \label{eq:valuation-weight}
+\end{equation}
+If $g_{q,q'}$ is the disjunction of the guards on all edges from $q$ to $q'$, the exact expected transition is
+\begin{equation}
+  M(\mathbf p)[q,q']
+  =\sum_{\sigma\models g_{q,q'}}w_{\mathbf p}(\sigma).
+  \label{eq:expected-transition-wmc}
+\end{equation}
+Thus a per-atom probability vector produced by a perceptor or sensor replaces one-hot symbol selection while leaving the forward update unchanged:
 \begin{equation}
   \mathbf{q}_t = \mathbf{q}_{t-1}\, M(\mathbf{p}_t),
   \qquad
   \mathrm{acc}_t = \mathbf{q}_t \cdot v_o.
   \label{eq:deepdfa-soft}
 \end{equation}
-Second, because each $M(\mathbf{p}_t)$ is a smooth function of $\mathbf{p}_t$ (and, if desired, of the learnable parameters of $T$), the whole monitor is differentiable: gradients of a verdict loss can flow back through the automaton, into the specification or an upstream perceptor. Both affordances raise substantive questions of their own --- what a verdict on a probabilistic trace should even mean, and what a gradient step preserves of the specification --- which we deliberately leave to future work (Section~\ref{sec:conclusion}). In this paper all monitoring is crisp: $M(\mathbf{p}_t)$ then collapses to $T_{\sigma_t}$ and the semantics is exact for any guard.
+The general construction and its state-distribution semantics are already established for symbolic automata by NeSyA \cite{NesyA}. We record the specialization needed here to make the assumptions and the correctness of our LTLf monitor explicit.
+
+\begin{proposition}[Exact guard WMC]
+\label{prop:deepdfa-exact-wmc}
+Let $\mathcal C_{q,q'}$ be a pairwise-disjoint cube cover of $g_{q,q'}$. For a cube $c$, let $c^+$ and $c^-$ be its required-true and required-false atoms and set
+\[
+  w_{\mathbf p}(c)=\prod_{a\in c^+}p_a\prod_{a\in c^-}(1-p_a).
+\]
+Then $M(\mathbf p)[q,q']=\sum_{c\in\mathcal C_{q,q'}}w_{\mathbf p}(c)$ equals Equation~\eqref{eq:expected-transition-wmc} for every Boolean guard. Moreover, $M(\mathbf p)$ is row-stochastic and differentiable in $\mathbf p$.
+\end{proposition}
+
+\begin{proof}
+Each cube denotes a cylinder set of complete valuations and its product is the total Bernoulli weight of that set. The cubes are disjoint and their union is exactly the models of $g_{q,q'}$, so their weights sum to Equation~\eqref{eq:expected-transition-wmc}. For fixed $q$, determinism and completeness of the DFA make the outgoing guards a partition of $2^{\calP}$; therefore $\sum_{q'}M(\mathbf p)[q,q']=\sum_{\sigma\subseteq\calP}w_{\mathbf p}(\sigma)=1$. Each entry is a finite multilinear polynomial in $\mathbf p$ and is therefore differentiable.
+\end{proof}
+
+\begin{proposition}[Trace-marginal semantics]
+\label{prop:deepdfa-trace-marginal}
+Let $\Sigma_1,\ldots,\Sigma_L$ be independent random valuations, with $\Pr(\Sigma_t=\sigma)=w_{\mathbf p_t}(\sigma)$, and propagate Equation~\eqref{eq:deepdfa-soft} with the exact matrices of Equation~\eqref{eq:expected-transition-wmc}. Then, for every $q\in Q$,
+\[
+  \mathbf q_t[q]
+  =\Pr\!\left(\delta^*(q_0,\Sigma_{1:t})=q\right).
+\]
+Consequently $\mathbf q_L\cdot v_o=\Pr(\Sigma_{1:L}\models\varphi)$.
+\end{proposition}
+
+\begin{proof}
+The claim is immediate at $t=0$. Assuming it at $t-1$, the law of total probability and independence of $\Sigma_t$ from the preceding cells give
+\[
+  \Pr(\delta^*(q_0,\Sigma_{1:t})=q')
+  =\sum_{q\in Q}\mathbf q_{t-1}[q]M(\mathbf p_t)[q,q'],
+\]
+which is exactly the $q'$ component of Equation~\eqref{eq:deepdfa-soft}. Summing the final distribution over $F$, equivalently taking its inner product with $v_o$, yields the acceptance marginal.
+\end{proof}
+
+Because the cube weights are smooth, the fixed monitor is differentiable with respect to its observations: a verdict loss can flow through it into an upstream perceptor without changing the specification. Making the specification itself learnable is a separate construction requiring parameterized transitions or guards, an adaptation objective, and a discrete extraction policy; we defer that problem to Section~\ref{sec:conclusion}. In this paper all evaluated traces are crisp, where $M(\mathbf p_t)$ collapses to $T_{\sigma_t}$ and Proposition~\ref{prop:deepdfa-crisp-equivalence} applies.
 
 \subsection{The Alphabet Blow-up}
 \label{sec:deepdfa-alphabet}
 
-DeepDFA's structural cost is dual to those of the other two paradigms. The transition tensor is indexed by the full alphabet $2^\calP$, so a dense materialization is exponential in the number of atoms, $|T| = |Q|^2 \cdot 2^{|\calP|}$. One can avoid building the dense tensor by evaluating the per-edge guard probabilities on the fly --- the factored form underlying Equations~\eqref{eq:deepdfa-crisp}--\eqref{eq:deepdfa-soft}, which never enumerates $2^\calP$ --- and this is what we use for specifications over many atoms. But the blow-up is not merely an implementation choice: when a single guard depends on all $|\calP|$ atoms there is in general no sub-exponential set of symbols to sum over, and only the read-once circuit structure of a guard (which a flat DFA does not expose) permits its satisfaction probability to be computed in time linear in $|\calP|$.
+DeepDFA's structural cost is dual to those of the other two paradigms. The transition tensor is indexed by the full alphabet $2^\calP$, so a dense materialization is exponential in the number of atoms, $|T| = |Q|^2 \cdot 2^{|\calP|}$. One can avoid building the dense tensor by evaluating the per-edge guard probabilities on the fly --- the factored form underlying Equations~\eqref{eq:deepdfa-crisp}--\eqref{eq:deepdfa-soft}, which never explicitly materializes $T$ --- and this is what we use for specifications over many atoms. This does not guarantee a sub-exponential representation for every Boolean function: a guard may require exponentially many disjoint cubes. Read-once structure is one sufficient condition for linear evaluation, but it is not necessary; other guards can admit compact orthogonal covers or decision diagrams through repeated-subfunction sharing.
 
 Concretely, the monitor admits two representations of the transition function, and we evaluate both. The \emph{dense} representation materializes the full tensor $T$ and executes each step as a single (batched) matrix product indexing the observed symbol; it is the fastest option whenever the alphabet fits in memory and is the natural showcase for cross-trace batching, but it becomes infeasible past roughly a dozen atoms, where $2^{|\calP|}$ exhausts memory. The \emph{factored} representation, developed next, never builds $T$ and is what we use for specifications over many atoms.
 
 \subsection{The Factored Transition Representation}
 \label{sec:deepdfa-factored}
 
-The factored representation exploits the fact that the DFA edges produced by \textsc{mona} are labelled not by individual symbols but by \emph{symbolic boolean guards} over the atoms (e.g.\ $a \land (b \lor c)$), each standing for the set of symbols that satisfy it. This is the same compact edge labelling that lets the symbolic walk sidestep the alphabet (Section~\ref{sec:symbolic}); the factored mode carries it into the tensorized setting while preserving both exact crisp monitoring and a differentiable soft path. The construction is our own assembly of standard ingredients from Boolean-function representation and knowledge compilation --- Shannon expansion, disjoint sum-of-products, and circuit-based probability evaluation \cite{darwiche2002knowledge} --- rather than a component inherited from the DeepDFA literature; the idea of forming an \emph{expected} transition operator from symbol/guard probabilities is shared with recent neurosymbolic-automata work \cite{NesyA,t_ilr_2025}, which likewise targets probabilistic inputs to automata in the non-mutually-exclusive setting.
+The factored representation exploits the fact that the DFA edges produced by \textsc{mona} are labelled not by individual symbols but by \emph{symbolic Boolean guards} over the atoms (e.g.\ $a \land (b \lor c)$), each standing for the set of symbols that satisfy it. This is the same compact edge labelling that lets the symbolic walk sidestep the alphabet (Section~\ref{sec:symbolic}); the factored mode carries it into the tensorized setting while preserving exact crisp monitoring and a differentiable soft path. NeSyA \cite{NesyA} already gives the more general construction: symbolic-automaton guards are compiled, e.g.\ to d-DNNF, and evaluated by exact differentiable WMC before the same matrix forward recursion. We neither claim that semantics nor knowledge compilation as new. Our contribution here is a concrete specialization to DFAs compiled from \ltlf runtime specifications, using disjoint cubes as a simple tensor backend and placing its costs beside dense DeepDFA, symbolic monitoring, and RuleRunner. The cube construction uses standard Shannon expansion and disjoint sum-of-products \cite{darwiche2002knowledge}; unlike NeSyA's shared circuits, it provides no subfunction sharing.
 
-We keep two complementary views of each edge guard, corresponding to the crisp and the soft regimes.
+We keep two complementary views of each edge guard: an exact disjoint representation used by the monitor, and a recursive approximation retained for analysis.
 
-\paragraph{Crisp path: disjoint cube cover.} At construction time each guard is expanded, by Shannon expansion, into a set of \emph{disjoint} (mutually exclusive) cubes --- partial assignments in which some atoms are required true, some required false, and the rest are don't-cares --- stored as a pair of require-true/require-false integer masks over the atoms. Given a per-atom value vector $\mathbf{p}$, each cube evaluates to $\prod_a \big[1 - \mathrm{rt}_a (1 - p_a) - \mathrm{rf}_a\, p_a\big]$ (which is $p_a$ for a required-true atom, $1 - p_a$ for a required-false atom, and $1$ for a don't-care), and the cubes of all edges are summed into the $|Q| \times |Q|$ transition matrix by a single vectorized reduction, at a cost proportional to the number of cubes rather than to $2^{|\calP|}$. On crisp $0/1$ inputs each cube is $0/1$ and, being mutually exclusive, the cubes of a state's out-guards partition the assignment space and sum to a $0/1$ row-stochastic transition, so this path reproduces the symbolic walk exactly. This is the path our monitoring experiments time, and it is what keeps the factored curve flat in $|\calP|$.
+\paragraph{Exact path: disjoint cube cover.} At construction time each guard is expanded, by Shannon expansion, into a set of \emph{disjoint} (mutually exclusive) cubes --- partial assignments in which some atoms are required true, some required false, and the rest are don't-cares --- stored as a pair of require-true/require-false integer masks over the atoms. Given a per-atom value vector $\mathbf{p}$, each cube evaluates to $\prod_a \big[1 - \mathrm{rt}_a (1 - p_a) - \mathrm{rf}_a\, p_a\big]$ (which is $p_a$ for a required-true atom, $1 - p_a$ for a required-false atom, and $1$ for a don't-care), and the cubes of all edges are summed into the $|Q| \times |Q|$ transition matrix by a single vectorized reduction, at a cost proportional to the number of cubes rather than to $2^{|\calP|}$. On crisp $0/1$ inputs each cube is $0/1$, so this path reproduces the symbolic walk exactly. On fractional inputs each cube product is its probability under the independent-atom model; because the cubes are mutually exclusive, their sum is the exact guard probability for arbitrary Boolean guards and the resulting matrix remains row-stochastic. The same tensor operations are differentiable in $\mathbf p$. This is the path our monitoring experiments time and the default path exposed by the tensor-native probabilistic API.
 
-Crucially, the factored representation is \emph{not} an unconditional escape from the alphabet blow-up: Shannon expansion of a guard on $k$ atoms can produce up to $\Theta(2^k)$ disjoint cubes, so a guard that genuinely depends on all $|\calP|$ atoms with no compact orthogonal cover reinstates the exponential cost in the number of cubes. What the factored form buys is a shift of the blow-up from ``always $2^{|\calP|}$'' (the dense tensor) to ``$2^{|\calP|}$ only for adversarial guards'': a genuine and often large win on the structured, read-once guards that arise in practice (our \ltlf families among them), and no asymptotic improvement on pathological ones. This is consistent with the finding of Section~\ref{sec:deepdfa-alphabet} --- only the read-once circuit structure of a guard admits a sub-exponential evaluation --- now made precise at the level of the representation.
+Crucially, the factored representation is \emph{not} an unconditional escape from the alphabet blow-up: Shannon expansion of a guard on $k$ atoms can produce up to $\Theta(2^k)$ disjoint cubes, so a guard with no compact orthogonal cover reinstates the exponential cost in the number of cubes. What the factored form buys is a shift of the blow-up from ``always $2^{|\calP|}$'' (the dense tensor) to ``structure-dependent'': a genuine and often large win on guards with compact covers, including the factored read-once families used in our breadth experiments, and no asymptotic improvement on adversarial ones.
 
-\paragraph{Soft path: recursive guard probabilities.} Separately, each guard is compiled into a differentiable closure that evaluates its satisfaction probability recursively over the boolean tree, using the independence rules of Equation~\eqref{eq:deepdfa-soft}; summing these per-edge closures yields the expected transition matrix $M(\mathbf{p}_t)$, differentiable in $\mathbf{p}_t$ and in the automaton parameters --- the substrate for the deferred soft-input and adaptation capabilities of Section~\ref{sec:deepdfa-soft}. On crisp inputs both views are exact for any guard, and on read-once guards they coincide even on fractional inputs, since the orthogonal-cube sum equals the recursive read-once probability; how they part ways on non-read-once guards with fractional inputs, and which of the two quantities a probabilistic monitor \emph{should} report, belong to the probabilistic-monitoring study we defer to future work.
+\paragraph{Recursive approximation.} Separately, each guard is compiled into a differentiable closure that applies the familiar independence identities recursively over its Boolean syntax, including $P(\psi_1\land\psi_2)=P(\psi_1)P(\psi_2)$ and $P(\psi_1\lor\psi_2)=1-(1-P(\psi_1))(1-P(\psi_2))$. This is exact for crisp inputs and for fractional inputs when the relevant subexpressions are independent, in particular for read-once guards. On non-read-once guards, however, shared atoms correlate the subexpressions and the recursion can double-count mass. We therefore retain it only as an explicitly selected diagnostic approximation; the probabilistic monitor defaults to the exact disjoint-cube calculation above.
+
+\paragraph{Implementation-level complexity.}
+Let $n=|\calP|$, $m=|Q|$, $B$ be the trace-batch size, $C$ the total number of stored disjoint cubes over all DFA edges, and $S$ the total number of Boolean-syntax nodes in the recursive guard closures. The bounds in Table~\ref{tab:deepdfa-complexity} describe the implemented tensor paths for one cell; they include constructing the $B\times m\times m$ transition matrices and applying them to the state batch.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Representation & Static transition storage & Per-cell time & Fractional input \\
+    \midrule
+    Dense tensor
+      & $\Theta(m^2 2^n)$
+      & $\Theta(Bm^2)$
+      & not exposed \\
+    Disjoint cubes
+      & $\Theta(Cn)$
+      & $\Theta\!\left(B(Cn+m^2)\right)$
+      & exact \\
+    Recursive closures
+      & $\Theta(S)$
+      & $\Theta\!\left(B(S+m^2)\right)$
+      & exact for read-once guards \\
+    \bottomrule
+  \end{tabular}
+  \caption{Complexity of the implemented DeepDFA transition paths. The cube implementation stores dense require-true/require-false masks of length $n$, hence $\Theta(Cn)$ rather than the number of mentioned literals.}
+  \label{tab:deepdfa-complexity}
+\end{table}
+
+These are post-compilation bounds; the cost of symbolic simplification during Shannon expansion depends on the compiler. The emitted representation alone can have $\Theta(2^n)$ cubes for one guard and $C=\Theta(m2^n)$ cubes over a complete DFA in the worst case. The cube path therefore changes an unconditional alphabet tensor into a structure-dependent compilation; it does not improve the worst case. Its per-cell temporary storage is $\Theta(B(Cn+m^2))$. The implemented dense backend selects a complete crisp valuation in $\Theta(Bm^2)$ time. An exact dense calculation from independent per-atom probabilities would instead mix all $2^n$ symbol matrices and cost $\Theta(Bm^2 2^n)$ per cell; this interface is not implemented because the factored path computes the same marginal without unconditional alphabet enumeration.
+
+For a length-$L$ batch, the sequential recurrence multiplies the corresponding per-cell time by $L$. For $L\geq 2$, the optional Hillis--Steele prefix scan instead stores $\Theta(LBm^2)$ matrices and uses $\Theta(\log L)$ parallel stages of matrix--matrix products, for $\Theta(BLm^3\log L)$ total arithmetic work. It reduces sequential launch depth rather than asymptotic work, which is why we treat it as a hardware-dependent variant rather than a complexity improvement.
+
+\paragraph{Artifact interface.}
+The released monitor exposes dense, cube-factored, and prefix-scan variants through separate classes. Its tensor-native probabilistic entry point accepts either an $L\times n$ trace or a padded $B\times L\times n$ batch with explicit lengths, preserves autograd to the input probabilities, and defaults to exact cube WMC; the recursive approximation requires an explicit option. The API rejects non-finite values and values outside $[0,1]$. Each compiled monitor also exposes a serializable diagnostics record containing $n$, $m$, the alphabet size, transition count, cube count where applicable, and the actual tensor element and byte counts used by the selected representation. These fields make the representation-size claims independently auditable without relying on private implementation state.
 
 Our scalability experiments plot the dense and factored paths side by side --- the dense curve walling out at the $2^{|\calP|}$ memory bound while the factored curve stays flat on the read-once families --- which separates the alphabet blow-up as a \emph{memory} wall from the residual per-step \emph{compute} cost.

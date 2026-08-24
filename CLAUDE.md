@@ -10,6 +10,11 @@ Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear
 > before older planning notes.  It is the authoritative cross-version status;
 > benchmark execution and result claims are currently deferred.
 
+> **DeepDFA handoff:** read
+> [docs/deepdfa_status_and_future_work.md](docs/deepdfa_status_and_future_work.md)
+> before reopening paradigm 3. Its theory and implementation are frozen for
+> the current paper; the next major phase is experiments/results.
+
 **Scope decision (2026-07-13, supervisors' call): adaptation and probabilistic monitoring are OUT of this paper** — they are future work. Everything belonging to those threads (the uncertainty/calibration harness and experiments, the probabilistic-verdict theory section, the adaptation plan) lives in **[artur_future_work/](artur_future_work/)**, a self-contained fork with its own CLAUDE.md, ready to be extracted into its own repository. Do not re-grow those threads here; the paper mentions soft inputs and differentiability only as *affordances* motivating the paradigms (one paragraph, `latex/4_deepdfa.tex` §4.2) and defers the rest.
 
 This is an active research project — plans, experiments, and framing should be treated as working hypotheses, not fixed requirements. Expect iteration.
@@ -52,7 +57,7 @@ Complete the fair timing comparison across all monitor variants and produce the 
 Key mechanisms already in place (details preserved here because they explain *why the numbers look the way they do*):
 
 - **Early-termination confound killed (exp2/3).** The IJCNN `◇(⋁(a₀∧aᵢ))` family early-terminates almost instantly on random traces, so symbolic's old ~1e-10 s/cell measured "how fast it gives up" while batched neural monitors process *all* cells — not apples-to-apples. `Monitor.run/batch_run` take `early_termination: bool` ([base.py](src/monitors/base.py)); when False the crisp walk processes all cells (absorbing states are sticky — verdicts unchanged, verified in [tests/test_early_termination.py](tests/test_early_termination.py)). `reset_if_stale()` drops CSVs measured in the other mode. Confirmed effect: symbolic per-cell on `ijcnn_n8` jumps ~3e-9 → ~3e-7 s (real dict lookup).
-- **DeepDFA factored path vectorized (exp2 dual finding).** Each guard is decomposed **once** at construction into a disjoint cube cover by Shannon expansion (`_guard_cubes`/`_shannon_cubes` in [deep_dfa.py](src/monitors/deep_dfa.py)), stored as require-true/require-false integer masks; `crisp_matrix(p)` is a single vectorized mask reduction — no per-cell sympy closures. Factored per-cell at n=32: ~2e-4 → ~7e-6 s; growth n=2→32: ~24× → ~3.7× (residual = genuine O(n²) mask reduction). Dense (`DeepDFAMonitorDense`, capped at `DENSE_MAX_LEAVES=16`) is fastest where it fits but walls out (2^32 ≈ 64 GB at |Q|=2); exp2's analytic **memory-wall panel** shows it without building the tensors.
+- **DeepDFA factored path vectorized (exp2 dual finding).** Each guard is decomposed **once** at construction into a disjoint cube cover by Shannon expansion (`_guard_cubes`/`_shannon_cubes` in [deep_dfa.py](src/monitors/deep_dfa.py)), stored as require-true/require-false integer masks; `exact_matrix(p)` (historical alias: `crisp_matrix`) is a single vectorized mask reduction — no per-cell sympy closures. It is exact and differentiable for fractional independent-Bernoulli inputs as well as crisp inputs. Factored per-cell at n=32: ~2e-4 → ~7e-6 s; growth n=2→32: ~24× → ~3.7× (residual = genuine O(n²) mask reduction). Dense (`DeepDFAMonitorDense`, capped at `DENSE_MAX_LEAVES=16`) is fastest where it fits but walls out (2^32 ≈ 64 GB at |Q|=2); exp2's analytic **memory-wall panel** shows it without building the tensors.
 - **CUDA timing hygiene (exp3).** `time_monitor` syncs CUDA once per timed repeat (after warm-up and after each full `batch_run`), never inside the per-cell loop ([runner.py](src/benchmarks/runner.py)); DeepDFA's `batch_run` stays on-device and reads verdicts once at the end. Exp3 leads with **absolute time-per-trace**; the speedup panel is annotated (each curve normalized to its own batch=1 — cross-monitor speedups are misleading).
 - **Truthful device labeling (was a real data bug).** Every monitor exposes `effective_device` (Symbolic and the original structured RuleRunner are pure-Python CPU walks and stamp `cpu` even under `device="cuda"`); `time_monitor` stamps that and syncs CUDA only for monitors that truly use it. A CSV never claims a GPU run that did not happen. Resume does not key on device — keep one CSV per machine (`results/cpu/`, `results/gpu/`), merged by the plotters.
 - **Overhead decomposition (why symbolic wins).** Exp 3 batch=1 vs 1024 shows **~83 µs fixed per-call overhead per cell vs ~1.5 µs actual compute** — overhead, not arithmetic, is what loses. Two implemented levers test whether anything survives:
@@ -74,17 +79,17 @@ The most ICLR-shaped addition: train RNN/Transformer monitors on labeled traces 
 
 ### Phase 4 — Decision-diagram transition representation 🔲 (hardest; the ambition-raiser; scope first)
 
-BDD/SDD-compiled guard circuits as the principled upgrade of the factored cube cover — **crisp/scalability side only** in this repo (representation size vs dense `2^|Σ|` vs cube count; batched compiled-circuit throughput). Design note: [docs/decision_diagram_transition_representation.md](docs/decision_diagram_transition_representation.md) (read its scope note: the calibration/WMC headline belongs to `artur_future_work/`). First steps if pursued: the NeSyA novelty check, and whether MONA's internal MTBDD can be extracted directly.
+BDD/SDD-compiled guard circuits as a possible compactness upgrade of the factored cube cover — **crisp/scalability side only** in this repo (representation size vs dense `2^|Σ|` vs cube count; batched compiled-circuit throughput). NeSyA already establishes exact differentiable WMC over compiled symbolic-automaton guards, so neither that semantics nor knowledge compilation is a novelty claim here; the remaining delta is an LTLf-runtime backend and systems comparison. Design note: [docs/decision_diagram_transition_representation.md](docs/decision_diagram_transition_representation.md). First implementation question if pursued: whether MONA's internal MTBDD can be extracted directly.
 
 ### Phase 5 — Writing 🟡 (trails experiments; LaTeX in `latex/`)
 
 - Port to the **ICLR template** (currently plain `article`).
 - Sec 1 intro: thesis = "a foundation for neuro-symbolic LTLf monitoring: fix RuleRunner, connect with automata-based approaches, characterize the landscape honestly." Resolve the red TODOs (incl. "other NeSy approaches" and the results summary).
 - Sec 3 RuleRunner: published architecture + shared-register counterexample + exact semantic boundary + bounded-event middle construction + progression repair with soundness/completeness proof — **drafted**; polish.
-- Sec 4 DeepDFA: architecture, affordance paragraph (§4.2 — keep short, points to future work), alphabet blowup, factored representation — **drafted**; polish.
+- Sec 4 DeepDFA: architecture, crisp-equivalence/exact-WMC/trace-marginal propositions, NeSyA positioning, alphabet blowup, factored representation, and implementation-level complexity — **drafted**; polish.
 - Sec 5 theory comparison: three Achilles heels; **capability matrix TODO**; cite Bacchus–Kabanza + the LTLf 2EXP bound.
 - Sec 6 experiments: rewrite around Phase 1's regenerated figures; state early-termination handling and hardware explicitly.
-- Sec 7 related work: **empty stub** — needs writing (RuleRunner line, DeepDFA/NeSyA/T-ILR line, LTLf monitoring, RV tools).
+- Sec 7 related work: RuleRunner and DeepDFA/NeSyA/T-ILR lines **drafted**; LTLf monitoring and RV-tool coverage still needed.
 - Sec 8 conclusion: future-work stubs (Transformers / Specification Adaptation / Process Model Repair) + the inert decision-diagram signpost (`\iffalse`-guarded).
 - Appendix candidates: [docs/appendix_ideas.md](docs/appendix_ideas.md).
 
@@ -288,7 +293,10 @@ comparison.  The comparison and any “cost of correctness” result are deferre
 
 ## Paradigm 3 (DeepDFA) — implementation notes
 
-The **review document** for paradigm 3. Read before reviewing [src/monitors/deep_dfa.py](src/monitors/deep_dfa.py).
+The authoritative status and future-work review is
+[docs/deepdfa_status_and_future_work.md](docs/deepdfa_status_and_future_work.md).
+Read it before reviewing or extending
+[src/monitors/deep_dfa.py](src/monitors/deep_dfa.py).
 
 ### Source and the decision NOT to vendor
 
@@ -296,7 +304,7 @@ DeepDFA originates in the Umili & Capobianco line (ECAI 2024) and is used in the
 
 ### The alphabet-blowup finding
 
-For non-mutually-exclusive propositional LTLf the transition tensor is indexed by `2^|atoms|` truth assignments. The IJCNN family's guards depend on **all n atoms**: dense is `2^n`, and only a guard's read-once circuit structure (which a flat DFA doesn't expose) permits sub-exponential evaluation. This is DeepDFA's structural weakness, dual to the published RuleRunner's shared-register conflation and symbolic's state blowup — the clean three-way story. (The NeSy PPM paper sidesteps it only via the mutual-exclusivity assumption, which is false for our benchmark.)
+For non-mutually-exclusive propositional LTLf the transition tensor is indexed by `2^|atoms|` truth assignments. The IJCNN family's guards depend on **all n atoms**, so dense is `2^n`; factored evaluation is sub-exponential only when the guard admits a compact representation. Read-once structure is sufficient but not necessary (compact cube covers or decision diagrams can also help). This is DeepDFA's structural weakness, dual to the published RuleRunner's shared-register conflation and symbolic's state blowup — the clean three-way story. (The NeSy PPM paper sidesteps it only via the mutual-exclusivity assumption, which is false for our benchmark.)
 
 ### Representations (all on `DeepDFAMonitor.compile(mode=)` or subclasses)
 
@@ -306,18 +314,20 @@ For non-mutually-exclusive propositional LTLf the transition tensor is indexed b
 | `factored` | none materialized | vectorized cube-mask reduction | large `|AP|` (exp2, n up to 32) |
 | `scan` (`DeepDFAMonitorScan`) | per-cell matrices, prefix product | O(log L) launches | long traces, small `|Q|`, GPU (exp1/3) |
 
-**Factored crisp path (the path the experiments time):** each MONA guard is Shannon-expanded **once at construction** into a disjoint (orthogonal) cube cover, stored as require-true/require-false integer masks; `crisp_matrix(p)` builds the per-cell transition matrix as one vectorized reduction `∏_a [1 − rt·(1−p) − rf·p]`. Exact for crisp 0/1 inputs (cubes are 0/1 and mutually exclusive; rows sum to 1 because out-guards partition the assignment space). Flat in |AP| per cell (~7e-6 s at n=32; ~3.7× growth n=2→32 = genuine O(n²) mask reduction). ⚠ Not an unconditional escape: Shannon expansion can produce `Θ(2^k)` cubes for adversarial guards — the blowup shifts from "always" to "structure-dependent".
+**Factored exact path (the path the experiments time):** each MONA guard is Shannon-expanded **once at construction** into a disjoint (orthogonal) cube cover, stored as require-true/require-false integer masks; `exact_matrix(p)` builds the per-cell transition matrix as one vectorized reduction `∏_a [1 − rt·(1−p) − rf·p]`. It is exact for crisp 0/1 inputs and is also exact WMC for arbitrary guards under fractional independent-Bernoulli inputs; rows sum to 1 because out-guards partition the assignment space. Flat in |AP| per cell (~7e-6 s at n=32; ~3.7× growth n=2→32 = genuine O(n²) mask reduction). ⚠ Not an unconditional escape: Shannon expansion can produce `Θ(2^k)` cubes for adversarial guards — the blowup shifts from "always" to "structure-dependent".
 
-**Differentiable soft path (`soft_matrix` + `acceptance_probability`/`soft_verdict` readouts):** kept in the source as the affordance the paper points to (recursive guard-probability closures under atom independence; exact on crisp inputs for any guard, and on fractional inputs for read-once guards). **No experiment in this repo exercises it** — the uncertainty harness, the read-once/calibration findings, and the "which probabilistic verdict is correct" question all live in `artur_future_work/`. Do not delete it (the paper's §4.2/§4.4 reference it, and `tests/test_deep_dfa.py` covers `soft_matrix`'s crisp/read-once semantics).
+**Artifact surface:** [docs/deepdfa_artifact.md](docs/deepdfa_artifact.md) is the standalone usage/semantics guide. `acceptance_probability_tensor` is the autograd-preserving exact soft entry point and validates finite `[0,1]` Bernoulli parameters once at the public boundary. Every compiled monitor exposes an immutable `artifact_stats` record with `|AP|`, alphabet size, `|Q|`, transition/cube counts, and actual persistent tensor element/byte counts; the inner transition kernel remains validation-free so benchmark timing is unchanged.
+
+**Differentiable probabilistic path:** `acceptance_probability_tensor(P, lengths)` consumes `(L, |AP|)` or `(B, L, |AP|)` tensors and returns tensors without detaching, so losses backpropagate to an upstream perceptor. It defaults to `exact_matrix`. The historical recursive closure is now explicit as `recursive_matrix` (`soft_matrix` remains a compatibility alias) and can be selected with `method="recursive"` only for diagnostic comparisons. **No probabilistic experiment in this repo exercises it** — the uncertainty harness and verdict-semantics study live in `artur_future_work/`.
 
 ### Monitor mechanics
 
-- `step(obs)`: `q' = q @ T[:,σ,:]` (dense) or `q @ crisp_matrix(prob_vector(obs))` (factored); three-valued verdict off precomputed `trap_idx`/`sink_idx`; `final_verdict` = accepting membership of `argmax(q)`.
+- `step(obs)`: `q' = q @ T[:,σ,:]` (dense) or `q @ exact_matrix(prob_vector(obs))` (factored); three-valued verdict off precomputed `trap_idx`/`sink_idx`; `final_verdict` = accepting membership of `argmax(q)`.
 - `batch_run` **overrides** the base: encodes the whole batch once (`encode_presence`, vectorized numpy), one `bmm` per cell across all traces, per-trace early termination replayed from the recorded state path so `batch_run == [run(t) …]` exactly. `device="cuda"` supported.
 
 ### Correctness
 
-`tests/test_deep_dfa.py`: DeepDFA matches `SymbolicDFAMonitor` on the full sweep **including nested temporal — no xfails**; dense == factored on crisp traces; `batch_run == [run(t) …]` in both modes; `crisp_matrix` row-stochastic, 0/1 on crisp input, equals `soft_matrix` on read-once guards, batched == unbatched; factored handles n=24 atoms with no `2^24` tensor. Scan variant verdict-identical to sequential and symbolic (`tests/test_deep_dfa_scan.py`).
+`tests/test_deep_dfa.py`: DeepDFA matches `SymbolicDFAMonitor` on the full sweep **including nested temporal — no xfails**; dense == factored on crisp traces; `batch_run == [run(t) …]` in both modes; `exact_matrix` is row-stochastic and agrees with brute-force WMC on a non-read-once guard; the tensor-native acceptance API preserves autograd and batch-length semantics; `exact_matrix == recursive_matrix` on read-once guards; factored handles n=24 atoms with no `2^24` tensor. Scan is verdict-identical to sequential and symbolic (`tests/test_deep_dfa_scan.py`).
 
 ## Benchmark Design
 

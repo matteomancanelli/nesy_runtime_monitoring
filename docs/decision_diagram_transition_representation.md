@@ -4,12 +4,12 @@
 > repo split. The **crisp/scalability side** (compact exact transition
 > representation, batched compiled circuits, representation-size and throughput
 > experiments) is Phase 4 of THIS repo's roadmap (see CLAUDE.md). The
-> **calibration/WMC-exactness headline** (§3.1, §8 — exact soft transitions,
-> calibrated probabilistic verdicts) belongs to the probabilistic-monitoring
+> **uncertainty-learning/evaluation thread** (§3.1, §8 — calibration experiments
+> and probabilistic verdict interpretation) belongs to the probabilistic-monitoring
 > thread in `artur_future_work/`, which holds a copy of this note. Coordinate
 > before building either half.
 
-**Status:** exploratory planning note (2026-07-07). Captures a candidate direction
+**Status:** exploratory planning note (2026-07-07; novelty check updated 2026-08-23). Captures a candidate direction
 raised while reviewing §4 (DeepDFA). Records the technical case, the GPU tension and
 its resolution, the relationship to the LydiaSyft / symbolic-synthesis line, and a
 strategic recommendation about *when* this belongs in a paper. Not yet scoped into any
@@ -22,15 +22,16 @@ phase. A signpost paragraph is drafted (inert) in `latex/8_conclusion.tex`.
 Represent the DeepDFA transition function with **decision diagrams** — reduced ordered
 BDDs, or better **SDDs** — over the atom variables, instead of (a) the dense `2^|Σ|`
 tensor or (b) the flat disjoint-cube cover of our current factored mode. This is the
-principled version of the factored path: a cube cover *is* the paths-to-1 of a BDD but
-without the subfunction **sharing** that makes a diagram compact. The payoff is not
-primarily speed; it is **exactness + tractability + differentiability at once**:
+principled compactness upgrade of the factored path: a cube cover *is* the paths-to-1 of
+a BDD but without the subfunction **sharing** that can make a diagram compact. The
+current cube backend is already exact and differentiable; the possible payoff is a
+smaller compiled representation without surrendering those properties:
 
-1. **Fixes the non-read-once calibration finding by construction.** The soft transition
-   `M(p)` is a weighted model count (WMC). On a deterministic, decomposable diagram, WMC
-   is exact in a **single pass linear in the diagram size** for *any* guard — not only
-   read-once ones. No overshoot, no renormalization hack; `M(p)` is genuinely
-   row-stochastic and `acc_t` is a calibrated probability.
+1. **Preserves exact WMC with sharing.** The soft transition `M(p)` is already computed
+   exactly by our disjoint cubes. A deterministic, decomposable compiled circuit computes
+   the same WMC in time linear in its circuit size and may reuse subfunctions that the
+   flat cube list repeats. NeSyA already establishes this general construction and its
+   probabilistic state-distribution semantics; it is prior art, not our novelty.
 2. **Mitigates the alphabet blow-up when structure exists.** Sharing compresses the guard
    representation the cube cover cannot; the exponential moves from "always `2^|Σ|`" to
    "only for guards with no compact diagram under any ordering."
@@ -38,8 +39,8 @@ primarily speed; it is **exactness + tractability + differentiability at once**:
    *fixed* arithmetic circuit for the guard probabilities; evaluate that circuit densely
    and batched. The runtime hot loop remains a small regular `|Q|×|Q|` matmul.
 
-This is a strong candidate for the Phase 3.2 "fourth / hybrid paradigm" cell and,
-plausibly, a **standalone contribution** stronger than the current draft on its own.
+This is a candidate systems extension, not a new semantic paradigm. Its value depends on
+showing a material representation-size or batched-runtime improvement for LTLf monitors.
 
 ---
 
@@ -52,14 +53,15 @@ were flagged in the text:
 
 - **The cube count can be `Θ(2^k)`** for a guard on `k` atoms with no compact orthogonal
   cover (§4.4). So factoring *shifts* the alphabet blow-up rather than removing it.
-- **The soft path double-counts on non-read-once guards** (§4.2 / Phase 1.4). The
-  recursive independence closure `P(∨)=1−∏(1−·)` over-counts shared atoms; the raw
-  acceptance score can exceed 1 and needs renormalization that fixes range, not
-  calibration.
+- **The historical recursive approximation double-counts on non-read-once guards.**
+  The closure `P(∨)=1−∏(1−·)` over-counts shared atoms. The production
+  probabilistic path now uses the disjoint cubes as exact WMC, while retaining
+  the recursion explicitly as a diagnostic baseline.
 
-Both are symptoms of using a representation *without sharing and without a canonical WMC
-semantics*. Decision diagrams are exactly the data structure the knowledge-compilation
-community built to solve both. The connection to LydiaSyft (below) is that this same
+The remaining cube-count problem is a symptom of using a representation *without
+subfunction sharing*; it is not an exactness problem. Decision diagrams are the data
+structure the knowledge-compilation community built to address that compression axis.
+The connection to LydiaSyft (below) is that this same
 line of research already moved LTLf DFAs from explicit to symbolic (BDD) representations
 — for *synthesis* scalability, but the representation is reusable here.
 
@@ -94,21 +96,20 @@ transition representation,"** never just "symbolic."
 Keep the **state axis** and the **alphabet axis** distinct — decision diagrams interact
 very differently with each, and our actual bottleneck is the alphabet.
 
-### 3.1 Alphabet axis (`2^|Σ|`) — the strong case
+### 3.1 Alphabet axis (`2^|Σ|`) — the relevant case
 
 This is where a diagram is the natural, direct fix.
 
 - A BDD/ADD over the atom variables represents the guard (or the whole per-symbol
   transition) compactly, sharing common subfunctions the cube list re-enumerates.
 - **Exact soft transitions via WMC.** `M(p)[q,q'] = P(guard_{q→q'} satisfied | independent
-  atom probs p)`. On a deterministic+decomposable diagram this marginal is one bottom-up
-  pass, linear in diagram size, **exact for any guard**. This is the Darwiche knowledge-
-  compilation-map result (`darwiche2002knowledge`), the same theory behind Semantic Loss
-  / pseudo-semantic loss (`pseudosemantic_loss`) and probabilistic circuits
-  (`liu2024tractable`). It makes the read-once caveat disappear.
-- **Row-stochasticity restored.** Because the marginal is exact and a state's out-guards
-  partition the assignment space, the row sums to 1 by construction — the Phase 1.4
-  non-stochasticity finding is *solved*, not normalized around.
+  atom probs p)`. Our disjoint cubes and deterministic+decomposable circuits both compute
+  this marginal exactly for arbitrary guards; the diagram may be smaller through sharing.
+  This is the Darwiche knowledge-compilation result (`darwiche2002knowledge`) and is used
+  directly for symbolic automata by NeSyA (`NesyA`).
+- **Row-stochasticity is preserved, not newly restored.** Exact guard marginals sum to one
+  because each state's outgoing guards partition the valuation space. Both the current
+  cube backend and a future compiled-circuit backend have this property.
 
 ### 3.2 State axis (`|Q|`) — the conditional, mostly-orthogonal case
 
@@ -170,28 +171,58 @@ exact tractable soft transitions the cube cover cannot.
 3. **Circuit depth vs GPU efficiency.** A deep, skinny circuit layers into many small
    batched ops — fine for correctness, but the per-level kernel-launch overhead can bite at
    small `|Q|` (same overhead story as the existing DeepDFA micro-timing). Measure, don't
-   assume a speed win — the win to lead with is **exactness/calibration**, not throughput.
+   assume a speed win. Since exactness is already available from cubes and NeSyA supplies
+   the compiled-WMC semantics, the result must stand on compactness and systems evidence.
 4. **We already get MONA's BDDs for free-ish.** Investigate extracting MONA's internal
    (MT)BDD transition rather than re-compiling from the parsed explicit table; may save the
    compile step entirely.
 
 ---
 
-## 6. Relationship to existing work (novelty check)
+## 6. Relationship to existing work (novelty check: resolved)
 
-- **NeSyA** (`NesyA`, IJCAI 2025) and **T-ILR** (`t_ilr_2025`) already push probabilistic /
-  neural inputs into automata in the non-mutex setting and are the closest neighbors. A
-  contribution here must be explicit about the delta: *exact, tractable, differentiable
-  soft transitions via compiled decision diagrams for **runtime three-valued monitoring**,
-  with the calibration guarantee on non-read-once guards*, and the honest three-paradigm
-  comparison as the frame. Check carefully what NeSyA compiles to and whether it already
-  gives the exact-WMC transition — if it does, our delta is the monitoring framing +
-  three-way comparison + the calibration analysis, not the representation itself.
+- **NeSyA** (`NesyA`, IJCAI 2025) already gives exact differentiable guard WMC using
+  compiled forms such as d-DNNF, the expected transition matrix, and the theorem that its
+  forward state mass equals the probability mass of traces reaching each state. This
+  resolves the novelty check: exact compiled-WMC automaton semantics are prior art. Our
+  defensible delta is the LTLf runtime-monitoring specialization, three-valued/crisp
+  comparison, and an empirical backend comparison (cubes versus shared circuits), if the
+  latter shows a useful size or throughput gain.
+- **T-ILR** (`t_ilr_2025`) is adjacent but semantically different: it evaluates LTLf
+  directly under fuzzy Zadeh semantics and performs iterative local refinement, rather
+  than computing a probabilistic automaton acceptance marginal.
 - **Knowledge compilation / WMC** (`darwiche2002knowledge`) is the theoretical backbone.
 - **Probabilistic circuits / tractable inference** (`liu2024tractable`, `pseudosemantic_loss`)
   are the "compile logic → differentiable GPU circuit" template to imitate.
 - **LydiaSyft / symbolic synthesis** (`lydiasyft2025`, `LTL2DFA1`, `LTL2DFA3`) is the
   source of the symbolic-DFA representation, in an adjacent (synthesis) task.
+
+### Public NeSyA artifact audit (2026-08-23)
+
+The implementation linked by the NeSyA paper is publicly available at
+<https://github.com/nmanginas/nesya>; the live repository was verified at commit
+`aa5830e12b81b9a618e52739de6de629afebd10e` (2025-12-16). The relevant reusable
+component is `deepfa/automaton.py`:
+
+- guards are compiled with the external `dsharp` executable through the Python
+  `nnf` package, then smoothed;
+- WMC is evaluated with `nnf.amc.eval` into a full
+  `(batch, sequence, |Q|, |Q|)` transition stack;
+- state propagation is sequential over time and returns final accepting mass;
+- the supplied determinism check tests mutual exclusion but explicitly does not
+  enforce exhaustive outgoing guards, so a fair adapter must independently
+  check row mass/completeness;
+- the repository contains experiment scripts but no substantive unit-test suite.
+
+The repository is GPL-3.0. For a comparison, pin and run the upstream artifact
+in a separate reference environment instead of copying its implementation into
+this repository. Use the same LTLf-generated DFA, probability tensors, dtype,
+device, warm-up, and synchronization policy. Compare final acceptance values,
+guard-compilation time, circuit/cube representation size, peak memory, and
+batched forward time. NeSyA does not provide this project's exact three-valued
+online sink/trap interface, so presenting its complete application as a drop-in
+runtime-monitor baseline would be misleading; the controlled comparison unit
+is the expected-transition/WMC backend.
 
 ---
 
@@ -206,11 +237,14 @@ Rationale:
   decision-diagram monitor = new implementation + new experiments + a small theory section
   = a fourth paradigm's worth of work. Bolting it on delays a near-finishable paper and
   under-develops a strong idea.
-- **Paper A does not need to *solve* the alphabet/calibration heel** — characterizing it
-  neutrally is the honest three-way story. Solving it is the next paper.
-- **This idea can carry its own paper.** "An exact, compact, differentiable runtime monitor
-  via knowledge compilation" is theorem-backed (WMC tractability) and addresses the A*
-  "too simple" worry head-on (see §8).
+- **Paper A does not need to eliminate the alphabet heel** — characterizing it neutrally
+  is the honest three-way story. Cubes already remove unconditional alphabet enumeration
+  on structured guards; shared circuits would target the remaining representation-size
+  problem.
+- **This idea is not automatically a separate-paper contribution.** Exact differentiable
+  automaton WMC is already established by NeSyA. It becomes substantial only if the LTLf
+  runtime setting exposes a new algorithmic or systems result, such as direct reuse of
+  MONA's MTBDD plus a convincing representation-size/throughput advantage.
 - **Adaptation is likely too big** (user's own read, 2026-07-07). Good — this direction is
   a *representation/monitoring* contribution that does **not** require the full adaptation
   training story, so it is a more tractable way to raise the paper's ambition than Phase 2.
@@ -221,53 +255,49 @@ technical core of a paper that *replaces* the adaptation PoC as the headline.
 
 ---
 
-## 8. Could this be THE contribution? (addressing the "too simple for A*" worry)
+## 8. What could make this a contribution?
 
 The current Paper A risk is that "we reproduced three known monitors and timed them" reads
-as engineering, not novelty. A decision-diagram soft monitor gives a **crisp technical
-claim** to anchor an A* submission:
+as engineering, not novelty. A decision-diagram backend does not by itself fix that risk,
+because NeSyA already provides the central exact-WMC construction. A defensible claim
+would have to be narrower and empirically demonstrated:
 
-> A runtime LTLf monitor whose soft (probabilistic-input) transition is an **exact**
-> weighted model count, computed in time **linear in a compiled decision diagram**,
-> **differentiable** in the atom probabilities, and therefore emitting a **calibrated**
-> three-valued verdict on **arbitrary** (non-read-once) guards — where the tensorized
-> DeepDFA soft path is only an independence approximation and the symbolic monitor cannot
-> emit a probability at all.
+> For LTLf-generated monitor guards, a shared compiled-circuit backend can preserve the
+> existing exact differentiable transition semantics while reducing compiled size and/or
+> batched runtime relative to disjoint cubes, without materializing the dense alphabet.
 
-Why this is A*-shaped:
+What would be needed to support that claim:
 
-- **A theorem, not just a system:** exactness + tractability (linear in diagram size) +
-  differentiability, with the non-read-once calibration guarantee as the headline
-  correctness result. Contrast cleanly against DeepDFA (approx on non-read-once) and
-  symbolic (no soft output).
+- **A nontrivial delta beyond NeSyA:** for example, a direct MONA-MTBDD extraction
+  algorithm, a runtime-specific circuit batching scheme, or a formal representation bound
+  for an important LTLf guard family. Re-proving exactness and linear-time circuit WMC is
+  useful exposition but not novelty.
 - **A neutrality-preserving story:** it fills the empty "hybrid" cell (exact+compact at
   runtime *and* differentiable), completing the three-Achilles-heels narrative rather than
   crowning a winner.
-- **Evaluation is feasible without a training loop:** calibration/ECE + reliability
-  diagrams on non-read-once families (extends the uncertainty harness, now in
-   `artur_future_work/experiments/exp_uncertainty.py`),
-  plus alphabet-scaling (diagram size vs dense `2^|Σ|` vs cube count) and a batched-circuit
-  throughput panel. No BPIC log, no adaptation training, no new dataset.
+- **Evaluation can remain focused:** representation size (diagram versus cubes versus
+  dense alphabet) and batched-circuit throughput are the decisive panels. Calibration is
+  only a correctness control because the existing cube path is already exact.
 
 ### Minimal experiment sketch (if pursued)
 
-1. **Calibration correctness.** On `majority3` and other non-read-once guards: recursive
-   soft path (over-counts) vs cube path (exact marginal) vs diagram-WMC (exact) — show the
-   diagram is exactly row-stochastic and calibrated; reuse `calibration.py` (ECE, reliability).
+1. **WMC correctness control.** On `majority3` and other non-read-once guards: recursive
+   approximation (over-counts) versus cube and diagram paths (both exact). This verifies
+   the implementation but is not the headline result.
 2. **Representation size.** Diagram size (SDD/BDD) vs dense `2^|Σ|` vs disjoint-cube count,
    across the IJCNN breadth family and a deliberately non-read-once / non-decomposable
    family — show where sharing wins and where nothing does (honest worst case).
 3. **Batched-circuit throughput.** Fixed compiled circuit evaluated batched on GPU vs dense
-   DeepDFA vs cube-factored — establish competitiveness (lead with exactness, not speed).
+   DeepDFA vs cube-factored — determine whether sharing survives GPU execution overhead.
 4. **(stretch) Differentiability smoke test.** Gradient of `acc_t` wrt `p` through the
    compiled circuit — demonstrates the adaptation substrate without committing to the full
    Phase 2 training story.
 
 ### Open questions to settle before committing
 
-- Does **NeSyA** already deliver the exact-WMC automaton transition? If yes, re-scope the
-  delta to the *monitoring + three-valued verdict + calibration analysis + three-way
-  comparison*, and say so explicitly.
+- Which concrete result goes beyond **NeSyA**: direct MONA reuse, a runtime-specific
+  batching algorithm, a representation theorem for an LTLf family, or only an empirical
+  backend comparison? Do not begin implementation without choosing one.
 - SDD vs BDD vs d-DNNF in practice for MONA guards — which compiles smallest, which is
   easiest to turn into a batched tensor circuit (`PySDD` maturity, differentiability).
 - Can we reuse MONA's internal MTBDD directly, skipping recompilation from the DOT table?
@@ -280,7 +310,7 @@ Why this is A*-shaped:
 
 - Signpost paragraph (inert): `latex/8_conclusion.tex` (remove `\iffalse`/`\fi` to promote).
 - Factored representation it upgrades: `latex/4_deepdfa.tex` §4.4, `src/monitors/deep_dfa.py`
-  (`_guard_cubes` / `_shannon_cubes` / `crisp_matrix` / `soft_matrix`).
+  (`_guard_cubes` / `_shannon_cubes` / `exact_matrix` / `recursive_matrix`).
 - Calibration harness to extend (moved to the future-work fork): `artur_future_work/src/benchmarks/calibration.py`, `artur_future_work/experiments/exp_uncertainty.py`.
 - Bib keys added for this: `lydiasyft2025`, `darwiche2002knowledge`, `t_ilr_2025`
   (plus existing `LTL2DFA1`, `LTL2DFA3`, `NesyA`, `pseudosemantic_loss`, `liu2024tractable`).

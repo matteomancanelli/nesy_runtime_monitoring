@@ -8,6 +8,11 @@ current handoff across all three RuleRunner versions, use
 [`docs/rulerunner_status.md`](docs/rulerunner_status.md) as the authoritative
 status document.
 
+For the corresponding DeepDFA audit conclusion, settled claims, artifact
+status, experiment handoff, and near/far future-work boundary, use
+[`docs/deepdfa_status_and_future_work.md`](docs/deepdfa_status_and_future_work.md)
+as the authoritative document.
+
 ## What the project currently contributes
 
 The strongest contribution is not merely another implementation comparison.
@@ -107,10 +112,11 @@ monitors with a symbolic DFA and a fixed DeepDFA tensorization.
 - Sparse observations should mean “missing atom = false” consistently.  The
   progression and RuleRunner paths do this; the symbolic path was observed to
   reject sparse mappings and should be normalized at its API boundary.
-- DeepDFA's crisp transition computation matched the DFA oracle in the audit.
-  Its soft API currently detaches/copies inputs and has no learned parameters,
-  so differentiability/training claims require either an implementation change
-  or narrower wording.
+- **Resolved for input differentiability.** DeepDFA's crisp transition
+  computation matched the DFA oracle in the audit. The public tensor-native
+  acceptance API now preserves autograd to input probabilities and defaults to
+  exact disjoint-cube WMC. The automaton still has no learned parameters, by
+  design: specification adaptation remains deferred and must not be claimed.
 - N-ary formula association differs from the paper's balanced construction:
   conjunction/disjunction are left-folded.  This preserves semantics but
   changes depth, network size, and therefore benchmark costs.

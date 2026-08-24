@@ -26,10 +26,12 @@ class BenchmarkFormula:
     atoms: tuple[str, ...]
     n_leaves: int
     # Whether every DFA edge guard is read-once (each atom appears at most
-    # once). On a read-once guard DeepDFA's soft_matrix is *exact*, so the
-    # acceptance probability is the true marginal by construction — perfect
-    # calibration would then be a hollow identity. The calibration claim
-    # (Phase 1.3) must be made on a non-read-once formula. Default True: the
+    # once). This no longer marks where DeepDFA is exact: `exact_matrix` (the
+    # default probabilistic path) is exact WMC for *any* guard. It marks where
+    # the retained `recursive_matrix` approximation coincides with the exact
+    # marginal — so a calibration study run on the recursive path would be a
+    # hollow identity on a read-once formula, and must use a non-read-once one.
+    # That study lives in `artur_future_work/`, not here. Default True: the
     # IJCNN / response references are read-once.
     read_once: bool = True
 
@@ -117,15 +119,16 @@ TRACE_LENGTH_SUITE: tuple[BenchmarkFormula, ...] = (
 # Calibration suite (Capability Exp A, Phase 1.3)
 # ---------------------------------------------------------------------------
 
-# The soft acceptance-probability readout is only a *non-trivial* calibration
-# target when the DFA's edge guards are NOT read-once. On a read-once guard
-# DeepDFA's soft_matrix is exact (P(accept) is the true marginal), so any
-# reliability curve is a hollow identity. The 2-of-3 majority function
-# (a&b)|(b&c)|(a&c) is the classic non-read-once boolean (each atom appears
-# twice); MONA keeps it un-factored on the accepting edge (verified — the
-# guard is literally "(a & b) | (a & c) | (b & c)"), so the independence-
-# assuming soft product over-counts and the confidence must be calibrated
-# *empirically*. This is the formula that makes the calibration a result.
+# Retained for the future-work fork's harness; nothing in this repo consumes it.
+# The distinction it encodes is now between the two guard backends, not between
+# exact and inexact monitoring: `exact_matrix` returns the true marginal for any
+# guard, while the retained `recursive_matrix` approximation over-counts shared
+# atoms. A reliability curve computed on the recursive path is therefore a hollow
+# identity on read-once guards and a genuine measurement only on non-read-once
+# ones. The 2-of-3 majority function (a&b)|(b&c)|(a&c) is the classic
+# non-read-once boolean (each atom appears twice); MONA keeps it un-factored on
+# the accepting edge (verified — the guard is literally
+# "(a & b) | (a & c) | (b & c)").
 _MAJORITY3 = BenchmarkFormula(
     name="majority3",
     formula="F((a & b) | (b & c) | (a & c))",
@@ -195,10 +198,12 @@ STATE_SCALING_SUITE: tuple[BenchmarkFormula, ...] = tuple(
 # ---------------------------------------------------------------------------
 #
 # The IJCNN family is a poor instrument: it early-terminates, and its guards are
-# read-once after MONA factoring (so DeepDFA's soft_matrix is *exact*, hiding the
-# paradigm divergence the capability story rests on). These three families each
-# target a gap. All read_once flags below are the values MONA actually produces,
-# verified against `characterize.guard_read_once` in tests/test_richer_formulas.py.
+# read-once after MONA factoring, so the recursive approximation coincides with
+# the exact marginal there and hides the backend divergence the fork's capability
+# story rests on. These three families each target a gap. All read_once flags
+# below are the values MONA actually produces; the structural checks are in
+# tests/test_richer_formulas.py, and the probabilistic verification layer
+# (`characterize.guard_read_once`) lives in the future-work fork.
 
 
 # --- (A) Declare / BPM constraint templates --------------------------------

@@ -1,5 +1,13 @@
 \begin{thebibliography}{10}
 
+\bibitem{t_ilr_2025}
+Riccardo Andreoni, Andrei Buliga, Alessandro Daniele, Chiara Ghidini, Marco
+  Montali, and Massimiliano Ronzani.
+\newblock {T-ILR}: a neurosymbolic integration for {LTLf}.
+\newblock In {\em Proceedings of the 19th International Conference on
+  Neurosymbolic Learning and Reasoning}, volume 284 of {\em Proceedings of
+  Machine Learning Research}, pages 252--265. PMLR, 2025.
+
 \bibitem{monitorability_LTL}
 Andreas Bauer, Martin Leucker, and Christian Schallhart.
 \newblock Runtime verification for {LTL} and {TLTL}.

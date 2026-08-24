@@ -5,46 +5,45 @@ The style file: plain.bst
 Database file #1: citations.bib
 Warning--I didn't find a database entry for "emerson90"
 Warning--I didn't find a database entry for "bacchus&kabanza98"
-Warning--I didn't find a database entry for "t_ilr_2025"
-You've used 16 entries,
+You've used 17 entries,
             2118 wiz_defined-function locations,
-            601 strings with 7168 characters,
-and the built_in function-call counts, 6507 in all, are:
-= -- 675
-> -- 260
-< -- 11
-+ -- 105
-- -- 85
-* -- 402
-:= -- 993
-add.period$ -- 58
-call.type$ -- 16
-change.case$ -- 89
+            608 strings with 7478 characters,
+and the built_in function-call counts, 7114 in all, are:
+= -- 736
+> -- 293
+< -- 13
++ -- 118
+- -- 97
+* -- 451
+:= -- 1082
+add.period$ -- 62
+call.type$ -- 17
+change.case$ -- 98
 chr.to.int$ -- 0
-cite$ -- 16
-duplicate$ -- 288
-empty$ -- 537
-format.name$ -- 85
-if$ -- 1457
+cite$ -- 17
+duplicate$ -- 312
+empty$ -- 579
+format.name$ -- 97
+if$ -- 1591
 int.to.chr$ -- 0
-int.to.str$ -- 16
-missing$ -- 17
-newline$ -- 83
-num.names$ -- 34
-pop$ -- 117
+int.to.str$ -- 17
+missing$ -- 18
+newline$ -- 88
+num.names$ -- 36
+pop$ -- 127
 preamble$ -- 1
-purify$ -- 74
+purify$ -- 82
 quote$ -- 0
-skip$ -- 216
+skip$ -- 235
 stack$ -- 0
-substring$ -- 423
-swap$ -- 109
-text.length$ -- 11
+substring$ -- 460
+swap$ -- 122
+text.length$ -- 13
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 62
+type$ -- 66
 warning$ -- 0
-while$ -- 64
-width$ -- 18
-write$ -- 185
-(There were 3 warnings)
+while$ -- 69
+width$ -- 19
+write$ -- 198
+(There were 2 warnings)

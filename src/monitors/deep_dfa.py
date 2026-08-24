@@ -24,7 +24,7 @@ Two representations of the same transition function are provided:
 
   * factored — no 2^|AP| tensor. Two complementary views of each edge guard:
 
-      (1) Crisp monitoring (the path Exp 1-3 time). Each guard is decomposed
+      (1) Exact cube/WMC evaluation (the path Exp 1-3 time). Each guard is decomposed
           *once* at construction into a disjoint (orthogonal) cube cover by
           Shannon expansion, and stored as `require-true` / `require-false`
           integer masks over the atoms. The per-cell transition matrix is then
@@ -32,19 +32,19 @@ Two representations of the same transition function are provided:
           Python recursion over sympy closures. This is what keeps the Exp 2
           factored curve **flat** in |AP| (Phase 0.2): the per-cell cost is a
           couple of batched tensor ops, not an O(formula-size) closure walk.
-          It is exact for crisp 0/1 inputs (each cube contributes 0/1 and the
-          cubes are mutually exclusive, so they sum to a 0/1 transition).
+          It is exact for crisp 0/1 inputs and for fractional independent-
+          Bernoulli atom probabilities: the latter is an exact weighted model
+          count because the cubes are mutually exclusive.
 
-      (2) Differentiable soft path (`soft_matrix`, for the deferred adaptation
-          PoC). Each guard is compiled to a closure that computes its
-          satisfaction probability recursively over the boolean structure,
-          assuming atom independence:
+      (2) Recursive approximation (`recursive_matrix`; historically exposed as
+          `soft_matrix`). Each guard is compiled to a closure that applies
+          independence identities locally over the boolean syntax:
                    P(a)=p_a   P(¬φ)=1-P(φ)
                    P(φ∧ψ)=P(φ)P(ψ)   P(φ∨ψ)=1-(1-P(φ))(1-P(ψ))
           With **crisp** 0/1 inputs this is exact for *any* guard; with
           *fractional* probabilities it is exact only for read-once guards
-          (the IJCNN family is read-once after MONA's factoring). This soft
-          path is kept separate so its read-once semantics are unchanged.
+          (the IJCNN family is read-once after MONA's factoring). It remains as
+          an explicit approximation/diagnostic, not the default soft monitor.
 
     Neither view materializes the 2^|AP| dense tensor, so factored crisp
     monitoring scales to large |AP| (Exp 2) where dense hits the alphabet wall.
@@ -52,8 +52,10 @@ Two representations of the same transition function are provided:
 
 from __future__ import annotations
 
+import math
 import warnings
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 
 import numpy as np
 import torch
@@ -65,6 +67,38 @@ from src.monitors.base import Monitor, Verdict
 
 # A guard probability function: maps p (..., |AP|) -> prob (...).
 ProbFn = Callable[[torch.Tensor], torch.Tensor]
+
+
+@dataclass(frozen=True)
+class DeepDFAArtifactStats:
+    """Stable, serializable diagnostics for a compiled DeepDFA artifact.
+
+    Byte counts cover the transition-representation tensors themselves, not
+    Python object overhead or temporary tensors allocated during a forward
+    pass. ``None`` means that a quantity does not apply to the selected mode.
+    """
+
+    mode: str
+    device: str
+    dtype: str
+    n_atoms: int
+    alphabet_size: int
+    n_states: int
+    n_transitions: int
+    n_accepting_states: int
+    dense_tensor_elements: int | None
+    dense_tensor_bytes: int | None
+    cube_count: int | None
+    cube_mask_elements: int | None
+    cube_tensor_bytes: int | None
+
+
+def _checked_probability_threshold(threshold: float) -> float:
+    """Return a finite threshold in [0, 1], or raise a clear API error."""
+    value = float(threshold)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError("threshold must be finite and lie in [0, 1]")
+    return value
 
 
 def _compile_guard_prob(label: str, atom_index: dict[str, int]) -> ProbFn:
@@ -192,6 +226,40 @@ class DeepDFATensor:
         else:
             self._build_factored()
 
+    @property
+    def artifact_stats(self) -> DeepDFAArtifactStats:
+        """Describe the compiled representation without private-field access."""
+        common = dict(
+            mode=self.mode,
+            device=str(self.device),
+            dtype=str(self.mu.dtype),
+            n_atoms=self.n_atoms,
+            alphabet_size=1 << self.n_atoms,
+            n_states=self.n_states,
+            n_transitions=len(self.dfa.transitions),
+            n_accepting_states=len(self.dfa.accepting),
+        )
+        if self.mode == "dense":
+            return DeepDFAArtifactStats(
+                **common,
+                dense_tensor_elements=self.T.numel(),
+                dense_tensor_bytes=self.T.numel() * self.T.element_size(),
+                cube_count=None,
+                cube_mask_elements=None,
+                cube_tensor_bytes=None,
+            )
+
+        cube_count = self._cube_flat.numel()
+        cube_tensors = (self._cube_rt, self._cube_rf, self._cube_flat)
+        return DeepDFAArtifactStats(
+            **common,
+            dense_tensor_elements=None,
+            dense_tensor_bytes=None,
+            cube_count=cube_count,
+            cube_mask_elements=self._cube_rt.numel() + self._cube_rf.numel(),
+            cube_tensor_bytes=sum(t.numel() * t.element_size() for t in cube_tensors),
+        )
+
     # ----- dense -----
 
     def _build_dense(self) -> None:
@@ -215,8 +283,8 @@ class DeepDFATensor:
     # ----- factored -----
 
     def _build_factored(self) -> None:
-        # (src_idx, dst_idx, prob_fn) per DFA transition — the differentiable
-        # soft path (read-once-exact fractional probabilities; see soft_matrix).
+        # (src_idx, dst_idx, prob_fn) per DFA transition — the recursive
+        # approximation (read-once-exact; see recursive_matrix).
         self._edges: list[tuple[int, int, ProbFn]] = [
             (
                 self.state_idx[t.src],
@@ -228,7 +296,7 @@ class DeepDFATensor:
 
         # Vectorized crisp path: precompute require-true / require-false masks
         # for every cube of every edge's disjoint cover. Building these *once*
-        # here replaces the per-cell sympy-closure walk, so crisp_matrix stays
+        # here replaces the per-cell sympy-closure walk, so exact_matrix stays
         # flat in |AP| (Phase 0.2).
         rt_rows: list[list[float]] = []
         rf_rows: list[list[float]] = []
@@ -252,12 +320,14 @@ class DeepDFATensor:
             self._cube_rf[:] = torch.tensor(rf_rows, device=self.device)
         self._cube_flat = torch.tensor(flat_idx, dtype=torch.long, device=self.device)
 
-    def crisp_matrix(self, p: torch.Tensor) -> torch.Tensor:
-        """Vectorized (..., |Q|, |Q|) transition matrix from the cube masks.
+    def exact_matrix(self, p: torch.Tensor) -> torch.Tensor:
+        """Exact (..., |Q|, |Q|) transition matrix from disjoint cubes.
 
-        For crisp 0/1 atom values p (..., |AP|) this is the exact transition
-        matrix; it is the flat, closure-free path used by the monitor. Each
-        cube's value is the product over atoms of
+        For crisp 0/1 atom values this is the deterministic DFA transition
+        matrix. For fractional values it is the exact expected transition
+        matrix under independent Bernoulli atoms: every cube is a conjunction,
+        and the disjoint cubes can be summed without double-counting. Each
+        cube's value is the differentiable product
             1 - require_true * (1 - p) - require_false * p
         (= 1 for a don't-care atom, p for a require-true atom, 1-p for a
         require-false atom), and the disjoint cubes are summed into the matrix.
@@ -267,7 +337,9 @@ class DeepDFATensor:
         for d in batch_shape:
             n_batch *= d
         pf = p.reshape(n_batch, self.n_atoms).unsqueeze(1)  # (B, 1, |AP|)
-        factor = 1.0 - self._cube_rt * (1.0 - pf) - self._cube_rf * pf  # (B, C, |AP|)
+        rt = self._cube_rt.to(dtype=p.dtype)
+        rf = self._cube_rf.to(dtype=p.dtype)
+        factor = 1.0 - rt * (1.0 - pf) - rf * pf  # (B, C, |AP|)
         cube_val = factor.prod(dim=-1)  # (B, C)
         M = torch.zeros(
             n_batch, self.n_states * self.n_states, device=p.device, dtype=p.dtype
@@ -275,19 +347,44 @@ class DeepDFATensor:
         M.index_add_(1, self._cube_flat, cube_val)
         return M.view(*batch_shape, self.n_states, self.n_states)
 
-    def soft_matrix(self, p: torch.Tensor) -> torch.Tensor:
-        """Build the (..., |Q|, |Q|) transition matrix for atom-prob p (..., |AP|).
+    def crisp_matrix(self, p: torch.Tensor) -> torch.Tensor:
+        """Compatibility alias for :meth:`exact_matrix`.
+
+        The old name described its use by the crisp benchmark, not its
+        semantics: the disjoint-cube calculation is exact for fractional
+        independent-Bernoulli inputs too.
+        """
+        return self.exact_matrix(p)
+
+    def recursive_matrix(self, p: torch.Tensor) -> torch.Tensor:
+        """Approximate transition matrix from recursive Boolean evaluation.
 
         Differentiable in p via the recursive read-once probability closures.
         With crisp 0/1 p this is the exact transition matrix; with fractional p
-        it is exact for read-once guards. This is the path for the deferred
-        adaptation PoC; the crisp monitor uses :meth:`crisp_matrix` instead.
+        it is exact for read-once guards only. Repeated variables can introduce
+        correlations between subexpressions, so this method can double-count
+        mass. Use :meth:`exact_matrix` for probabilistic monitoring.
         """
         batch_shape = p.shape[:-1]
-        M = torch.zeros(*batch_shape, self.n_states, self.n_states, device=p.device)
+        M = torch.zeros(
+            *batch_shape,
+            self.n_states,
+            self.n_states,
+            device=p.device,
+            dtype=p.dtype,
+        )
         for si, di, fn in self._edges:
             M[..., si, di] = M[..., si, di] + fn(p)
         return M
+
+    def soft_matrix(self, p: torch.Tensor) -> torch.Tensor:
+        """Compatibility alias for the historical recursive approximation.
+
+        New soft-monitoring code should use :meth:`exact_matrix`. This alias is
+        retained so existing experiments that intentionally measure the
+        recursive approximation do not silently change meaning.
+        """
+        return self.recursive_matrix(p)
 
     def prob_vector(self, obs: Observation) -> torch.Tensor:
         """Crisp atom-probability vector (|AP|,) from an observation."""
@@ -379,11 +476,16 @@ class DeepDFAMonitor(Monitor):
         """Device the transition tensor actually lives / computes on."""
         return "cuda" if self._dt.device.type == "cuda" else "cpu"
 
+    @property
+    def artifact_stats(self) -> DeepDFAArtifactStats:
+        """Public representation diagnostics for artifact reports and audits."""
+        return self._dt.artifact_stats
+
     def _advance(self, q: torch.Tensor, obs: Observation) -> torch.Tensor:
         dt = self._dt
         if dt.mode == "dense":
             return q @ dt.T[:, dt.symbol_index(obs), :]
-        return q @ dt.crisp_matrix(dt.prob_vector(obs))
+        return q @ dt.exact_matrix(dt.prob_vector(obs))
 
     def step(self, obs: Observation) -> Verdict:
         if self._decided is not None:
@@ -452,7 +554,7 @@ class DeepDFAMonitor(Monitor):
             # Per-step atom-probability stack (L, B, |AP|) from the batch encoder.
             P = torch.from_numpy(pres).to(dt.device).permute(1, 0, 2).contiguous()
             for i in range(L):
-                M = dt.crisp_matrix(P[i])  # (B, |Q|, |Q|)
+                M = dt.exact_matrix(P[i])  # (B, |Q|, |Q|)
                 q = torch.bmm(q.unsqueeze(1), M).squeeze(1)
                 states[:, i] = q.argmax(dim=1)
 
@@ -487,9 +589,9 @@ class DeepDFAMonitor(Monitor):
             sym = torch.from_numpy(sym_np).to(dt.device).transpose(0, 1)  # (L, B)
             # dt.T is (|Q|, S, |Q|); gather symbols -> (|Q|, L, B, |Q|) -> (L,B,|Q|,|Q|)
             return dt.T[:, sym, :].permute(1, 2, 0, 3).contiguous()
-        # (L, B, |AP|) then flatten cells for one vectorized crisp_matrix build.
+        # (L, B, |AP|) then flatten cells for one vectorized exact_matrix build.
         P = torch.from_numpy(pres).to(dt.device).permute(1, 0, 2).contiguous()
-        M = dt.crisp_matrix(P.reshape(L * B, dt.n_atoms))  # (L*B, |Q|, |Q|)
+        M = dt.exact_matrix(P.reshape(L * B, dt.n_atoms))  # (L*B, |Q|, |Q|)
         return M.view(L, B, dt.n_states, dt.n_states)
 
     def _scan_states(self, trace_list, lengths, L: int, B: int) -> torch.Tensor:
@@ -544,128 +646,176 @@ class DeepDFAMonitor(Monitor):
         last = dt.state_idx[dt.dfa.initial] if length == 0 else int(path[length - 1])
         return Verdict.SATISFY if dt.accepting[last] > 0 else Verdict.VIOLATE
 
-    # ----- soft readout (Phase 1.2: monitoring under perceptual uncertainty) -----
+    # ----- probabilistic readout -----
     #
-    # Marginal acceptance probability (Option A, CLAUDE.md § Phase 1). Given a
-    # *soft* trace (per-atom probabilities), propagate the full state
-    # DISTRIBUTION through the differentiable `soft_matrix` (row-stochastic for
-    # fractional inputs) and read the accepting mass at end-of-trace. Crucially
-    # there is NO mid-trace argmax: collapsing to a single state each step would
-    # discard the probability mass and reduce to the brittle "threshold-and-walk"
-    # readout (Option B), which is exactly what the symbolic baseline does.
-    #
-    # This uses `soft_matrix` (recursive read-once guard probabilities), not
-    # `crisp_matrix`: on non-read-once guards the two differ, and the read-once
-    # `soft_matrix` is what makes calibration an *empirical* question there
-    # rather than an exact-marginal identity (Phase 1.3 / 3.3).
+    # Given independent per-atom probabilities, propagate the full state
+    # distribution through exact disjoint-cube weighted model counting and read
+    # the accepting mass at the end. There is deliberately no mid-trace argmax:
+    # that would discard probability mass and cease to compute the marginal.
 
     def _require_soft(self) -> None:
-        # The soft readout is the factored mode's differentiable path: it needs
-        # the per-edge guard-probability closures (`soft_matrix` / `_edges`),
-        # which only the factored build materializes. Dense stores a 2^|AP|
-        # one-hot tensor with no fractional-input semantics. Compile with
-        # mode="factored" (or use DeepDFAMonitorFactored) for soft monitoring.
+        # The per-atom probabilistic readout is exposed by factored mode. Dense
+        # stores matrices indexed by complete symbols, rather than a direct
+        # per-atom probability interface.
         if self._dt.mode != "factored":
             raise ValueError(
                 "soft readout requires factored mode; compile with "
                 "mode='factored' (or use DeepDFAMonitorFactored)"
             )
 
-    def acceptance_probability(
-        self, soft_trace: Iterable[dict[str, float]], normalize: bool = False
-    ) -> float:
-        """Acceptance score in [0, 1] (usually) for a single soft trace.
+    def acceptance_probability_tensor(
+        self,
+        probabilities: torch.Tensor,
+        lengths: torch.Tensor | None = None,
+        normalize: bool = False,
+        method: str = "exact",
+    ) -> torch.Tensor:
+        """Return differentiable acceptance probabilities for soft traces.
 
-        Reference (unbatched) implementation; see
-        :meth:`batch_acceptance_probability` for the fast path and for the
-        meaning of ``normalize`` (the read-once vs non-read-once caveat).
+        ``probabilities`` has shape ``(L, |AP|)`` for one trace or
+        ``(B, L, |AP|)`` for a batch. Values are independent Bernoulli atom
+        probabilities. ``lengths`` optionally gives the unpadded length of each
+        batched trace; ended traces are frozen while later batch cells run.
+
+        The default ``method="exact"`` uses disjoint-cube weighted model
+        counting and is exact for arbitrary guards under that input model.
+        ``method="recursive"`` retains the historical read-once-only
+        approximation for diagnostics. The returned tensor remains connected
+        to ``probabilities`` through autograd.
+        """
+        self._require_soft()
+        if not isinstance(probabilities, torch.Tensor):
+            raise TypeError("probabilities must be a torch.Tensor")
+        if not probabilities.is_floating_point():
+            raise TypeError("probabilities must have a floating-point dtype")
+        if probabilities.ndim not in (2, 3):
+            raise ValueError(
+                "probabilities must have shape (L, |AP|) or (B, L, |AP|)"
+            )
+
+        dt = self._dt
+        unbatched = probabilities.ndim == 2
+        P = probabilities.unsqueeze(0) if unbatched else probabilities
+        if P.shape[-1] != dt.n_atoms:
+            raise ValueError(
+                f"expected {dt.n_atoms} atom probabilities, got {P.shape[-1]}"
+            )
+        P = P.to(dt.device)
+        if not bool(torch.isfinite(P).all()):
+            raise ValueError("probabilities must contain only finite values")
+        if bool(torch.any((P < 0.0) | (P > 1.0))):
+            raise ValueError("probabilities must lie in [0, 1]")
+        B, L, _ = P.shape
+
+        if lengths is None:
+            trace_lengths = torch.full(
+                (B,), L, dtype=torch.long, device=dt.device
+            )
+        else:
+            trace_lengths = torch.as_tensor(
+                lengths, dtype=torch.long, device=dt.device
+            )
+            if trace_lengths.shape != (B,):
+                raise ValueError(f"lengths must have shape ({B},)")
+            if bool(torch.any((trace_lengths < 0) | (trace_lengths > L))):
+                raise ValueError(f"lengths entries must lie in [0, {L}]")
+
+        if method == "exact":
+            matrix_fn = dt.exact_matrix
+        elif method == "recursive":
+            matrix_fn = dt.recursive_matrix
+        else:
+            raise ValueError("method must be 'exact' or 'recursive'")
+
+        q = dt.mu.to(dtype=P.dtype).unsqueeze(0).expand(B, -1).clone()
+        for i in range(L):
+            M = matrix_fn(P[:, i, :])
+            q_new = torch.bmm(q.unsqueeze(1), M).squeeze(1)
+            q = torch.where((i < trace_lengths).unsqueeze(1), q_new, q)
+
+        accepting = dt.accepting.to(dtype=P.dtype)
+        score = (q * accepting).sum(dim=1)
+        if normalize:
+            mass = q.sum(dim=1)
+            score = torch.where(mass > 0.0, score / mass, score)
+        return score[0] if unbatched else score
+
+    def acceptance_probability(
+        self,
+        soft_trace: Iterable[dict[str, float]],
+        normalize: bool = False,
+        method: str = "exact",
+    ) -> float:
+        """Python-float wrapper around :meth:`acceptance_probability_tensor`.
+
+        Use the tensor-native method directly when gradients are required.
         """
         self._require_soft()
         dt = self._dt
-        q = dt.mu.clone()
-        for obs in soft_trace:
-            q = q @ dt.soft_matrix(dt.soft_prob_vector(obs))
-        accept = float(q @ dt.accepting)
-        if normalize:
-            mass = float(q.sum())
-            return accept / mass if mass > 0.0 else accept
-        return accept
+        trace = list(soft_trace)
+        P = torch.tensor(
+            [[float(obs.get(a, 0.0)) for a in dt.atoms] for obs in trace],
+            dtype=dt.mu.dtype,
+            device=dt.device,
+        ).reshape(len(trace), dt.n_atoms)
+        score = self.acceptance_probability_tensor(
+            P, normalize=normalize, method=method
+        )
+        return float(score.detach().cpu())
 
     def soft_verdict(
         self,
         soft_trace: Iterable[dict[str, float]],
         threshold: float = 0.5,
         normalize: bool = False,
+        method: str = "exact",
     ) -> Verdict:
         """Binary verdict from the acceptance score at ``threshold``."""
-        p = self.acceptance_probability(soft_trace, normalize=normalize)
+        threshold = _checked_probability_threshold(threshold)
+        p = self.acceptance_probability(
+            soft_trace, normalize=normalize, method=method
+        )
         return Verdict.SATISFY if p >= threshold else Verdict.VIOLATE
 
     def batch_acceptance_probability(
         self,
         soft_traces: Iterable[Iterable[dict[str, float]]],
         normalize: bool = False,
+        method: str = "exact",
     ) -> list[float]:
-        """Marginal acceptance score for a batch of soft traces.
+        """Python-list wrapper for batched probabilistic monitoring.
 
-        One batched ``soft_matrix`` + ``bmm`` per cell over the whole batch.
-        Traces of unequal length are padded; padding cells are masked so a
-        shorter trace's distribution is frozen once it ends. Equivalent to
-        ``[self.acceptance_probability(t) for t in soft_traces]``.
-
-        ``normalize`` (Capability Exp A, Phase 1.4): ``soft_matrix`` is only
-        row-stochastic when every DFA guard is **read-once**. On a
-        non-read-once guard (e.g. the 2-of-3 majority) the independence-
-        assuming guard-probability product over-counts, so the row sums
-        exceed 1 and the raw ``q_final @ accepting`` is *not* a valid
-        probability (it can exceed 1). With ``normalize=True`` the score is
-        divided by the total propagated mass ``q_final @ 1``, forcing a value
-        in [0, 1]; this is exact/unchanged for read-once guards (mass == 1)
-        and a heuristic renormalization otherwise. The raw score is the
-        settled Option-A readout and is kept as the default so the
-        non-stochasticity remains observable (it is a *finding*).
+        With the default exact method, normalization is a numerical no-op
+        because every transition row has unit mass. It remains available for
+        explicit ``method="recursive"`` compatibility experiments.
         """
         self._require_soft()
         dt = self._dt
         trace_list = [list(t) for t in soft_traces]
         if not trace_list:
             return []
-        lengths = torch.tensor(
-            [len(t) for t in trace_list], device=dt.device
-        )
-        B, L = len(trace_list), int(lengths.max())
-        q = dt.mu.unsqueeze(0).expand(B, -1).clone()  # (B, |Q|)
-        if L == 0:
-            accept = (q * dt.accepting).sum(dim=1)
-            return self._finish_score(q, accept, normalize)
+        lengths = torch.tensor([len(t) for t in trace_list], device=dt.device)
+        L = int(lengths.max())
         P = torch.from_numpy(dt.encode_soft(trace_list, L)).to(dt.device)
-        for i in range(L):
-            M = dt.soft_matrix(P[:, i, :])  # (B, |Q|, |Q|)
-            q_new = torch.bmm(q.unsqueeze(1), M).squeeze(1)
-            active = (i < lengths).unsqueeze(1)  # freeze ended traces
-            q = torch.where(active, q_new, q)
-        accept = (q * dt.accepting).sum(dim=1)
-        return self._finish_score(q, accept, normalize)
-
-    @staticmethod
-    def _finish_score(
-        q: torch.Tensor, accept: torch.Tensor, normalize: bool
-    ) -> list[float]:
-        if normalize:
-            mass = q.sum(dim=1)
-            accept = torch.where(mass > 0.0, accept / mass, accept)
-        return accept.cpu().tolist()
+        scores = self.acceptance_probability_tensor(
+            P, lengths=lengths, normalize=normalize, method=method
+        )
+        return scores.detach().cpu().tolist()
 
     def batch_soft_verdict(
         self,
         soft_traces: Iterable[Iterable[dict[str, float]]],
         threshold: float = 0.5,
         normalize: bool = False,
+        method: str = "exact",
     ) -> list[Verdict]:
         """Binary verdicts for a batch of soft traces at ``threshold``."""
+        threshold = _checked_probability_threshold(threshold)
         return [
             Verdict.SATISFY if p >= threshold else Verdict.VIOLATE
-            for p in self.batch_acceptance_probability(soft_traces, normalize=normalize)
+            for p in self.batch_acceptance_probability(
+                soft_traces, normalize=normalize, method=method
+            )
         ]
 
 

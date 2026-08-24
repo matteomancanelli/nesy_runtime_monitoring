@@ -118,6 +118,26 @@ Theory for *why*: thresholding is exactly MAP-trace reconstruction
 (Prop. `threshold-is-map` in 5b), i.e. a principled estimator, not a lossy hack.
 
 ### F2 — The recursive soft score is NOT a probability on non-read-once guards
+
+> ⚠ **The parent repo has moved since this fork was cut (2026-08-25).** Its
+> `src/monitors/deep_dfa.py` now makes the *disjoint-cube* path the default
+> probabilistic backend under the name `exact_matrix`, which is exact WMC for
+> **arbitrary** guards under independent Bernoulli atoms — not only read-once
+> ones — and exposes an autograd-preserving `acceptance_probability_tensor`.
+> The recursive closure is still there as `recursive_matrix` (with `soft_matrix`
+> kept as an alias) but must now be requested with `method="recursive"`.
+> This fork's `src/monitors/deep_dfa.py` is a **frozen copy of the older API**,
+> so every measurement below is reproducible here exactly as written.
+>
+> What this changes is the *framing*, not the data. F2 is a property of one
+> backend, not of the paradigm: "DeepDFA cannot compute a calibrated marginal"
+> would now be false. State it as "the recursive independence closure over-counts
+> on non-read-once guards, which is why the exact cube backend is the one to
+> monitor with." The `exact_marginal` this finding measures against is exactly
+> what the parent's default now returns. Before extracting this fork, decide
+> explicitly whether to re-sync `deep_dfa.py` (and re-run the divergence sweep
+> against the new default) or to keep the frozen copy and cite it as such.
+
 DeepDFA's `soft_matrix` evaluates guard probabilities with independence rules
 (`P(φ∧ψ)=PφPψ`, `P(φ∨ψ)=1−(1−Pφ)(1−Pψ)`). Exact for crisp inputs on any guard,
 and for fractional inputs on **read-once** guards only. On non-read-once guards
@@ -198,11 +218,27 @@ especially §8 ("could this be THE contribution?"). One-line claim: compile each
 guard to a deterministic+decomposable diagram once, evaluate its WMC circuit
 batched → `M(p)` is exactly `M*` for **any** guard, so the soft verdict is
 exact and calibrated by construction, differentiable, and GPU-batchable.
-First step before any code: the **NeSyA novelty check** (does NeSyA/T-ILR
-already deliver the exact-WMC transition? if yes, re-scope the delta to
-monitoring + three-valued verdicts + calibration analysis). The parent repo
-plans the *crisp/scalability* side of this same idea — coordinate if both
-proceed.
+
+> ⚠ **The NeSyA novelty check this thread gated itself on has been done
+> (parent repo, 2026-08-25), and the answer is yes.** NeSyA already compiles
+> symbolic-automaton guards (e.g. to d-DNNF) and evaluates exact differentiable
+> WMC with the same forward recursion, and proves the state-mass/marginal
+> correspondence. Exact WMC transitions are therefore **prior art, not a
+> contribution.** Worse for this thread's original pitch: the parent's plain
+> disjoint-cube backend already computes the same exact marginal for arbitrary
+> guards, so "exact and calibrated by construction" is no longer a reason to
+> build a diagram at all — it is already true without one.
+>
+> What survives is narrower and is now the parent's Phase 4: whether compiled
+> circuits beat the flat cube list on **representation size** (subfunction
+> sharing the cube cover repeats) and on batched runtime. That is a systems
+> question. Any remaining contribution on this side of the fork has to come from
+> the *verdict semantics and calibration analysis*, not from the WMC.
+> See the parent's `docs/decision_diagram_transition_representation.md`, which
+> was rewritten accordingly; this fork's copy is the older text.
+
+The parent repo plans the *crisp/scalability* side of this same idea —
+coordinate if both proceed.
 
 ### Thread 3 — Specification adaptation PoC (the old Phase 2; unimplemented)
 The headline NeSy payoff and the original bridge to "Paper B". Plan as it stood:

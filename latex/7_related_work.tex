@@ -9,3 +9,34 @@ new construction.  The difference lies in the prefix component and the
 guarantee used to compose it: we retain the original RuleRunner architecture
 only when an exact product check certifies its language equivalence and prefix
 soundness, and otherwise fall back to the complete progression repair.
+
+\paragraph{Differentiable temporal knowledge.}
+DeepDFA learns a probabilistic relaxation of a finite automaton by placing
+temperature-scaled softmax distributions on transitions and sigmoid outputs on
+acceptance, then annealing toward a discrete machine
+\cite{deepdfa_ecai2024}.  The same forward algebra can instead encode a known
+automaton as fixed one-hot parameters.  NeSy predictive process monitoring uses
+this fixed form as a differentiable knowledge evaluator for generated suffixes
+\cite{mezini2025neuro}; our DeepDFA baseline uses it for online monitoring of a
+known \ltlf specification and does not implement automaton induction.
+
+NeSyA generalizes this probabilistic forward recursion to symbolic automata
+whose edges carry Boolean guards \cite{NesyA}.  It evaluates guard probabilities
+by exact weighted model counting over compiled representations such as d-DNNF,
+proves that the propagated state mass equals the marginal mass of the
+corresponding symbolic traces, and uses the result to train perceptual models.
+Our expected-transition and trace-marginal propositions are direct
+specializations of that semantics.  The difference is the task and the concrete
+backend: we start from an \ltlf-compiled runtime monitor, use disjoint cubes
+without circuit sharing, and evaluate its crisp cost against symbolic and
+rule-based monitors.  We therefore claim neither exact probabilistic
+symbolic-automaton inference nor knowledge compilation as new.
+
+T-ILR takes the complementary formula-level route
+\cite{t_ilr_2025}.  It evaluates \ltlf directly over fuzzy traces with Zadeh
+semantics and applies iterative local refinement, avoiding construction of an
+external DFA.  Its output is a fuzzy satisfaction/refinement signal rather than
+the acceptance marginal of a probabilistic automaton.  This semantic distinction
+is central to our comparison: in the present paper we evaluate exact crisp
+runtime verdicts, while probabilistic and fuzzy-input learning are separate
+capabilities rather than interchangeable monitor semantics.
