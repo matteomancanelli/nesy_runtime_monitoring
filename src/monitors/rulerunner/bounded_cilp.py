@@ -34,8 +34,9 @@ and then invokes the corresponding batched skeleton runner.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import TypeVar, cast
 
 import torch
 
@@ -64,6 +65,18 @@ from src.monitors.rulerunner.structured import StructuredCILPRunner
 
 _Layer = tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 _Owner = tuple[str, int]
+_Compiled = TypeVar("_Compiled")
+
+
+def _compile_stage(
+    callback: Callable[[str, Callable[[], object]], object] | None,
+    name: str,
+    build: Callable[[], _Compiled],
+) -> _Compiled:
+    """Run one native construction stage, optionally exposing its duration."""
+    if callback is None:
+        return build()
+    return cast(_Compiled, callback(name, build))
 
 
 class UnsafeRuleRunnerSkeleton(ValueError):
@@ -239,8 +252,7 @@ class _BoundedEventEvaluator:
                 )
             )
         event_slots = tuple(
-            index[_t(island.formula, 0).name]
-            for island in self.eventized.islands
+            index[_t(island.formula, 0).name] for island in self.eventized.islands
         )
         return _CompiledWindow(
             length=length,
@@ -313,9 +325,7 @@ class _ObservationShiftCILP:
         self.horizon = horizon
         self.device = device
         names = [f"obs:{atom}" for atom in atoms]
-        names.extend(
-            f"hist:{atom}@{age}" for age in range(horizon) for atom in atoms
-        )
+        names.extend(f"hist:{atom}@{age}" for age in range(horizon) for atom in atoms)
         self.index = {name: i for i, name in enumerate(names)}
         rules: list[Rule] = []
         if horizon > 0:
@@ -353,9 +363,7 @@ class _ObservationShiftCILP:
         )
 
     def initial(self) -> torch.Tensor:
-        return torch.full(
-            (self.horizon, len(self.atoms)), -1.0, device=self.device
-        )
+        return torch.full((self.horizon, len(self.atoms)), -1.0, device=self.device)
 
     def advance(self, history: torch.Tensor, current: torch.Tensor) -> torch.Tensor:
         if self.horizon == 0:
@@ -388,12 +396,19 @@ class _BoundedEventCILPMonitor(Monitor):
         certificate: str = "auto",
         max_extrapolation_atoms: int = 12,
         max_extrapolation_states: int | None = DEFAULT_MAX_STATES,
+        stage_callback: Callable[[str, Callable[[], object]], object] | None = None,
     ) -> None:
         self.formula = formula
         self.exact_online = exact_online
-        self.eventized = eventize_bounded_islands(formula)
-        self.certificate, self.certificate_source = ensure_certificate(
-            self.eventized.skeleton, certificate
+        self.eventized = _compile_stage(
+            stage_callback,
+            "bounded_event_extraction",
+            lambda: eventize_bounded_islands(formula),
+        )
+        self.certificate, self.certificate_source = _compile_stage(
+            stage_callback,
+            "certificate_lookup",
+            lambda: ensure_certificate(self.eventized.skeleton, certificate),
         )
         if (
             not self.certificate.language_equivalent
@@ -402,43 +417,53 @@ class _BoundedEventCILPMonitor(Monitor):
             raise UnsafeRuleRunnerSkeleton(self.certificate)
 
         self._device = torch.device(device)
-        self.event_net = _BoundedEventEvaluator(
-            self.eventized,
-            self._device,
-            structured=self._structured,
+        self.event_net, self.shift_net = _compile_stage(
+            stage_callback,
+            "bounded_pipeline_lowering",
+            lambda: (
+                _BoundedEventEvaluator(
+                    self.eventized,
+                    self._device,
+                    structured=self._structured,
+                ),
+                _ObservationShiftCILP(
+                    self.eventized.atoms,
+                    self.eventized.horizon,
+                    self._device,
+                ),
+            ),
         )
-        self.shift_net = _ObservationShiftCILP(
-            self.eventized.atoms,
-            self.eventized.horizon,
-            self._device,
+
+        def build_skeleton() -> CILPRunner | StructuredCILPRunner:
+            runner_cls = StructuredCILPRunner if self._structured else CILPRunner
+            return runner_cls.from_formula(self.eventized.skeleton, device=self._device)
+
+        self.skeleton = _compile_stage(
+            stage_callback,
+            "bounded_skeleton_lowering",
+            build_skeleton,
         )
-        if self._structured:
-            self.skeleton = StructuredCILPRunner.from_formula(
-                self.eventized.skeleton,
-                device=self._device,
+        self.extrapolation = None
+        if exact_online:
+            self.extrapolation = _compile_stage(
+                stage_callback,
+                "bounded_exact_online_head",
+                lambda: BoundedExtrapolationCILP(
+                    self.eventized,
+                    self._device,
+                    max_atoms=max_extrapolation_atoms,
+                    max_states=max_extrapolation_states,
+                ),
             )
-        else:
-            self.skeleton = CILPRunner.from_formula(
-                self.eventized.skeleton,
-                device=self._device,
-            )
-        self.extrapolation = (
-            BoundedExtrapolationCILP(
-                self.eventized,
-                self._device,
-                max_atoms=max_extrapolation_atoms,
-                max_states=max_extrapolation_states,
-            )
-            if exact_online
-            else None
-        )
-        self._event_index = {
-            island.event: i for i, island in enumerate(self.eventized.islands)
-        }
-        self._atom_index = {
-            atom: i for i, atom in enumerate(self.eventized.atoms)
-        }
-        self.reset()
+
+        def initialize() -> None:
+            self._event_index = {
+                island.event: i for i, island in enumerate(self.eventized.islands)
+            }
+            self._atom_index = {atom: i for i, atom in enumerate(self.eventized.atoms)}
+            self.reset()
+
+        _compile_stage(stage_callback, "monitor_initialization", initialize)
 
     @classmethod
     def compile(
@@ -450,6 +475,7 @@ class _BoundedEventCILPMonitor(Monitor):
         certificate: str = "auto",
         max_extrapolation_atoms: int = 12,
         max_extrapolation_states: int | None = DEFAULT_MAX_STATES,
+        stage_callback: Callable[[str, Callable[[], object]], object] | None = None,
     ) -> "_BoundedEventCILPMonitor":
         return cls(
             formula,
@@ -458,6 +484,7 @@ class _BoundedEventCILPMonitor(Monitor):
             certificate=certificate,
             max_extrapolation_atoms=max_extrapolation_atoms,
             max_extrapolation_states=max_extrapolation_states,
+            stage_callback=stage_callback,
         )
 
     @property
@@ -472,9 +499,7 @@ class _BoundedEventCILPMonitor(Monitor):
         self.skeleton.reset()
 
     def _observation_tensor(self, obs: Observation) -> torch.Tensor:
-        values = torch.full(
-            (len(self.eventized.atoms),), -1.0, device=self._device
-        )
+        values = torch.full((len(self.eventized.atoms),), -1.0, device=self._device)
         for atom, index in self._atom_index.items():
             if obs.get(atom, False):
                 values[index] = 1.0
@@ -537,11 +562,7 @@ class _BoundedEventCILPMonitor(Monitor):
         if self._decided is not None:
             return self._decided
         if not self._seen_input:
-            return (
-                Verdict.SATISFY
-                if self.eventized.empty_value
-                else Verdict.VIOLATE
-            )
+            return Verdict.SATISFY if self.eventized.empty_value else Verdict.VIOLATE
 
         for length in range(self._fill, 0, -1):
             newest_first = self._history[:length]
@@ -565,9 +586,7 @@ class _BoundedEventCILPMonitor(Monitor):
         for index, trace in enumerate(trace_list):
             if not trace:
                 results[index] = (
-                    Verdict.SATISFY
-                    if self.eventized.empty_value
-                    else Verdict.VIOLATE
+                    Verdict.SATISFY if self.eventized.empty_value else Verdict.VIOLATE
                 )
         if not nonempty_indices:
             return [result for result in results if result is not None]

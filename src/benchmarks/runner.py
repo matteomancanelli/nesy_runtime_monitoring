@@ -1,4 +1,4 @@
-"""Timing harness for cross-paradigm benchmarks.
+"""Legacy warm-runtime harness for cross-paradigm benchmarks.
 
 Methodology follows IJCNN 2014: measure total wall time for batch_run(),
 then divide by n_traces * trace_length (total potential cells). This
@@ -6,9 +6,10 @@ captures early-termination advantages naturally — a paradigm that
 terminates early spends less total time and earns a lower per-cell cost.
 
 Traces are randomly generated (independent uniform Bernoulli per atom
-per step). Compilation is excluded from timing — all three paradigms
-share the same ltlf2dfa compilation step, so it is not part of the
-monitoring comparison.
+per step). Compilation is deliberately outside this warm-runtime region, but
+the paradigms do *not* share one compilation pipeline. Phase E2 measures native
+cold-start and backend-lowering costs separately under the versioned schema in
+``src.benchmarks.schema``.
 """
 
 from __future__ import annotations
@@ -24,14 +25,28 @@ import torch
 from tqdm import tqdm
 
 from src.benchmarks.formulas import BenchmarkFormula
+from src.benchmarks.schema import RESULT_SCHEMA_VERSION, characterize_formula
 from src.monitors.base import Monitor
 
 
 @dataclass
 class TimingResult:
+    schema_version: str
     monitor_name: str
     formula_name: str
-    n_leaves: int
+    formula_family: str
+    formula_source: str
+    tree_shape: str
+    parameters_json: str
+    roles_json: str
+    n_atoms: int
+    ast_nodes: int
+    distinct_subformulae: int
+    ast_depth: int
+    temporal_depth: int
+    dfa_states: int | None
+    sweep_parameter: str | None
+    sweep_value: bool | int | float | str | None
     trace_length: int
     n_traces: int
     n_repeats: int
@@ -51,8 +66,10 @@ def random_traces(
     """Generate n_traces independent random traces of the given length."""
     bits = rng.integers(0, 2, size=(n_traces, trace_length, len(atoms)), dtype=np.int8)
     return [
-        [{atom: bool(bits[t, s, i]) for i, atom in enumerate(atoms)}
-            for s in range(trace_length)]
+        [
+            {atom: bool(bits[t, s, i]) for i, atom in enumerate(atoms)}
+            for s in range(trace_length)
+        ]
         for t in range(n_traces)
     ]
 
@@ -141,6 +158,7 @@ def time_monitor(
     """
     rng = np.random.default_rng(seed)
     traces = random_traces(formula.atoms, trace_length, n_traces, rng)
+    structure = characterize_formula(formula)
 
     monitor = _compile_for_benchmark(
         monitor_cls,
@@ -194,15 +212,29 @@ def time_monitor(
         if cuda_sync:
             torch.cuda.synchronize()  # ensure all kernels finished before t1
         times.append(time.perf_counter() - t0)
-        passes.update()          # after t1: never inside the timed region
+        passes.update()  # after t1: never inside the timed region
         passes.set_postfix(s_per_pass=f"{times[-1]:.1f}")
     passes.close()
 
     per_cell = [t / total_cells for t in times]
+    flat_structure = structure.flat_dict()
     return TimingResult(
+        schema_version=RESULT_SCHEMA_VERSION,
         monitor_name=monitor_cls.__name__,
         formula_name=formula.name,
-        n_leaves=formula.n_leaves,
+        formula_family=formula.family,
+        formula_source=formula.source,
+        tree_shape=formula.tree_shape,
+        parameters_json=flat_structure["parameters"],
+        roles_json=flat_structure["roles"],
+        n_atoms=structure.n_atoms,
+        ast_nodes=structure.ast_nodes,
+        distinct_subformulae=structure.distinct_subformulae,
+        ast_depth=structure.ast_depth,
+        temporal_depth=structure.temporal_depth,
+        dfa_states=structure.dfa_states,
+        sweep_parameter=formula.sweep_parameter,
+        sweep_value=formula.sweep_value,
         trace_length=trace_length,
         n_traces=n_traces,
         n_repeats=n_repeats,

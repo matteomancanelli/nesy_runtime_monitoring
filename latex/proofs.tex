@@ -1,0 +1,309 @@
+\section{Proofs}
+
+\noindent
+\textbf{Theorem~\ref{thm:rulerunner-correct}.}
+Let $\theta$ be a formula in $\F_{RR}$ and $\boldsymbol{\sigma}$ a non-empty
+finite trace. Let $RR_\theta$ be the deterministic finite-state monitor induced
+by RuleRunner rules. Then $RR_\theta$ returns \textsc{satisfy} iff
+$\boldsymbol{\sigma}\models\theta$. Moreover, $RR_\theta$ is prefix-sound: if it
+outputs \textsc{satisfy} (resp.\ \textsc{violate}) after reading the prefix
+$\sigma_0\dots\sigma_t$ of $\boldsymbol{\sigma}$, then
+$\boldsymbol{\sigma}'\models\theta$ (resp.\ $\boldsymbol{\sigma}'\not\models\theta$)
+for every trace $\boldsymbol{\sigma}'$ sharing the same prefix.
+
+\begin{proof}
+In the following, given a time step $t$, we write $v_t(\theta) \in \{T,F,?\}$ for the truth value assigned to the $[\theta]$ by the evaluation fixpoint of time step $t$, ignoring the mode qualifier.
+%
+We first show that, if the initial activation of a propositional formula $\pi$ is in the state at the beginning of time step $t$, then the evaluation fixpoint of that cell assigns to every subformula of $\pi$ exactly one truth value, and $v_t(\pi) = T$ iff $\boldsymbol{\sigma},t\models\pi$. In particular, a propositional formula is never undecided. The proof is by structural induction on $\pi$.
+
+For $\pi = \top$ (resp.\ $\pi = \bot$) the single rule $R[\top]\rightarrow[\top]T$ (resp.\ $R[\bot]\rightarrow[\bot]F$) fires. For $\pi = p$, the observation $p$ belongs to the time step iff $p \in \sigma_t$, so exactly one of $R[p],p \rightarrow [p]T$ and
+$R[p],\lnot p \rightarrow [p]F$ fires. For $\pi = \lnot\pi'$ the negation
+rule is the dual of the rules for $\pi'$. Finally, for $\pi = \pi_1\land\pi_2$, both
+arguments are definite by inductive hypothesis, hence the truth table is exactly that of classical conjunction; the rows consuming a $?$ are not enabled, and the modes $L$ and $R$ are
+unreachable, because $R[\pi]L$ and $R[\pi]R$ are produced only by the reactivation of $[\pi]?L$ and $[\pi]?R$.
+
+By this argument, we know that a propositional formula which is instantiated at time step $t$ is always evaluated to a definite value within the same time step $t$, and it is discarded, together with every other truth register, at the end of that time step. Note that $X$, $W$, and $U$ reinstalls only a propositional formula. Hence all the instances of a propositional subformula that
+are live at time step $t$, possibly created by different temporal operators, refer
+to the same time point $t$ and agree on the value they write in the shared
+register. This is exactly the property that fails in
+Section~\ref{sec:rulerunner-limitation}.
+
+Now, we now prove the following statement by structural induction on
+$\theta\in\F_{RR}$. Let $\boldsymbol{\sigma}$ be a non-empty trace and consider
+the run of the RuleRunner system of $\theta$ started from its initial activation
+at time step $0$. Then:
+\begin{enumerate}
+    \item[(i)] at every cell $t$ at which the node of $\theta$ is active, the register $[\theta]$ receives exactly one value $v_t(\theta)$;
+    \item[(ii)] if $v_t(\theta)\neq{?}$, then $v_t(\theta)=T$ iff $\boldsymbol{\sigma},0\models\theta$;
+    \item[(iii)] if $v_t(\theta)={?}$ and $t<last$, the node of $\theta$ is active again at cell $t+1$ with its mode recorded, and so are the arguments it has to read there;
+    \item[(iv)] if $v_t(\theta)={?}$ for every $t\leq last$, then the END resolution of $[\theta]$ returns true iff $\boldsymbol{\sigma},0\models\theta$.
+\end{enumerate}
+
+\noindent
+\textbf{(Base case.)}
+
+\begin{itemize}
+    \item $\theta=\pi$. By the propositional case, $v_0(\pi)$ is definite and $v_0(\pi)=T$ iff $\boldsymbol{\sigma},0\models\pi$, which gives (i) and (ii); (iii) and (iv) are vacuous, and the node is not active after cell $0$.
+    \item $\theta=X\pi$. The rule $R[X\pi]\rightarrow[X\pi]?$ fires and no other rule of the node is enabled, so $v_0(X\pi)={?}$ and (i) holds, while (ii) is vacuous. If $0=last$, then $\boldsymbol{\sigma},0\not\models X\pi$, and the END resolution returns false, which gives (iv). If $0<last$, the reactivation of the unqualified $[X\pi]?$ installs $R[X\pi]M$ together with the initial activation of $\pi$, which gives (iii). By the propositional case $v_1(\pi)=T$ iff $\boldsymbol{\sigma},1\models\pi$, and $R[X\pi]M,[\pi]V\rightarrow[X\pi]V$, so $v_1(X\pi)$ is definite and it is true iff $\boldsymbol{\sigma},0\models X\pi$: this makes (iv) vacuous.
+    \item $\theta=W\pi$. Same as the previous case, except that the END resolution of the unqualified $[W\pi]?$ returns true, which is correct.
+    \item $\theta=\pi_1\muntil\pi_2$. The node is activated at time step $0$ in mode $A$, together with the initial activations of both arguments, and its reactivation re-installs both of them at every time step. Since by the propositional case the arguments are always definite, $?$ is never returned as truth value and the modes $B$, $L$ and $R$ are unreachable for the whole run. Hence, we can have
+    $v_t(\pi_1\muntil\pi_2)$ equals true if $\boldsymbol{\sigma},t\models\pi_2$, false if $\boldsymbol{\sigma},t\not\models\pi_2$ and $\boldsymbol{\sigma},t\not\models\pi_1$, and $?A$ otherwise. This gives (i) and (iii).
+
+    We prove by induction on $t$ the invariant: \emph{the node is active at cell $t$ iff $\boldsymbol{\sigma},k\models\pi_1$ and $\boldsymbol{\sigma},k\not\models\pi_2$ for every $k<t$}. It holds trivially at $t=0$, and it is preserved because the node is active at cell $t+1$ only if $v_t={?A}$, i.e.\ only if $\pi_1$ holds and $\pi_2$ fails at $t$. Under the invariant, (ii) follows: if $v_t=T$ then $\boldsymbol{\sigma},t\models\pi_2$ and $\pi_1$ holds at every $k<t$, so $t$ witnesses $\boldsymbol{\sigma},0\models\pi_1\muntil\pi_2$; if $v_t=F$ then no $j<t$ witnesses the until by the invariant, $j=t$ fails because $\pi_2$ does, and no $j>t$ can witness it because $\pi_1$ fails at $t$, hence $\boldsymbol{\sigma},0\not\models\pi_1\muntil\pi_2$. Finally, (iv): if the node is undecided at every cell, then by the invariant $\pi_2$ fails everywhere up to $last$, so $\boldsymbol{\sigma},0\not\models\pi_1\muntil\pi_2$; and the END resolution of an until returns the END value of its right argument, which is the definite $[\pi_2]F$ recorded at cell $last$.
+\end{itemize}
+
+\noindent
+\textbf{(Inductive case.)}
+
+\begin{itemize}
+    \item $\theta=\lnot\theta'$. The negation rules map $T$ to $F$, $F$ to $T$ and $?$ to $?$, so (i) holds and $v_t(\theta)\neq{?}$ iff $v_t(\theta')\neq{?}$, in which case (ii) follows from the inductive hypothesis on $\theta'$. If $v_t(\theta')={?}$, then $[\lnot\theta']?\rightarrow R[\lnot\theta']$ carries the wrapper while $\theta'$ reactivates itself through its own rules, which together with the inductive hypothesis (iii) gives (iii). Likewise, the END resolution of $\lnot\theta'$ is the complement of the END resolution of $\theta'$, so (iv) follows from the inductive hypothesis (iv).
+    \item $\theta=\theta_1\land\theta_2$. Consider the first cell $t$ at which one of the two arguments becomes definite; before $t$ both are undecided, the row $(?,?)$ of the mode-$B$ table returns $?B$, and both arguments are carried and reactivate through their own rules by the inductive hypothesis (iii). If no such cell exists, (iv) holds because the END resolution in mode $B$ recurses on both arguments, which are correct by the inductive hypothesis (iv), and the conjunction of their END values is the value of $\theta$ at time $0$. Otherwise, we distinguish three cases at cell $t$.
+    If both arguments are definite, the mode-$B$ table returns their classical conjunction, and (ii) follows from the inductive hypothesis (ii) applied to both.
+    If exactly one is definite and its value is $F$ --- say $v_t(\theta_1)=F$ --- the row $(F,?)$ returns $F$, and by the inductive hypothesis (ii) $\boldsymbol{\sigma},0\not\models\theta_1$, hence $\boldsymbol{\sigma},0\not\models\theta$ and (ii) holds.
+    If exactly one is definite and its value is $T$ --- say $v_t(\theta_1)=T$ --- the row $(T,?)$ returns $?R$, so from cell $t+1$ on only $R[\theta]R$ is carried and $\theta_1$ is dropped from monitoring; dropping it is correct, because by the inductive hypothesis (ii) $\boldsymbol{\sigma},0\models\theta_1$ permanently, and $\theta_1$'s own subsystem is not reactivated, its register being definite. The mode-$R$ rules replicate the mode-$B$ column at the pin value $T$ of the left argument, so $v_{t'}(\theta)=v_{t'}(\theta_2)$ at every cell $t'\geq t$, and (ii), (iii) follow from the inductive hypothesis on $\theta_2$ together with $\boldsymbol{\sigma},0\models\theta$ iff $\boldsymbol{\sigma},0\models\theta_2$. For (iv), the END resolution in mode $R$ pins the left argument to $T$, which is the very value it was assigned at cell $t$, and recurses on $\theta_2$, so the claim follows from the inductive hypothesis (iv). The case in which $\theta_2$ is the argument that settles is symmetric, with $?L$ in place of $?R$ and the right argument pinned to $T$.
+\end{itemize}
+
+\noindent
+In summary, if the value of $\theta$ becomes definite at some time step $t\leq last$, the monitor
+halts there and, by (ii), its verdict agrees with
+$\boldsymbol{\sigma}\models\theta$ (this ensures also prefix soundness).
+Otherwise the register is undecided at every cell, and by (iv) the END
+resolution returns the correct value. In both cases $RR_\theta$ returns
+\textsc{satisfy} iff $\boldsymbol{\sigma}\models\theta$.
+\end{proof}
+
+
+\noindent
+\textbf{Corollary~\ref{cor:rulerunner-certifier}.}
+If $\varphi \in \F_{RR}$, then $\varphi \in \C_{RR}$.
+
+\begin{proof}
+It follows directly by Theorem \ref{thm:rulerunner-correct}.
+\end{proof}
+
+
+\noindent
+\textbf{Lemma~\ref{lem:horizon-locality}.}
+Let $\varphi$ be a formula with $h(\varphi)=h<\infty$. Let $l=\min(t+h,last)$ and $\boldsymbol{w}=\boldsymbol{\sigma}[t..l]$. For every non-empty trace $\boldsymbol{\sigma}$ and every position $t\leq last$,
+\[
+\boldsymbol{\sigma},t\models\varphi
+\,\text{ if and only if } \,
+\boldsymbol{w},0\models\varphi
+\]
+
+\begin{proof}
+The proof is by structural induction on $\varphi$.
+
+If $\varphi$ is $\top$, $\bot$ or an atom, the statement is trivially satisfied.
+
+If $\varphi$ is $\lnot\varphi'$, we have
+$h'=h(\varphi')\leq h$. It is easy to see that $\min(t+h',last)=\min(t+h',l)=t+\min(h',l-t)$. 
+The inductive hypothesis applied to $\boldsymbol{\sigma}$
+at $t$ reduces $\varphi'$ to the window $\boldsymbol{\sigma}[t,\min(t+h',last)]$, and applied to $\boldsymbol{w}$ at $0$ it reduces it to $\boldsymbol{w}[0,\min(h',l-t)]$.
+Since $\varphi'$ has the same value in $\boldsymbol{\sigma}$ at $t$ and in
+$\boldsymbol{w}$ at $0$, so does $\varphi$.
+%
+If $\varphi$ is $\varphi_1\circ\varphi_2$, a similar argument as above applies.
+
+If $\varphi$ is $X\varphi'$, we have $h'=h(\varphi')$ so that $h=1+h'$. When $t=last$ we
+have $l=t$ and $\boldsymbol{w}$ has a single position, so both
+$\boldsymbol{\sigma},t\models X\varphi'$ and
+$\boldsymbol{w},0\models X\varphi'$ are false. When $t<last$ we have
+$l\geq t+1$, so both traces have a successor position and
+the two sides amount to $\boldsymbol{\sigma},t+1\models\varphi'$ and
+$\boldsymbol{w},1\models\varphi'$. The inductive hypothesis reduces them to $\boldsymbol{\sigma}[t+1,\min(t+1+h',last)]$ and
+$\boldsymbol{w}[1,\min(1+h',l-t)]$, which is the same trace. The case $\varphi=W\varphi'$ is
+the same, except that a single-position $\boldsymbol{w}$ makes both sides true.
+\end{proof}
+
+\noindent
+\textbf{Theorem~\ref{thm:rulerunner-bounded-correct}.}
+Let $\alpha = sk(\varphi)$. If $RR_\alpha$ is language-equivalent to $A_\alpha$,
+then for every finite trace $\boldsymbol{\sigma}$ the composition of the
+bounded-event transducer and $RR_\alpha$ returns \textsc{satisfy} iff
+$\boldsymbol{\sigma}\models\varphi$. Moreover, if $RR_\alpha$ is prefix-sound,
+then so is the composition.
+
+\begin{proof}
+The empty trace is settled by the separately computed boundary value, since it
+has no position at which an event could be emitted, so let
+$\boldsymbol{\sigma}$ be non-empty. We prove the claim in two steps.
+
+\medskip
+\noindent
+\textbf{(The transducer emits the derived trace.)} Consider a position $p$
+emitted while the trace is being read, so that its buffer is
+$\boldsymbol{\sigma}[p..p+H]$ with $p+H\leq last$. For every island
+$\varphi_i$, Lemma~\ref{lem:horizon-locality} applied to $\boldsymbol{\sigma}$
+at $p$ reduces $\boldsymbol{\sigma},p\models\varphi_i$ to the window
+$\boldsymbol{\sigma}[p..p+h(\varphi_i)]$, and applied to the buffer at $0$ it
+reduces the transducer's own evaluation to the same window, because
+$h(\varphi_i)\leq H$. The two values therefore coincide. Consider now a
+position $p$ emitted during the flush: its buffer is exactly the suffix
+$\boldsymbol{\sigma}[p..last]$, and evaluating a formula at position $0$ of a
+suffix is evaluating it at $p$ in $\boldsymbol{\sigma}$, the truncated
+readings of $X$ and $W$ being the end-of-trace semantics of \ltlf. In both
+cases the emitted cell also carries $\sigma_p$ unchanged, and the cells are
+emitted in increasing order of $p$, one per input cell. Hence the transducer
+outputs exactly $\widehat{\boldsymbol{\sigma}}$.
+
+\medskip
+\noindent
+\textbf{(Substitution.)} We show that $\boldsymbol{\sigma},t\models\varphi$ iff
+$\widehat{\boldsymbol{\sigma}},t\models\alpha$ for every position $t$, by
+structural induction on $\varphi$ following the rewriting that produces
+$\alpha$. If the node is one of the islands $\varphi_i$, it is replaced by
+$e_i$, and $e_i\in\hat{\sigma}_t$ iff $\boldsymbol{\sigma},t\models\varphi_i$
+by the definition of the derived trace. If the node is an atom, it is left
+unchanged, and $\hat{\sigma}_t\cap\calP=\sigma_t$. Otherwise the node is
+unbounded, the rewriting preserves its operator and recurses on its arguments,
+and the inductive hypothesis applies to them; the positions at which they are
+evaluated are the same in the two traces, because
+$\widehat{\boldsymbol{\sigma}}$ and $\boldsymbol{\sigma}$ have the same length,
+hence the same $last$.
+
+\medskip
+\noindent
+Taking $t=0$, the skeleton monitor consumes $\widehat{\boldsymbol{\sigma}}$
+and, by language equivalence, returns \textsc{satisfy} iff
+$\widehat{\boldsymbol{\sigma}}\models\alpha$, that is iff
+$\boldsymbol{\sigma}\models\varphi$.
+
+Assume now that $RR_\alpha$ is also prefix-sound, and suppose that it emits a
+definite verdict after the transducer has read $\sigma_0,\ldots,\sigma_t$. At
+that point the transducer has emitted the prefix
+$\hat{\sigma}_0,\ldots,\hat{\sigma}_{t-H}$ of the derived trace, which is empty
+when $t<H$. Prefix soundness makes that verdict correct for every trace over
+$\calP\cup\{e_1,\ldots,e_m\}$ extending the emitted prefix. Now, every
+non-empty trace $\boldsymbol{\sigma}'$ extending $\sigma_0,\ldots,\sigma_t$
+derives a trace $\widehat{\boldsymbol{\sigma}'}$ that extends that prefix: each
+emitted position $p\leq t-H$ has its whole window $\boldsymbol{\sigma}[p..p+H]$
+inside the part already read, so by Lemma~\ref{lem:horizon-locality} it
+receives the same value in $\boldsymbol{\sigma}'$, whether the extension is
+proper or $\boldsymbol{\sigma}'$ stops at $t$ and $p$ is flushed. The
+realizable derived continuations are therefore a subset of the continuations
+quantified over by prefix soundness, and by substitution the verdict agrees
+with $\boldsymbol{\sigma}'\models\varphi$ for all of them.
+\end{proof}
+
+\noindent
+\textbf{Corollary~\ref{cor:rulerunner-bounded-fragment}.}
+For every $\varphi\in\F_{BE}$, the bounded-event RuleRunner returns the correct
+final verdict, and it is prefix-sound.
+
+\begin{proof}
+By definition, if $\varphi\in\F_{BE}$ its skeleton $sk(\varphi)$ belongs to
+$\F_{RR}$. By Corollary~\ref{cor:rulerunner-certifier}, every formula in
+$\F_{RR}$ is in $\C_{RR}$, so $RR_{sk(\varphi)}$ is language-equivalent to
+$A_{sk(\varphi)}$; and by Theorem~\ref{thm:rulerunner-correct} it is also
+prefix-sound. Thus, we
+can conclude that the bounded-event RuleRunner returns \textsc{satisfy} iff
+$\boldsymbol{\sigma}\models\varphi$ and it is also prefix-sound.
+\end{proof}
+
+
+\noindent
+\textbf{Theorem~\ref{thm:rulerunner-bounded-online}.}
+After every non-empty prefix, the extrapolated bounded-event monitor returns a
+three-valued label identical to that of the canonical DFA for the original
+formula.
+
+\begin{proof}
+By Theorem~\ref{thm:rulerunner-bounded-correct},
+$\calL(P_\varphi)=\calL(A_\varphi)$. In a deterministic automaton, the state
+reached after a prefix $\boldsymbol{u}$ is an accepting sink if and only if
+every continuation of $\boldsymbol{u}$ belongs to the recognised language, and a
+trap if and only if no continuation does; both conditions depend only on
+$\boldsymbol{u}$ and on the language, not on the automaton recognising it. Since
+$P_\varphi$ and $A_\varphi$ recognise the same language and read the same
+alphabet, the state reached by $P_\varphi$ after $\boldsymbol{u}$ is an
+accepting sink, respectively a trap, exactly when the state reached by
+$A_\varphi$ is. The extrapolated monitor returns the label of the former and the
+symbolic monitor of Section~\ref{sec:symbolic} returns the label of the latter,
+so the two labels coincide.
+\end{proof}
+
+
+
+\noindent
+\textbf{Theorem~\ref{thm:rulerunner-progression-correct}.}
+Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite  trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
+
+\begin{proof}
+Let $\boldsymbol{\sigma}=(\sigma_0,\ldots,\sigma_{T-1})$ be a finite trace. For $0\leq t\leq T$, let $\Sigma_t$ be the active root set after the prefix $\sigma_0\cdots\sigma_{t-1}$ has been consumed (and thus before reading $\sigma_t$ when $t<T$). Let
+\[
+    \rho_t = \bigwedge_{\chi\in\Sigma_t}\chi
+\]
+be the residual it denotes. By construction,
+\[
+    \Sigma_0=\mathsf{split}_\wedge(\mathsf{nf}(\varphi)),
+\]
+and therefore $\rho_0$ is equivalent to $\varphi$.
+
+We first use the defining property of progression. For every formula $\chi$, every cell $s$, and every finite continuation $\boldsymbol{\tau}$, including the empty continuation $\epsilon$,
+\begin{equation}
+\label{eq:progression-step}
+    s\cdot\boldsymbol{\tau}\models\chi
+    \quad\Longleftrightarrow\quad
+    \boldsymbol{\tau}\models\mathsf{prog}(\chi,s).
+\end{equation}
+This property follows by structural induction on $\chi$. The atomic and Boolean cases are immediate from the definition of $\mathsf{prog}$. For $X\chi$, $s\cdot\boldsymbol{\tau}\models X\chi$ iff $\boldsymbol{\tau}$ is non-empty and $\boldsymbol{\tau}\models\chi$. Since $F\top$ holds exactly on non-empty finite traces, this is equivalent to $\boldsymbol{\tau}\models\chi\land F\top$. Dually, $W\chi$ is true either when the suffix is empty or when $\chi$ holds at its first cell; $G\bot$ holds exactly on the empty trace, yielding $\mathsf{prog}(W\chi,s)=\chi\lor G\bot$. For until, $s\cdot\boldsymbol{\tau}\models\chi_1U\chi_2$ iff either $\chi_2$ holds at the current cell, or $\chi_1$ holds at the current cell and $\chi_1U\chi_2$ holds on the suffix; by the induction hypothesis this is equivalent to
+\[
+    \boldsymbol{\tau}\models
+    \mathsf{prog}(\chi_2,s)\lor
+    \bigl(\mathsf{prog}(\chi_1,s)\land(\chi_1U\chi_2)\bigr).
+\]
+The derived operators inherit the property from their definitions.
+
+We now prove the residual invariant:
+\begin{equation}
+\label{eq:rulerunner-residual-invariant}
+    \sigma_0\cdots\sigma_{t-1}\cdot\boldsymbol{\tau}\models\varphi
+    \quad\Longleftrightarrow\quad
+    \boldsymbol{\tau}\models\rho_t
+\end{equation}
+for every $0\leq t\leq T$ and every finite continuation $\boldsymbol{\tau}$.
+
+For $t=0$, the claim holds because $\rho_0$ is equivalent to $\varphi$. Assume it holds for some $t<T$. By the reactivation rule,
+\[
+    \rho_{t+1}
+    \equiv
+    \mathsf{nf}\left(
+        \bigwedge_{\chi\in\Sigma_t}\mathsf{prog}(\chi,\sigma_t)
+    \right).
+\]
+Since $\rho_t=\bigwedge_{\chi\in\Sigma_t}\chi$ and progression distributes over conjunction up to logical equivalence, this is equivalent to
+\[
+    \rho_{t+1}
+    \equiv
+    \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr).
+\]
+Therefore, for every  continuation $\boldsymbol{\tau}$,
+\[
+\begin{array}{rcl}
+\sigma_0\cdots\sigma_t\cdot\boldsymbol{\tau}\models\varphi
+&\Longleftrightarrow&
+\sigma_t\cdot\boldsymbol{\tau}\models\rho_t
+\quad\text{by the induction hypothesis,}\\
+&\Longleftrightarrow&
+\boldsymbol{\tau}\models\mathsf{prog}(\rho_t,\sigma_t)
+\quad\text{by Equation~\eqref{eq:progression-step},}\\
+&\Longleftrightarrow&
+\boldsymbol{\tau}\models\rho_{t+1}
+\quad\text{because $\mathsf{nf}$ preserves semantics.}
+\end{array}
+\]
+Thus the invariant holds at $t+1$.
+
+After consuming all $T$ cells, repeated application of the invariant gives
+\[
+    \boldsymbol{\sigma}\models\varphi
+    \quad\Longleftrightarrow\quad
+    \epsilon\models\rho_T.
+\]
+The final evaluation rules compute precisely whether the residual accepts the empty trace. Hence the monitor returns \textsc{satisfy} exactly on traces satisfying $\varphi$, and \textsc{violate} otherwise.
+
+Finally, the operational register construction realizes the symbolic transition used in the proof. At time $t$, the state $S_t=sub(\rho_t)$ contains every subformula needed to evaluate and progress the active roots. Since the eager monitor allocates registers for all formulas in $sub(cl(\varphi))$, every such support formula has a corresponding register, and the bottom-up computation can be carried out by finitely many rules. Only the active roots in $\Sigma_t$ are reactivated, so support subformulas do not acquire an independent temporal meaning. Therefore the rule-based monitor implements exactly the residual update used in the invariant.
+
+If an early verdict is returned, the current residual is respectively valid or unsatisfiable over all finite continuations. By Equation~\eqref{eq:rulerunner-residual-invariant}, every completion of the prefix read so far then has the same truth value for $\varphi$, which proves soundness of early termination.
+\end{proof} 

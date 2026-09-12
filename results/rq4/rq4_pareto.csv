@@ -1,0 +1,193 @@
+schema_version,formula_id,workload_mode,timing_boundary,requested_device,effective_device,trace_length,batch_size,monitor_id,latency_s_per_trace_median,compile_s_median,persistent_host_rss_delta_bytes_median,pareto_optimal,dominated_by_json
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,deepdfa_dense,0.0011870566042186208,0.06630133200087585,3821568.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,deepdfa_factored,0.002267231115323599,0.07119378999777837,4595712.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.0073791240001810365,0.12539689600089332,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.00742184783302946,0.16432864799935487,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,rulerunner_original_flat,0.007130908833156961,0.05369962600161671,5111808.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,rulerunner_progression_flat,0.004246780124958605,0.05360209300124552,4890624.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,1,symbolic_guarded,5.575436464483812e-05,0.06557592299941462,inf,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,deepdfa_dense,8.425030468401928e-05,0.06630133200087585,3821568.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,deepdfa_factored,0.00011926403385587037,0.07119378999777837,4595712.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.0005175606406169209,0.12539689600089332,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.000522680468748149,0.16432864799935487,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,rulerunner_original_flat,0.0002643160520771441,0.05369962600161671,5111808.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,rulerunner_progression_flat,0.00016485116874491722,0.05360209300124552,4890624.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,32,symbolic_guarded,5.724556445585449e-05,0.06557592299941462,inf,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,deepdfa_dense,5.72697998038052e-05,0.06630133200087585,3821568.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,deepdfa_factored,6.410802474003201e-05,0.07119378999777837,4595712.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.0003458760937462557,0.12539689600089332,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.0003457323281281788,0.16432864799935487,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,rulerunner_original_flat,8.847553711177625e-05,0.05369962600161671,5111808.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,rulerunner_progression_flat,6.316686197749277e-05,0.05360209300124552,4890624.0,True,[]
+rq4.v1,atomic_control,capacity,core_native,cpu,cpu,64,128,symbolic_guarded,5.536197070199478e-05,0.06557592299941462,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0012443869374389276,0.06702793799922802,3846144.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.0023515742500421766,0.07069615300133592,4640768.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.007762829667020317,0.12610790399776306,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.007386743500319426,0.16363136899963138,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.0073937779998232145,0.05441843299922766,5165056.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.004316499749923726,0.054378842000005534,4886528.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,1,symbolic_guarded,9.645164499791765e-05,0.0636550620001799,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,deepdfa_dense,0.00012697797991125168,0.06702793799922802,3846144.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,deepdfa_factored,0.0001620064343796912,0.07069615300133592,4640768.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.0005686737187602375,0.12610790399776306,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.0005829816875007054,0.16363136899963138,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_original_flat,0.00030386479687649626,0.05441843299922766,5165056.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_progression_flat,0.0002061620742068726,0.054378842000005534,4886528.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,32,symbolic_guarded,9.541946874631119e-05,0.0636550620001799,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,deepdfa_dense,9.55894335916696e-05,0.06702793799922802,3846144.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,deepdfa_factored,0.00010449178125071512,0.07069615300133592,4640768.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.00038259686718333796,0.12610790399776306,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.00039020001560174933,0.16363136899963138,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_original_flat,0.00012840355859111696,0.05441843299922766,5165056.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_progression_flat,0.00010222656445080247,0.054378842000005534,4886528.0,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cpu,cpu,64,128,symbolic_guarded,9.500275000107195e-05,0.0636550620001799,inf,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0012945930833060022,0.06721286500032875,3817472.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.0023318468461534046,0.06831289899855619,4591616.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.00736467066659922,0.12616443599836202,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.007469309000346887,0.16048713299824158,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.007163023500349179,0.05399548200148274,5165056.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.0044911772498987075,0.05495287500161794,4890624.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,1,symbolic_guarded,4.1048389855701396e-05,0.06652155999836395,inf,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,deepdfa_dense,0.00010802720311176017,0.06721286500032875,3817472.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,deepdfa_factored,0.0001220579479005816,0.06831289899855619,4591616.0,False,"[""deepdfa_dense""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_default,0.00035858349218642616,0.12616443599836202,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_exact,0.00037598135938310406,0.16048713299824158,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_original_flat,0.00018442920313077593,0.05399548200148274,5165056.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_progression_flat,0.000137464992188067,0.05495287500161794,4890624.0,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cpu,cpu,64,64,symbolic_guarded,4.056502187381739e-05,0.06652155999836395,inf,True,[]
+rq4.v1,atomic_control,capacity,core_native,cuda,cpu,64,1,symbolic_guarded,5.626692521210728e-05,0.06510691799849155,inf,True,[]
+rq4.v1,atomic_control,capacity,core_native,cuda,cpu,64,32,symbolic_guarded,5.7732784926777054e-05,0.06510691799849155,inf,True,[]
+rq4.v1,atomic_control,capacity,core_native,cuda,cpu,64,128,symbolic_guarded,5.589963085839145e-05,0.06510691799849155,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cuda,cpu,64,1,symbolic_guarded,9.683015357170786e-05,0.06717375699736294,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cuda,cpu,64,32,symbolic_guarded,9.586395000269477e-05,0.06717375699736294,inf,True,[]
+rq4.v1,atomic_control,capacity,end_to_end,cuda,cpu,64,128,symbolic_guarded,9.544611913980816e-05,0.06717375699736294,inf,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cuda,cpu,64,1,symbolic_guarded,4.184721563383398e-05,0.06679877400165424,inf,True,[]
+rq4.v1,atomic_control,deployment,end_to_end,cuda,cpu,64,64,symbolic_guarded,3.968852272671277e-05,0.06679877400165424,inf,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,deepdfa_dense,0.0012301693600602448,0.11179481799990754,5083136.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,deepdfa_factored,0.002273767100086843,0.11962404800215154,5971968.0,False,"[""deepdfa_dense"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.008744203500100411,0.12671061000219197,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.008856009500353442,0.1647795610006142,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,rulerunner_original_flat,0.008170100500137778,0.057222101000661496,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,rulerunner_progression_flat,0.004292222428505609,0.054926564000197686,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,1,symbolic_guarded,6.1027438597081705e-05,0.1096028789979755,909312.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,deepdfa_dense,0.00011013303125650964,0.11179481799990754,5083136.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,deepdfa_factored,0.00014486391926501105,0.11962404800215154,5971968.0,False,"[""deepdfa_dense"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.001456298281141244,0.12671061000219197,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.0015582334686996546,0.1647795610006142,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,rulerunner_original_flat,0.0006792629062601918,0.057222101000661496,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,rulerunner_progression_flat,0.00018999208748482488,0.054926564000197686,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,32,symbolic_guarded,6.117727120421737e-05,0.1096028789979755,909312.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,deepdfa_dense,7.995207812427907e-05,0.11179481799990754,5083136.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,deepdfa_factored,9.32617402327196e-05,0.11962404800215154,5971968.0,False,"[""deepdfa_dense"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.002429125226569795,0.12671061000219197,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.002437116992183519,0.1647795610006142,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,rulerunner_original_flat,0.00031127979687539664,0.057222101000661496,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,rulerunner_progression_flat,8.822556445409191e-05,0.054926564000197686,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cpu,cpu,64,128,symbolic_guarded,5.9554812499603336e-05,0.1096028789979755,909312.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0013117930952181009,0.11551008800233831,5054464.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.0024014454167324097,0.11677913200037437,5939200.0,False,"[""deepdfa_dense"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.008925332166957864,0.12637278100010008,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.009149033333111825,0.15956499399908353,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.008347338166762105,0.05745706000016071,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.004395731749961366,0.057194065000658156,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,1,symbolic_guarded,0.00013665789323151026,0.11414765500012436,974848.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,deepdfa_dense,0.000188468565625044,0.11551008800233831,5054464.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,deepdfa_factored,0.00022506270312305787,0.11677913200037437,5939200.0,False,"[""deepdfa_dense"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.0017870361874656737,0.12637278100010008,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.00166712621876286,0.15956499399908353,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,rulerunner_original_flat,0.0007154166562486353,0.05745706000016071,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,rulerunner_progression_flat,0.000273729546904633,0.057194065000658156,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,32,symbolic_guarded,0.00013408536456912165,0.11414765500012436,974848.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,deepdfa_dense,0.00015607611327084214,0.11551008800233831,5054464.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,deepdfa_factored,0.000170351898447052,0.11677913200037437,5939200.0,False,"[""deepdfa_dense"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.002478372656241845,0.12637278100010008,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.0025158610937694448,0.15956499399908353,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,rulerunner_original_flat,0.00043000350001420884,0.05745706000016071,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,rulerunner_progression_flat,0.00016688581249013623,0.057194065000658156,4825088.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cpu,cpu,64,128,symbolic_guarded,0.0001332077929703246,0.11414765500012436,974848.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0014255054000386735,0.11346469099953538,5160960.0,False,"[""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.002445634111103977,0.11704470000040601,5959680.0,False,"[""deepdfa_dense"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.010591322750769905,0.12837128899991512,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.010278241250489373,0.16128751300129807,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.015226768000502489,0.0584845339981257,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.00451762608311886,0.05428185199707514,4882432.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,1,symbolic_guarded,0.0001469251640552708,0.11084226700040745,921600.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,deepdfa_dense,0.0002212597656239268,0.11346469099953538,5160960.0,False,"[""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,deepdfa_factored,0.00024001946877660885,0.11704470000040601,5959680.0,False,"[""deepdfa_dense"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_default,0.0021084222968852373,0.12837128899991512,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_exact,0.0028906743281140734,0.16128751300129807,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat"", ""symbolic_guarded""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,rulerunner_original_flat,0.0008817547187618402,0.0584845339981257,6438912.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,rulerunner_progression_flat,0.00018665631640146785,0.05428185199707514,4882432.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cpu,cpu,64,64,symbolic_guarded,0.00012149268746952657,0.11084226700040745,921600.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cuda,cpu,64,1,symbolic_guarded,5.23730897670859e-05,0.09636317100012093,937984.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cuda,cpu,64,32,symbolic_guarded,5.174939791838066e-05,0.09636317100012093,937984.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,core_native,cuda,cpu,64,128,symbolic_guarded,5.0818090823412376e-05,0.09636317100012093,937984.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cuda,cpu,64,1,symbolic_guarded,0.00020736463768011217,0.17626928900062921,921600.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cuda,cpu,64,32,symbolic_guarded,0.00021054006249698887,0.17626928900062921,921600.0,True,[]
+rq4.v1,ijcnn_balanced_n4,capacity,end_to_end,cuda,cpu,64,128,symbolic_guarded,0.00020526676561871682,0.17626928900062921,921600.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cuda,cpu,64,1,symbolic_guarded,0.00012734568433444207,0.09668891700130189,1015808.0,True,[]
+rq4.v1,ijcnn_balanced_n4,deployment,end_to_end,cuda,cpu,64,64,symbolic_guarded,0.00010619915622100962,0.09668891700130189,1015808.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,deepdfa_dense,0.0012170834999475726,0.06833245499728946,3776512.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,deepdfa_factored,0.002274386500024169,0.06958379700154183,4665344.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.008371047500077111,0.1268870500025514,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.008657986000495535,0.16866633700192324,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,rulerunner_original_flat,0.007973454499733634,0.05556006999904639,5169152.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,rulerunner_progression_flat,0.004400361999917853,0.05768508199980715,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,1,symbolic_guarded,5.975384497840296e-05,0.06803127499733819,inf,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,deepdfa_dense,9.045950521150796e-05,0.06833245499728946,3776512.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,deepdfa_factored,0.0001234794598222574,0.06958379700154183,4665344.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.001021500625029148,0.1268870500025514,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.0010337383437217795,0.16866633700192324,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,rulerunner_original_flat,0.00029447239063529196,0.05556006999904639,5169152.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,rulerunner_progression_flat,0.00016677998750083133,0.05768508199980715,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,32,symbolic_guarded,5.7987321876377486e-05,0.06803127499733819,inf,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,deepdfa_dense,8.260313867225477e-05,0.06833245499728946,3776512.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,deepdfa_factored,6.926554687917512e-05,0.06958379700154183,4665344.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.0016545008047046394,0.1268870500025514,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.0019034021484287678,0.16866633700192324,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,rulerunner_original_flat,0.00010603579687540332,0.05556006999904639,5169152.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,rulerunner_progression_flat,6.444299479350472e-05,0.05768508199980715,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cpu,cpu,64,128,symbolic_guarded,5.709313671786731e-05,0.06803127499733819,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0012354584347201087,0.06835334900097223,3821568.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.0023423873181772333,0.07017015100063873,4558848.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.008264059499803503,0.12725318200318725,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.00842031316703166,0.16538773000138463,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.0078014863332403666,0.056219406997115584,5222400.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.004348828833220371,0.05603630800032988,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,1,symbolic_guarded,9.902356713716116e-05,0.06737711300229421,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,deepdfa_dense,0.0001314854218727695,0.06835334900097223,3821568.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,deepdfa_factored,0.00016367526250178345,0.07017015100063873,4558848.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_default,0.0010848154687437273,0.12725318200318725,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_bounded_flat_exact,0.0010783428750755775,0.16538773000138463,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_original_flat,0.00034123849218303803,0.056219406997115584,5222400.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,rulerunner_progression_flat,0.00020461691796924697,0.05603630800032988,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,32,symbolic_guarded,9.744459201657365e-05,0.06737711300229421,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,deepdfa_dense,0.00013482190234981317,0.06835334900097223,3821568.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,deepdfa_factored,0.00010755209570589841,0.07017015100063873,4558848.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_default,0.0017926745156273682,0.12725318200318725,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_bounded_flat_exact,0.0019158183671947882,0.16538773000138463,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_original_flat,0.00014533833984842204,0.056219406997115584,5222400.0,False,"[""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,rulerunner_progression_flat,0.00010285241992136207,0.05603630800032988,4825088.0,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cpu,cpu,64,128,symbolic_guarded,9.914367772978494e-05,0.06737711300229421,inf,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,deepdfa_dense,0.0012179660951958447,0.06630552600108786,3833856.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,deepdfa_factored,0.002318681416909385,0.071267010000156,4608000.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_default,0.008015143500112268,0.12911923399951775,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_bounded_flat_exact,0.008018315499915237,0.15776212100172415,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_original_flat,0.00783203583341674,0.053886679001152515,5165056.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,rulerunner_progression_flat,0.004309047583471208,0.054602381998847704,4829184.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,1,symbolic_guarded,4.4295514489872934e-05,0.06710124600067502,inf,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,deepdfa_dense,0.00011139641406998635,0.06630552600108786,3833856.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,deepdfa_factored,0.00012326096875388734,0.071267010000156,4608000.0,False,"[""deepdfa_dense""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_default,0.0008472658281561962,0.12911923399951775,7159808.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_bounded_flat_exact,0.0008490194375099236,0.15776212100172415,7430144.0,False,"[""deepdfa_dense"", ""deepdfa_factored"", ""rulerunner_bounded_flat_default"", ""rulerunner_original_flat"", ""rulerunner_progression_flat""]"
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_original_flat,0.0002070734648356165,0.053886679001152515,5165056.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,rulerunner_progression_flat,0.00013111142969535194,0.054602381998847704,4829184.0,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cpu,cpu,64,64,symbolic_guarded,4.2168362214893435e-05,0.06710124600067502,inf,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cuda,cpu,64,1,symbolic_guarded,8.853712335478217e-05,0.09873273500124924,inf,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cuda,cpu,64,32,symbolic_guarded,8.766654687204007e-05,0.09873273500124924,inf,True,[]
+rq4.v1,nested_next_control,capacity,core_native,cuda,cpu,64,128,symbolic_guarded,8.583687890251213e-05,0.09873273500124924,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cuda,cpu,64,1,symbolic_guarded,0.0001508277927469848,0.10087873800148373,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cuda,cpu,64,32,symbolic_guarded,0.000145297164067415,0.10087873800148373,inf,True,[]
+rq4.v1,nested_next_control,capacity,end_to_end,cuda,cpu,64,128,symbolic_guarded,0.00014551108593252593,0.10087873800148373,inf,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cuda,cpu,64,1,symbolic_guarded,6.541533718159445e-05,0.10009327000079793,inf,True,[]
+rq4.v1,nested_next_control,deployment,end_to_end,cuda,cpu,64,64,symbolic_guarded,6.422560044581717e-05,0.10009327000079793,inf,True,[]

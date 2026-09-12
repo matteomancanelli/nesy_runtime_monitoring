@@ -268,7 +268,7 @@ an interchangeable DeepDFA baseline.
 ## 7. Immediate next phase: experiments and results
 
 Experiment integration was deliberately deferred. The next session should
-start from [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md) and should not reopen the
+start from [EXPERIMENTAL_EVALUATION_PLAN.md](EXPERIMENTAL_EVALUATION_PLAN.md) and should not reopen the
 settled DeepDFA semantics unless a measurement or test reveals a real defect.
 
 The immediate goals are:
@@ -443,7 +443,8 @@ Otherwise, treat the section as frozen and focus on measuring it fairly.
 - Tests: [`tests/test_deep_dfa.py`](../tests/test_deep_dfa.py),
   [`tests/test_deep_dfa_scan.py`](../tests/test_deep_dfa_scan.py)
 - Artifact/API guide: [deepdfa_artifact.md](deepdfa_artifact.md)
-- Experiment map: [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md)
+- Current evaluation plan: [EXPERIMENTAL_EVALUATION_PLAN.md](EXPERIMENTAL_EVALUATION_PLAN.md)
+- Archived experiment map: [EXPERIMENT_MAP.md](../old/docs/EXPERIMENT_MAP.md)
 - Decision-diagram analysis:
   [decision_diagram_transition_representation.md](decision_diagram_transition_representation.md)
 - RuleRunner authoritative handoff: [rulerunner_status.md](rulerunner_status.md)
@@ -452,7 +453,7 @@ Otherwise, treat the section as frozen and focus on measuring it fairly.
 Suggested opening instruction for the next session:
 
 > Read `docs/deepdfa_status_and_future_work.md`,
-> `docs/rulerunner_status.md`, and `docs/EXPERIMENT_MAP.md`. Treat RuleRunner
+> `docs/rulerunner_status.md`, and `docs/EXPERIMENTAL_EVALUATION_PLAN.md`. Treat RuleRunner
 > and DeepDFA theory/implementation as frozen. Audit the existing experiment
 > scripts and results, then design the final fair benchmark/result phase
 > without reusing stale measurements or expanding into probabilistic

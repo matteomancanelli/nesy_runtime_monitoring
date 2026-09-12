@@ -35,9 +35,7 @@ from src.formula.compiler import compile_ltlf
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "formula", DECLARE_SUITE, ids=[f.name for f in DECLARE_SUITE]
-)
+@pytest.mark.parametrize("formula", DECLARE_SUITE, ids=[f.name for f in DECLARE_SUITE])
 def test_declare_suite_compiles(formula):
     dfa = compile_ltlf(formula.formula)
     assert dfa.initial in dfa.states
@@ -79,7 +77,8 @@ def test_majority3_is_shared_not_duplicated():
 )
 def test_state_blowup_is_exponential(formula):
     dfa = compile_ltlf(formula.formula)
-    k = formula.n_leaves
+    k = formula.parameter("temporal_depth")
+    assert isinstance(k, int)
     assert len(dfa.states) == 2**k + 1
     # tiny alphabet — the blowup is in |Q|, not |AP|
     assert len(dfa.atoms) == 2
@@ -96,6 +95,7 @@ def test_at_least_k_of_n_validates_input():
 
 
 def test_threshold_disjunct_count_is_binomial():
-    # n_leaves == n; disjunction has C(n, k) conjuncts.
+    # The declared n_atoms is distinct from compiler-derived structure.
     f = at_least_k_of_n(3, 5)
+    assert f.parameter("n_atoms") == 5
     assert f.formula.count("&") == math.comb(5, 3) * (3 - 1)

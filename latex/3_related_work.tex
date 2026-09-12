@@ -1,0 +1,66 @@
+\section{Related Work}
+
+\subsection{An Overview of Temporal Logics over Finite Traces}
+\label{sec:overview}
+
+The necessity and advantage of adapting \ltl from infinite to finite traces have been studied since a long time \cite{lichtenstein1985glory,manna1995temporal}. This led to a prolific development of several logic languages capable to express temporally extended properties over a finite sequence of time steps. Here, we mention some of these languages that have been used for monitoring tasks.
+
+The original RuleRunner system \cite{perotti2015runtime} refers to FLTL as a finite-trace variant of \ltl. As already mentioned, in the last decade \ltlf \cite{de2013linear,GiacomoV15,CamachoBM19} has established as one the standard language for modeling finite traces of executions. Notably, FLTL and \ltlf share essentially the same syntax and semantics, offering two next operators, with a strong next operator $X$ which is always false at the last position of the trace since no successor exists, and a weak next operator $W$ which is always true at the last position (see Sec. \ref{sec:ltlf} for details).
+Note that FLTL makes explicit use of an $\textit{END}$ symbol for signaling the last element of the trace, but this can be easily expressed with the Weak Next operator by $\textit{END} \equiv W  \bot$.
+
+In general, standard FLTL (and \ltlf) is not defined for the empty trace. \cite{eisner2003reasoning} proposed LTL$^\mp$, a formalism composed by two versions of LTL: in the weak view (LTL$^-$), every formula is satisfied by the empty word, while in the strong view (LTL$^+$), the empty word does not satisfy any formula. This means that the same formula can have a different truth value in the two views. Using this approach, one needs the strong and weak view to be entwined to establish a sound meaning in the context of negation. 
+
+Another way of looking at finite traces is to consider them as prefixes of unknown infinite traces. Building on this idea, \cite{arafat2005runtime,bauer2006monitoring} proposed LTL$_3$, which uses the same syntax of \ltlf but a different semantics, evaluating each formula to one of the truth values $\{ \top, \bot, ? \}$, with $\top$ and $\bot$ being complementary to each other and $?$ being complementary to itself. Specifically if every infinite trace with prefix $\boldsymbol{\sigma}$ evaluates $\varphi$ to the same truth value $\top$ or $\bot$, then LTL$_3$ also evaluates $\varphi$ to this truth value, otherwise it evaluates to $?$. In contrast with the other formalisms described in this section, the semantics of LTL$_3$ cannot be defined inductively on the structure of the formula.
+
+Some temporal logics have been proposed as direct extentions or modification of \ltlf. LDL$_f$ (Linear Dynamic Logic over finite traces) \cite{de2013linear,GiacomoV15} is an extension of \ltlf to increase the expressivity to regular languages, built as a finite-trace adaptation of the infinite-trace language LDL (Linear Dynamic Logic) \cite{vardi2011rise} and inspired by  Propositional Dynamic Logic \cite{fischer1979propositional,harel2000dynamic}. It has a "dynamic operator" $\langle \rho \rangle \varphi$, which intuitively states that, from the current instant, there exists an execution satisfying the RE$_f$ (Regular Expression over finite traces) \cite{hopcroft2001introduction,khoussainov2012automata} $\rho$ such that its last instant satisfies $\varphi$. Other formalisms are PPLTL$_f$ (Pure-Past \ltlf) \cite{de2020pure}, to refer to past events instead of future ones, and LTL$_f^{MT}$ (\ltlf Modulo Theory) \cite{geatti2022linear}, where proposition letters are replaced with first-order formulas interpreted over arbitrary theories.
+
+\noindent
+\textcolor{red}{TODO: Mention RVLTL, RLTL, TRLTL.}
+
+\subsection{Monitoring}
+
+
+\begin{comment}
+\section{Related Work}
+
+Finkbeiner and Kuhtz separate LTL specifications into maximal bounded-future
+subformulas and an unbounded prefix, evaluate the bounded part through a fixed
+pipeline, and compose both parts into a monitor circuit
+\cite{finkbeiner2009monitor}.  Our bounded-event RuleRunner adopts this temporal
+horizon and separation principle rather than claiming the pipeline itself as a
+new construction.  The difference lies in the prefix component and the
+guarantee used to compose it: we retain the original RuleRunner architecture
+only when an exact product check certifies its language equivalence and prefix
+soundness, and otherwise fall back to the complete progression repair.
+
+\paragraph{Differentiable temporal knowledge.}
+DeepDFA learns a probabilistic relaxation of a finite automaton by placing
+temperature-scaled softmax distributions on transitions and sigmoid outputs on
+acceptance, then annealing toward a discrete machine
+\cite{deepdfa_ecai2024}.  The same forward algebra can instead encode a known
+automaton as fixed one-hot parameters.  NeSy predictive process monitoring uses
+this fixed form as a differentiable knowledge evaluator for generated suffixes
+\cite{mezini2025neuro}; our DeepDFA baseline uses it for online monitoring of a
+known \ltlf specification and does not implement automaton induction.
+
+NeSyA generalizes this probabilistic forward recursion to symbolic automata
+whose edges carry Boolean guards \cite{NesyA}.  It evaluates guard probabilities
+by exact weighted model counting over compiled representations such as d-DNNF,
+proves that the propagated state mass equals the marginal mass of the
+corresponding symbolic traces, and uses the result to train perceptual models.
+Our expected-transition and trace-marginal propositions are direct
+specializations of that semantics.  The difference is the task and the concrete
+backend: we start from an \ltlf-compiled runtime monitor, use disjoint cubes
+without circuit sharing, and evaluate its crisp cost against symbolic and
+rule-based monitors.  We therefore claim neither exact probabilistic
+symbolic-automaton inference nor knowledge compilation as new.
+
+T-ILR takes the complementary formula-level route
+\cite{t_ilr_2025}.  It evaluates \ltlf directly over fuzzy traces with Zadeh
+semantics and applies iterative local refinement, avoiding construction of an
+external DFA.  Its output is a fuzzy satisfaction/refinement signal rather than
+the acceptance marginal of a probabilistic automaton.  This semantic distinction
+is central to our comparison: in the present paper we evaluate exact crisp
+runtime verdicts, while probabilistic and fuzzy-input learning are separate
+capabilities rather than interchangeable monitor semantics.
+\end{comment}

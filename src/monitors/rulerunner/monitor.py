@@ -1,9 +1,10 @@
 """Monitor-interface wrapper for the paradigm-2 RuleRunner pipeline.
 
 `RuleRunnerMonitor` is the public face of the package — what
-[experiments/exp1_single_trace.py](experiments/exp1_single_trace.py),
-[exp2](experiments/exp2_formula_complexity.py), and
-[exp3](experiments/exp3_batch_size.py) put in their `MONITORS` list.
+[old/experiments/exp1_single_trace.py](old/experiments/exp1_single_trace.py),
+[exp2](old/experiments/exp2_formula_complexity.py), and
+[exp3](old/experiments/exp3_batch_size.py) put in their `MONITORS` list. These
+scripts are now historical and are not part of the active evaluation.
 It is a thin adapter over `CILPRunner` that exposes the `compile`,
 `step`, `final_verdict`, `reset` primitives the `Monitor` ABC
 requires; the default `run` and `batch_run` from the base class then

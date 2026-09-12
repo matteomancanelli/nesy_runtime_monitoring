@@ -15,6 +15,12 @@ Research project on **Neuro-Symbolic Runtime Monitoring** combining LTLf (Linear
 > before reopening paradigm 3. Its theory and implementation are frozen for
 > the current paper; the next major phase is experiments/results.
 
+> **Evaluation handoff (2026-08-25):** the authoritative benchmark plan is
+> [docs/EXPERIMENTAL_EVALUATION_PLAN.md](docs/EXPERIMENTAL_EVALUATION_PLAN.md).
+> The pre-E0 numbered experiments, July results, plots, experiment map, launcher,
+> and Colab notebook are preserved under [old/](old/) and must not be used as
+> current evidence.
+
 **Scope decision (2026-07-13, supervisors' call): adaptation and probabilistic monitoring are OUT of this paper** — they are future work. Everything belonging to those threads (the uncertainty/calibration harness and experiments, the probabilistic-verdict theory section, the adaptation plan) lives in **[artur_future_work/](artur_future_work/)**, a self-contained fork with its own CLAUDE.md, ready to be extracted into its own repository. Do not re-grow those threads here; the paper mentions soft inputs and differentiability only as *affordances* motivating the paradigms (one paragraph, `latex/4_deepdfa.tex` §4.2) and defers the rest.
 
 This is an active research project — plans, experiments, and framing should be treated as working hypotheses, not fixed requirements. Expect iteration.
@@ -40,7 +46,9 @@ Three paradigms for LTLf runtime monitoring, compared theoretically and experime
 
 ## Research Plan — phases and steps
 
-> **Navigation:** [docs/EXPERIMENT_MAP.md](docs/EXPERIMENT_MAP.md) is the chart of the experiment/comparison space — what each experiment measures, the dense/factored & CILP/structured variants, the hardware comparison, and the remaining free axes. Read it before adding any experiment.
+> **Historical navigation:** [old/docs/EXPERIMENT_MAP.md](old/docs/EXPERIMENT_MAP.md)
+> documents the archived July suite only. Use the current evaluation plan above
+> before adding any experiment.
 
 Status legend: ✅ done · 🟡 in progress · 🔲 not started.
 
@@ -61,10 +69,10 @@ Key mechanisms already in place (details preserved here because they explain *wh
 - **CUDA timing hygiene (exp3).** `time_monitor` syncs CUDA once per timed repeat (after warm-up and after each full `batch_run`), never inside the per-cell loop ([runner.py](src/benchmarks/runner.py)); DeepDFA's `batch_run` stays on-device and reads verdicts once at the end. Exp3 leads with **absolute time-per-trace**; the speedup panel is annotated (each curve normalized to its own batch=1 — cross-monitor speedups are misleading).
 - **Truthful device labeling (was a real data bug).** Every monitor exposes `effective_device` (Symbolic and the original structured RuleRunner are pure-Python CPU walks and stamp `cpu` even under `device="cuda"`); `time_monitor` stamps that and syncs CUDA only for monitors that truly use it. A CSV never claims a GPU run that did not happen. Resume does not key on device — keep one CSV per machine (`results/cpu/`, `results/gpu/`), merged by the plotters.
 - **Overhead decomposition (why symbolic wins).** Exp 3 batch=1 vs 1024 shows **~83 µs fixed per-call overhead per cell vs ~1.5 µs actual compute** — overhead, not arithmetic, is what loses. Two implemented levers test whether anything survives:
-  - **Larger automata — [exp6_state_scaling.py](experiments/exp6_state_scaling.py)** (`STATE_SCALING_SUITE`, bounded response `G(a → (b ∨ Xb ∨ … ∨ Xᵏb))`, |Q| linear in k, |AP|=2): symbolic per-cell is flat in |Q|; DeepDFA's O(|Q|²) step finally amortizes launch overhead. **A crossover is plausible but unproven — needs the Colab GPU run.**
+  - **Larger automata — [exp6_state_scaling.py](old/experiments/exp6_state_scaling.py)** (`STATE_SCALING_SUITE`, bounded response `G(a → (b ∨ Xb ∨ … ∨ Xᵏb))`, |Q| linear in k, |AP|=2): symbolic per-cell is flat in |Q|; DeepDFA's O(|Q|²) step finally amortizes launch overhead. **A crossover is plausible but unproven — needs the Colab GPU run.**
   - **Parallel prefix scan — `DeepDFAMonitorScan`** ([deep_dfa.py](src/monitors/deep_dfa.py)): the crisp state path is a prefix product of per-cell matrices → Hillis–Steele scan, O(log L) big matmuls instead of L small ones. **Honest caveat (measured):** not a FLOP reduction (×|Q|·log L arithmetic) — wins only where launch overhead ≫ arithmetic (GPU + small |Q| + long traces), loses on CPU/large |Q|. Falls back past `SCAN_MEM_LIMIT_BYTES`. Verdict-identical to sequential ([test_deep_dfa_scan.py](tests/test_deep_dfa_scan.py)). In exp1 + exp3.
-- **State blowup, exponential family — [exp7_state_blowup.py](experiments/exp7_state_blowup.py)** (`STATE_BLOWUP_SUITE`, `F(a & Xᵏb)`, |Q| = 2ᵏ+1, |AP|=2): the **shared-weakness finding** — symbolic per-cell flat (~0.3 µs) while DeepDFA rises O(|Q|²) to ~40 µs at |Q|=1025; analytic memory wall crosses 4 GB at k≈14 for DeepDFA vs k≈28 for symbolic's linear table. Completes the honest three-heel table ([docs/richer_benchmark_findings.md](docs/richer_benchmark_findings.md)).
-- **Within-step depth micro-benchmark — [exp5_depth_microbench.py](experiments/exp5_depth_microbench.py):** nested-X depth 0..10 over `ijcnn_n8`, batch=1, trace length 500 (a single cell is buried in per-call overhead — verified). RuleRunner rises ~140→168 µs with depth; Symbolic ~0.24 µs and DeepDFA ~15 µs stay flat.
+- **State blowup, exponential family — [exp7_state_blowup.py](old/experiments/exp7_state_blowup.py)** (`STATE_BLOWUP_SUITE`, `F(a & Xᵏb)`, |Q| = 2ᵏ+1, |AP|=2): the **shared-weakness finding** — symbolic per-cell flat (~0.3 µs) while DeepDFA rises O(|Q|²) to ~40 µs at |Q|=1025; analytic memory wall crosses 4 GB at k≈14 for DeepDFA vs k≈28 for symbolic's linear table. Completes the archived three-heel table ([old/docs/richer_benchmark_findings.md](old/docs/richer_benchmark_findings.md)).
+- **Within-step depth micro-benchmark — [exp5_depth_microbench.py](old/experiments/exp5_depth_microbench.py):** nested-X depth 0..10 over `ijcnn_n8`, batch=1, trace length 500 (a single cell is buried in per-call overhead — verified). RuleRunner rises ~140→168 µs with depth; Symbolic ~0.24 µs and DeepDFA ~15 µs stay flat.
 - **Cost of correctness (the paradigm-2 paper number).** `plots.correctness_cost_table`/`plot_correctness_cost`: corrected(progression)/original per-cell-time ratio on exp2's flat IJCNN family (where the original RR is also correct, so the ratio isolates the encoding's throughput cost, not the verdict fix).
 
 **Exit criterion:** regenerated `results/cpu|gpu` for exp1/2/3/5/6/7 under the new mode on Colab; a clear verdict on whether any speed advantage survives (exp3 batching, exp6 crossover, scan); the paper's lead figures chosen.

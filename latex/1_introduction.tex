@@ -10,7 +10,6 @@ Standard symbolic techniques for both model checking and runtime monitoring have
 
 In this paper, we will compare different techniques for runtime monitoring, from purely symbolic methods to the state-of-the-art neuro-symbolic architectures. We start revisiting the neural-symbolic approach to runtime monitoring, originally proposed by \cite{perotti2014neural,perotti2015neural} through the RuleRunner system \cite{perotti2015runtime}. The authors claimed that the resulting neural monitors could exploit GPU parallelism for efficient verification, outperforming purely symbolic mechanisms. Since then, some significant developments have reshaped the landscape. 
 First, \ltlf \cite{LTLf} has become the standard formalism for temporal reasoning over finite traces in AI, bringing with it mature tools for compiling formulas into DFAs. Then, differentiable automata representations such as DeepDFA \cite{deepdfa_ecai2024} have emerged, enabling the integration of temporal logic knowledge into neural architectures through gradient-based learning.
-\textcolor{red}{Possibly include other NeSy approaches.}
 We present a systematic comparison of three paradigms for \ltlf runtime monitoring: (i) purely symbolic DFA-based monitoring, (ii) rule-based neural-symbolic monitoring in the RuleRunner tradition, and (iii) automata-based neural-symbolic monitoring using DeepDFA. 
 
 \noindent

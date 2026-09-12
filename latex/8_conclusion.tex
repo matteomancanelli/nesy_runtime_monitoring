@@ -1,22 +1,3 @@
 \section{Conclusion and Future Work}
 \label{sec:conclusion}
 
-In this paper ...
-
-\subsection{Transformers}
-
-\subsection{Specification Adaptation}
-
-\subsection{Process Model Repair}
-
-% =====================================================================
-% SIGNPOST DRAFT — Symbolic (decision-diagram) transition representation.
-% Currently inert: to include it in the paper, delete the \iffalse and \fi
-% lines below. See docs/decision_diagram_transition_representation.md for
-% the full rationale, the possible standalone contribution, and next steps.
-% =====================================================================
-\iffalse
-\subsection{Symbolic Transition Representations via Decision Diagrams}
-
-A structural limitation this paper documents rather than resolves is DeepDFA's explicit-transition cost (Section~\ref{sec:deepdfa-alphabet}). Our disjoint-cube factored mode already makes the soft transition exact and differentiable for arbitrary guards under independent atom probabilities, but its cube count can still be exponential because it lacks subfunction sharing. NeSyA already establishes the general alternative of compiling symbolic-automaton guards to tractable circuits such as d-DNNF and evaluating their exact WMC \cite{NesyA}; this is prior art for the semantics, not a missing invention of ours. A narrower systems question remains: whether BDD-, SDD-, or d-DNNF-compiled guards can improve representation size and GPU-batched runtime over our cube backend for \ltlf monitoring, as related decision-diagram representations do in symbolic \ltlf synthesis \cite{LTL2DFA1,lydiasyft2025}. We leave that backend comparison to future work rather than claiming decision-diagram WMC as a new direction.
-\fi

@@ -296,7 +296,8 @@ architectural price is that the residual closure can grow to the DFA size and
 the eager construction enumerates the `2^|AP|` alphabet (progression's own wall,
 dual to this representational limit) — see
 [rulerunner_progression_analysis.md](rulerunner_progression_analysis.md) and the
-Progression subsection of [EXPERIMENT_MAP.md](EXPERIMENT_MAP.md).  These are
+Progression subsection of the archived
+[EXPERIMENT_MAP.md](../old/docs/EXPERIMENT_MAP.md). These are
 structural and compile-time costs; empirical performance quantification is
 deferred.
 

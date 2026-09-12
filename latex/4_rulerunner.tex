@@ -1,0 +1,375 @@
+\section{Rule-based Neuro-Symbolic Monitoring: RuleRunner}
+\label{sec:rulerunner}
+
+\subsection{Architecture}
+\label{sec:rulerunner-arch}
+
+A RuleRunner system is a tuple $\langle S,R_E,R_R \rangle$, where $S$ is the state of the system, $R_E$ is the set of \emph{evaluation rules}, and $R_R$ is the set of \emph{reactivation rules}. In details:
+
+\begin{itemize}
+    \item The sate $S$ contains observations, active rules, and truth evaluations. $R[\phi]$ denotes an active rule, while $[\phi]V$  denotes a 3-values truth evaluation, with $V \in \{T, F, ?\}$.
+    \item Evaluation rules are used to compute the truth value of a formula $\phi$ under verification, given the truth values of its direct subformulas $\psi_i$. They have the form $R[\phi],[\psi_1]V,...,[\psi_n]V \rightarrow [\phi]V$. For instance, $R[a \lor b], [a]T \rightarrow [a \lor b]T$, because the disjuction is evaluated to \emph{true} if one of the two disjuncts is true.
+    \item Reactivation rules are used when a formula $\phi$ is evaluated to undecided, i.e. $[\phi]?$, in which case that formula and its subformulas are scheduled to be monitored again at the next time point of the trace. They have the form $[\phi]? \rightarrow R[\phi],R[\psi_1],...,R[\psi_n]$. For instance, $[\Diamond b]? \rightarrow R[b],R[\Diamond b]$, because if $\Diamond b$ is undecided, we need to re-evaluate $b$ and $\Diamond b$ at the next step.
+\end{itemize}
+
+%\noindent
+%Note that evaluation rules are Horn clauses in implication form, and reactivation rules can be rewritten to be a set of Horn clauses as well.
+
+\noindent
+Both active rules and truth evaluations can be enriched by a \emph{qualifier}, such as $B$ (binary), $L$ (left) and $R$ (right), which provides additional information recording which operands within a formula/subformula are still being watched. For instance, $R[a \land \Diamond b], [a]T \rightarrow [a \land \Diamond b] ? R$, because if the left conjunct $a$ is true, it is still needed to check the truth value right conjunct $\Diamond b$ to assign a truth value to the conjunction.
+
+%$\mathsf{B}$ (both operands), and $\mathsf{L}$/$\mathsf{R}$ (only the left/right operand, after the other has been settled to its pinning value); the next operator switches to a monitoring mode $\mathsf{M}$ that mirrors its operand one time point later.
+
+Verification of a trace against a formula proceeds iteratively. At the beginning of each iteration (corresponding to the monitoring of a time point), the state $S$ contains a set of rule names corresponding to the subformulas to be checked at that time point. First, the procedure includes observations of the current time point in the state $S$ and fires the evaluation rules repeatedly incrementing the state itself until it reaches a fixpoint. In practice, this means computing the truth values of all subformulas $sub(\phi)$ of $\phi$ in a bottom-up way, from simple atoms to $\phi$ itself (see Figure ...). If the root evaluates to true (resp. false), the monitor halts with verdict \textsc{satisfy} (resp.\ \textsc{violate}). Otherwise, the reactivation rules are fired, and the result constitute the state of the next iteration. Note that in this case the state is not expanded, but replaced by the result of reactivation rules. This is used to flush all the previous truth evaluation, which are to be computed from scratch at the new time point. The procedure terminates with a decided verdict because of special END-triggered evaluation rules, that returns either true or false if we consumed the whole trace.
+A RuleRunner system can be translated in a logic program, which in turn can be encoded in a Recurrent Neural Network with a single hidden layer, s.t. each evaluation and reactivation rule is a mapping from the input layer to the output one. For a detailed description of RuleRunner and verification algorithm see \cite{perotti2014neural,perotti2015runtime}.
+
+The rule system underlies two behaviorally-equivalent neural encodings, both of which we evaluate in Section~\ref{sec:experiments}. In the \emph{flat} encoding \cite{perotti2014neural}, the whole rule set is compiled into a single recurrent network following the standard CILP translation \cite{}: one hidden unit per rule, weights realizing each Horn clause, and the fixpoint of the evaluation phase recovered by iterating the forward pass until the fixpoint is met. 
+In the \emph{structured} encoding \cite{perotti2015neural}, the same rules are instead grouped as one CILP subnetwork per parse-tree node, wired according to the syntax of $\varphi$. Operationally, we execute one bottom-up sweep of the evaluation modules and then fire every reactivation module independently, taking the union of their outputs as the recurrent state of the next cell. This is functionally equivalent to horizontally composing the modules into the single recurrent network of Figure~5 in \cite{perotti2015neural}. The modular form could be the substrate for \emph{local learning}: because parameters are attached to syntactically-local subnetworks, adaptation can be confined to the subtree responsible for a misclassification rather than diffused across a monolithic network. This is left for future work.
+
+
+\subsection{The Nested-Temporal Limitation}
+\label{sec:rulerunner-limitation}
+
+RuleRunner's defining design choice is to maintain \emph{a single shared state, with exactly one truth register per syntactic subformula}. This is what gives it a constant, compile-time rule count, a fixed-size network, and a non-branching state, and it is well suited to many flat temporal specifications. The problem is that the architecture \emph{assumes each subformula has exactly one live truth value per time point}, and this assumption is not always true. There are some formulas with nested temporal operators for which the outer operator spawns a fresh instance of its argument while a prior instance of the \emph{same} subformula is still resolving, and the two distinct live constraints are conflated onto the one shared object.
+
+Consider the two formulas $\varphi_1 = F(a \land b)$ and $\varphi_2 = F(a \land Xb)$, which differ only by a single next operator, monitored over the same trace $\boldsymbol{\sigma} = (\{a\}, \emptyset, \{b\})$. Neither formula is satisfied: $\varphi_1$ would require a time point where $a$ and $b$ hold \emph{together} (but $a$ occurs only at $t = 0$ and $b$ only at $t = 2$), and $\varphi_2$ would require a time point $t$ with $a \in \sigma_t$ and $b \in \sigma_{t+1}$ (but the only $a$ is at $t = 0$, and is not followed by a $b$ at $t = 1$). The correct verdict in both cases is therefore \textsc{violate}, but RuleRunner can provide the correct answer only for the first formula.
+
+To look at how the computation proceeds, first consider $\varphi_1$. The run is:
+%
+\noindent
+\begin{center}\small
+\begin{tabular}{c c l l}
+\toprule
+$t$ & $\sigma_t$ & evaluation & reactivation\\
+\midrule
+\multirow{2}{*}{$0$} & \multirow{2}{*}{$\{a\}$} & $[a]T,[b]F \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & $\rightarrow R[F(a \land b)],R[a],R[b],R[a \land b]$\\[1.5ex]
+\multirow{2}{*}{$1$} & \multirow{2}{*}{$\emptyset$} & $[a]F,[b]F \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & $\rightarrow R[F(a \land b)],R[a],R[b],R[a \land b]$\\[1.5ex]
+\multirow{3}{*}{$2$} & \multirow{3}{*}{$\{b\}$} & $[a]F,[b]T \rightarrow [a \land b]F$ & \\
+& & $[a \land b]F \rightarrow [F(a \land b)]?$ & \\
+& & $[F(a \land b)]? \rightarrow_{\textsc{end}} [F(a \land b)]F$ & $\rightarrow \textsc{violate}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Now, consider $\varphi_2$, In this case, the run diverges:
+\begin{center}\small
+\begin{tabular}{c c l l}
+\toprule
+$t$ & $\sigma_t$ & evaluation & reactivation\\
+\midrule
+\multirow{3}{*}{$0$} & \multirow{3}{*}{$\{a\}$} & $R[Xb] \rightarrow [Xb]?$ & $\rightarrow R[Xb]M,R[b]$ \\
+&  & $[a]T,[Xb]? \rightarrow [a \land Xb]?R$ & $\rightarrow R[a \land Xb]R$  \\
+&  & $[a \land Xb]?R \rightarrow [F(a \land Xb)]?$ & $\rightarrow R[F(a \land Xb)],R[a],R[Xb],R[a \land Xb]$ \\[1.5ex]
+
+\multirow{6}{*}{$1$} & \multirow{6}{*}{$\emptyset$} & $R[Xb] \rightarrow [Xb]?$ & $\rightarrow R[Xb]M,R[b]$ \\
+& & $R[Xb]M, [b]F \rightarrow [Xb]F$ & \\
+&  & $R[a \land Xb]R,[Xb]? \rightarrow [a \land Xb]?R$ & $\rightarrow R[a \land Xb]R$  \\
+&  & $R[a \land Xb]R,[Xb]F \rightarrow [a \land Xb]F$ &  \\
+&  & $R[a \land Xb],[a]F \rightarrow [a \land Xb]F$ &  \\
+&  & $[a \land Xb]?R \rightarrow [F(a \land Xb)]?$ & $\rightarrow R[F(a \land Xb)],R[a],R[Xb],R[a \land Xb]$ \\[1.5ex]
+
+\multirow{5}{*}{$2$} & \multirow{5}{*}{$\{b\}$} & $R[Xb] \rightarrow [Xb]?$ & \\
+& & $R[Xb]M, [b]T \rightarrow [Xb]T$ & \\
+&  & $R[a \land Xb]R,[Xb]T \rightarrow [a \land Xb]T$ &  \\
+&  & $R[a \land Xb],[a]F \rightarrow [a \land Xb]F$ &  \\
+&  & $[a \land Xb]T \rightarrow [F(a \land Xb)]T$ & $\rightarrow \textsc{satisfy}$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The divergence stems from RuleRunner's single shared state, which keeps exactly one truth register per syntactic subformula.
+The decisive step is the $F$ reactivation. At every time point, an $F$ that remains undecided reinstalls a fresh $R[Xb]$ that will defer again, while the previous time point's deferral is still resolving via $R[Xb]M$. As mentioned previously, the state is a single flat set of truth evaluations and rule names with no position index. A reinstalling operator can place, into that one set, a freshly-deferred instance of a subformula while a prior instance of the same subformula is still resolving. The two instances are indistinguishable, and the next evaluation pass conflates them, possibly holding contradictory values for one subformula at once. %In other words, the reactivation phase does not preserve the single-instance-per-subformula invariant across the whole formula.
+
+This limitation does not depend on the encoding of RuleRunner or on the implementation artifacts. 
+%The automata-based paradigms (Section~\ref{sec:symbolic} and Section~\ref{sec:deepdfa}) do not suffer from it, since a single canonical state machine never conflates concurrent obligations.
+The conflation cannot be repaired at the output layer. Consider $\varphi_2$ again, the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ (ground truth \textsc{violate}) and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$ (ground truth \textsc{satisfy}) for $\varphi_2$. After the second time point both present the \emph{identical} conflicted register $[Xb] = \{F, ?\}$, yet the correct resolutions are opposite: $\boldsymbol{\sigma}_A$ needs the $F$ to win, $\boldsymbol{\sigma}_B$ needs the $?$ to win. Any monitor whose decision is a function of the shared register alone must answer identically on both, so no priority order over the register can be correct on both traces.
+
+\paragraph{A correct fragment.}
+The counterexample identifies the mechanism of failure, but not a syntactic
+boundary. Temporal nesting alone is neither necessary nor sufficient for observing the failure presented above. For example, it is easy to see that the formula $X(Xa)$ is handled correctly. Conversely, $(Xa)\land X(Xa)$ shares the subformula $Xa$ between two temporal offsets, and the issue arises again: on the trace
+$(\emptyset,\{a\})$, the original RuleRunner returns \textsc{satisfy}, whereas the correct verdict is \textsc{violate}. Note also that the equivalent rewriting $X(a\land Xa)$ is certified correct. This makes complicated to identify the maximal syntactic fragment of LTL$_f$ for which RuleRunner is correct. Still, we can provide a readable fragment with the following grammars:
+%
+\[
+\begin{array}{l}
+\pi ::= \top \mid \bot \mid p \mid \neg \pi \mid \pi\land\pi \\
+\theta ::= \pi \mid X\pi \mid W\pi \mid \pi\muntil\pi \mid \neg \theta \mid \theta \land \theta
+\end{array}
+\]
+where $p \in \calP$. We denote the set of formulas generated by this grammar as $\F_{RR}$.
+Note that $\theta$ cannot contain nested temporal operators, i.e., the argument of $X$, $W$ and $U$ is always propositional. The following theorem shows that RuleRunner is correct for all formulas in $\F_{RR}$.
+
+\begin{theorem}
+\label{thm:rulerunner-correct}
+Let $\theta$ be a formula in $\F_{RR}$ and $\boldsymbol{\sigma}$ a non-empty
+finite trace. Let $RR_\theta$ be the deterministic finite-state monitor induced
+by RuleRunner rules. Then $RR_\theta$ returns \textsc{satisfy} iff
+$\boldsymbol{\sigma}\models\theta$. Moreover, $RR_\theta$ is prefix-sound.
+\end{theorem}
+
+
+In general, if we want to check whether an LTL$_f$ formula $\varphi$ can be handled correctly by RuleRunner, we need a semantic certifier.  Let $RR_\varphi$ be the deterministic finite-state monitor induced by the original RuleRunner rules, and let $A_\varphi$ be a canonical DFA for $\varphi$. The class of formulas for which RuleRunner is correct is
+\[
+\C_{RR} = \{\varphi \mid \calL(RR_\varphi) = \calL(A_\varphi)\}
+\]
+Membership is decidable exactly. Both monitors have finite state, so we can perform a search over their synchronous product. A reachable product state whose two components disagree on final acceptance yields a counterexample; breadth-first exploration yields a shortest one.
+
+\begin{corollary}
+\label{cor:rulerunner-certifier}
+If $\varphi \in \F_{RR}$, then $\varphi \in \C_{RR}$.
+\end{corollary}
+
+
+\subsection{Bounded-Horizon Formulas}
+\label{sec:rulerunner-bounded}
+
+Now we know that RuleRunner can fail in returning the right verdict and it is certainly correct only for a fragment of \ltlf formulas. In Section \ref{sec:rulerunner-progression} we will see how to modify RuleRunner in order to fix this problem and how much it costs. Before doing it, we want to investigate if there exists a way to enlarge the fragment of formulas we identified and still use the same RuleRunner construction, maintaining all its advantages. Inspired by \cite{finkbeiner2009monitor}\footnote{Their construction supports interval-indexed Until and uses strong/weak truncated-path contexts together with an extrapolation circuit to recover the Boolean value under their finite truncated-path semantics. We do not use interval-indexed Until because it would change the standard syntax and semantics of \ltlf, and it can always be rewritten using only the standard syntax, providing no real advantage but succinctness.}, we define bounded-horizon formulas and we present an encoding such that RuleRunner can handle this kind of formulas despite natively it cannot.
+
+\paragraph{Bounded Events and Derived Traces.}
+
+Consider an \ltlf formula $\varphi$. We define the future horizon of $\varphi$ recursively as follows:
+\[
+\begin{array}{rcl}
+h(p)&=&0\\
+h(\neg\varphi)&=&h(\varphi)\\
+h(\varphi_1\circ\varphi_2)&=&\max(h(\varphi_1),h(\varphi_2))\\
+h(X\varphi)=h(W\varphi)&=&1+h(\varphi)\\
+h(G\varphi)=h(F\varphi)&=&\infty\\
+h(\varphi_1 U \varphi_2)=h(\varphi_1 R \varphi_2)&=&\infty
+\end{array}
+\]
+where $\circ\in\{\land,\lor,\to\}$. We say that if $\varphi$ has a bounded horizon if $h(\varphi) < \infty$.
+
+Now, let $\varphi_1,\ldots,\varphi_m$ be the maximal non-atomic bounded subformulas of $\varphi$. The maximal horizon of $\varphi$ is $H=\max_i h(\varphi_i)$. We can replace each distinct $\varphi_i$ with a fresh event proposition $e_i$, obtaining a \emph{RuleRunner skeleton} $\mathsf{sk}(\varphi)$. This allow us to identify a new fragment of LTL$_f$ formulas defined by
+\[
+\F_{BE} = \{\varphi \mid sk(\varphi)\in\F_{RR}\}.
+\]
+It is immediate to see that $\F_{RR} \subsetneq \F_{BE}$. Here are some examples of formulas that are in $\F_{BE}$:
+\[
+\begin{array}{c|c|c}
+\text{formula} & \text{bounded event} & \text{skeleton}\\ \hline
+G(Xa) & e\equiv Xa & Ge\\
+F(a\land Xb) & e\equiv a\land Xb & Fe\\
+G(a\to Xb) & e\equiv a\to Xb & Ge\\
+a U (b\land Xc) & e\equiv b\land Xc & a U e
+\end{array}
+\]
+
+To evaluate a skeleton, we turn the original trace into a trace over $\calP\cup\{e_1,\ldots,e_m\}$. Given a non-empty trace $\boldsymbol{\sigma}$, we define its derived trace $\widehat{\boldsymbol{\sigma}}$, of the same length, by
+\[
+\hat{\sigma}_t \;=\; \sigma_t \,\cup\, \{\,e_i \mid \boldsymbol{\sigma},t\models\varphi_i\,\},
+\qquad 0\leq t\leq last.
+\]
+Intuitively, at every time step, the derived trace adds $e_i$ if the corresponding bounded subformula $\varphi_i$ is satisfied at that time step. The key observation is that these flags are computable from a fixed window. A formula $\varphi_i$ with $h(\varphi_i)=h_i$ looks at most $h_i$ steps ahead, so its value at position $t$ is determined by $\sigma_t,\ldots,\sigma_{t+h_i}$, or by $\sigma_t,\ldots,\sigma_{last}$ when the trace ends first. 
+
+\begin{lemma}
+\label{lem:horizon-locality}
+Let $\varphi$ be a formula with $h(\varphi)=h<\infty$. Let $l=\min(t+h,last)$ and $\boldsymbol{w}=\boldsymbol{\sigma}[t..l]$. For every non-empty trace $\boldsymbol{\sigma}$ and every position $t\leq last$,
+\[
+\boldsymbol{\sigma},t\models\varphi
+\,\text{ if and only if } \,
+\boldsymbol{w},0\models\varphi
+\]
+\end{lemma}
+
+Now, we can use a streaming transducer with a buffer of $H+1$ as follows: while the trace is being read, the transducer appends each observation to the buffer; as soon as the buffer holds $H+1$ observations, the transducer evaluates the subformulas on the oldest buffered position $t-H$, emits $\hat{\sigma}_{t-H}$, and drops $\sigma_{t-H}$. This is repeated until the trace ends, when the whole derived trace is obtained. This can be viewed as a fixed pre-processing step for the ordinary RuleRunner computation, so that no rule needs to be added or modified.
+
+\begin{theorem}
+\label{thm:rulerunner-bounded-correct}
+Let $\alpha = sk(\varphi)$. If $RR_\alpha$ is language-equivalent to $A_\alpha$, then for every finite trace $\boldsymbol{\sigma}$ the composition of the bounded-event transducer and $RR_\alpha$ returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$. Moreover, if $RR_\alpha$ is prefix-sound, then so is the composition.
+\end{theorem}
+
+
+\begin{corollary}
+\label{cor:rulerunner-bounded-fragment}
+For every $\varphi\in\F_{BE}$, the bounded-event RuleRunner returns the correct final verdict, and it is prefix-sound.
+\end{corollary}
+
+
+\paragraph{Neural Realization.}
+The described pipeline can be compiled into a network of the same kind as standard RuleRunner's. Since the events are handled as ordinary observations, the flat and the structured CILP realizations of Section~\ref{sec:rulerunner-arch} are kept unchanged on $\widehat{\boldsymbol{\sigma}}$. The only differences are two new components, the buffer and the event circuit.
+
+The buffer stores the $H$ observations that the event circuit needs. It is a CILP-like recurrent network of the same kind as the others. In the input and output layers we have one unit per atom, and one unit per pair $(p,k)$, with $p\in\calP$ and $0\leq k<H$, recording whether $p$ held $k+1$ cells ago. Its rules are copies, such that the unit of $p$ in the current observation is copied into the unit of $(p,0)$, and the unit of $(p,k-1)$ into the unit of $(p,k)$. In this way, the buffer maintains a sliding window, where the oldest observation is dropped, and the current observation enters at age $0$. In this case we need no iteration to a fixpoint. As always, the pair units are then fed back as the layer's input at the next time point.
+
+The event circuit evaluates the bounded subformulas over the window. For every parse-tree node $\psi$ of some $\varphi_i$ and every offset $k$ of the window we introduce the two registers $[\psi,k]T$ and $[\psi,k]F$, together with rules that mirror the operator of $\psi$: a Boolean connective combines the registers of its children at the same offset $k$, while $X\psi'$ and $W\psi'$ at offset $k$ read the registers of $\psi'$ at offset $k+1$. The registers of the atoms are clamped from the buffer, and the registers of each $\varphi_i$ at offset $0$ are the event flags of the emitted time point.
+%
+Note that the whole window is available at once, so every node receives a
+definite value within the same time point and nothing is ever deferred. Note also that the offset $k$ is instead an explicit address, so two occurrences of
+the same subformula at different offsets are different registers. This is the
+distinction that the single shared register of
+Section~\ref{sec:rulerunner-limitation} cannot make.
+
+As for the original RuleRunner, these rules can be grouped in two ways. The flat realization pools them into a single layer and iterates it to a fixpoint; the structured realization owns one layer per pair $(\psi,k)$ and fires them bottom-up in the parse tree. The result is still a fixed recurrent network, whose size depends only on $\varphi$ and $H$.
+
+\paragraph{Exact Online Extrapolation.}
+The theorem gives exact final verdicts and prefix-soundness, but it says nothing about when a verdict is emitted, and the delayed evaluation can be arbitrarily late. 
+Consider $\varphi=G(Xa)$, which is unsatisfiable on every non-empty trace. The run over $A_\varphi$ ends up in a trap state after one cell. The skeleton of the formula is $Ge$ with $e\equiv Xa$, and the trace in which $e$ holds at every position satisfies $Ge$; the skeleton therefore stays undecided and reports \textsc{violate} only at the end of the trace (since $e$ is false at the last position of every possible trace by the semantics of Strong Next). Thus, the delay is not bounded by $H$, but the length of the trace.
+
+We can recover exact timing by labelling the state of the pipeline as a whole, in the spirit of the
+extrapolation of \cite{finkbeiner2009monitor}. Let $z$ collect the skeleton's
+carried rule names, the truth registers it computed at the last derived time
+point, the observations still in the buffer, and the flags recording whether any input has been read and whether a verdict has already been emitted. Every component is finite and the
+pipeline is deterministic, so these states form a finite deterministic
+transition system. The essential point is that its transitions are labelled by
+observations and not by derived time points: a successor of $z$ exists only for
+the derived continuations that some trace actually produces, which is precisely
+what the skeleton cannot see.
+
+Call $z$ accepting when flushing its buffer and stopping there yields
+\textsc{satisfy}, that is when the monitor would accept if the trace ended at
+that moment. Accepting sinks and traps are then the two conditions of
+Section~\ref{sec:symbolic}, computed by reverse reachability over this graph:
+$z$ is an accepting sink when no non-accepting state is reachable from it, and a
+trap when no accepting state is. Each state labelled in this way becomes a Horn
+rule whose body lists every component of $z$, positively or negatively, so that
+the rule fires exactly when the pipeline is in $z$, and the rules are compiled
+into a fixed CILP readout with one hidden unit each. The readout only
+classifies the current state: the recurrence remains entirely in the buffer and
+in the certified skeleton.
+
+Note that this extrapolation is a priced option. The price is paid once, at compile time, and it is the enumeration of the reachable states $z$: since $z$ contains the buffer, their number grows
+by a factor of about $2^{|\calP|}$ for every additional cell of horizon. 
+%On the family $G(a\to(b\lor Xb\lor\cdots\lor X^{k}b))$ it is $11$, $41$, $157$ and $613$ for $k=1,\ldots,4$, against canonical DFAs of $3$, $4$, $5$ and $6$ states. 
+Therefore, our default configuration in the experiments is the one of
+Theorem~\ref{thm:rulerunner-bounded-correct}, and exact online timing is provided as an option to be enabled explicitly.
+
+\begin{theorem}
+\label{thm:rulerunner-bounded-online}
+After every non-empty prefix, the extrapolated bounded-event monitor returns a
+three-valued label identical to that of the canonical DFA for the original
+formula.
+\end{theorem}
+
+
+
+
+\subsection{Progression-Based Reactivation}
+\label{sec:rulerunner-progression}
+
+The counterexample of Section~\ref{sec:rulerunner-limitation} should not be read as a failure of the RuleRunner idea as a whole. It isolates a more precise problem: the original construction carries information across time using registers addressed only by the syntactic subformulas of the input formula. The local evaluation rules are not the source of the error. Given the values of the direct subformulas at one time point, the extended truth tables compute the intended three-valued result. What fails is the reactivation phase: when the same subformula is reinstalled from different temporal contexts, the distinct residual meanings of that subformula are written into the same register.
+
+The repair we consider keeps the two ingredients that make RuleRunner distinctive: a rule-based evaluation/reactivation cycle, and the possibility of translating the resulting rule system into a recurrent CILP-style network. The change is in what is carried across time. Instead of carrying only truth registers for subformulas of the original input formula, the repaired monitor carries residual formulas obtained by progression \cite{emerson90,bacchus&kabanza98}. The monitor still uses formula registers, and these registers are still associated with syntactic formulas; however, the relevant formulas are now taken from the residual closure of the input formula, not only from its original parse tree.
+
+\paragraph{RuleRunner, fixed.}
+Formula progression gives a principled account of what remains to be checked after reading one observation. Given $\varphi$ and $s\in 2^\calP$, let $\mathsf{prog}(\varphi,s)$ denote the formula that has to hold on the remaining suffix after $s$ has been consumed, such that for every finite continuation $\boldsymbol{\sigma}$, the following holds: 
+\[
+s\cdot\boldsymbol{\sigma}\models\varphi
+\quad\Longleftrightarrow\quad
+\boldsymbol{\sigma}\models\mathsf{prog}(\varphi,s),
+\]
+\noindent
+Formally, formula progression is defined recursively as follows:
+\[
+\begin{array}{rcl}
+\mathsf{prog}(a,s) &=& \top \text{ if } a\in s,\text{ and } \bot \text{ otherwise},\\
+\mathsf{prog}(\varphi_1\land\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_1,s)\land\mathsf{prog}(\varphi_2,s),\\
+\mathsf{prog}(\varphi_1\lor\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_1,s)\lor\mathsf{prog}(\varphi_2,s),\\
+\mathsf{prog}(X\varphi,s) &=& \varphi \land F \top,\\
+\mathsf{prog}(W\varphi,s) &=& \varphi \lor G \bot,\\
+\mathsf{prog}(\varphi_1U\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_2,s)\lor
+    \bigl(\mathsf{prog}(\varphi_1,s)\land(\varphi_1U\varphi_2)\bigr).
+\end{array}
+\]
+
+\noindent 
+We assume that every time $prog$ is computed, it is followed by a Boolean simplification. Derived operators are handled through their definitions.
+
+
+The repaired monitor carries a single \emph{residual formula} $\rho_t \in cl(\varphi)$, the formula that the remaining suffix must satisfy. It is initialized to $\rho_0 = \varphi$ and updated by progression
+\[
+    \rho_{t+1} = \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr)
+\]
+where $\mathsf{nf}$ is a semantics-preserving Boolean normalization discussed below. The verdict is read off the residual itself: $\rho_t \equiv \top$ means that every continuation satisfies $\varphi$, and the monitor halts with \textsc{satisfy}; $\rho_t \equiv \bot$ means that none does, and it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}.
+%
+As in the original system, evaluating a formula at a time point is a bottom-up computation over a parsing tree, with the only difference that here we consider the subformulas of a residual instead of $\varphi$. In details, the RuleRunner state $S_t$ at time $t$ holds the observations of $\sigma_t$, the active rules $R[\psi]$, and the truth evaluations $[\psi]V$ for $\psi\in sub(\rho_t)$. 
+What is carried across time is the residual alone. Note that since only the residual is progressed, the undecided subformulas $[\psi]?$ of $\rho_t$ are not reactivated as before, but flushed as every other truth evaluation.
+
+The residual is carried not as a monolithic formula but in \emph{factored} form, as the set of its top-level conjuncts:
+\[
+    \Sigma_t = \mathsf{split}_\wedge(\rho_t)
+T\]
+where $\mathsf{split}_\wedge(\top)=\emptyset$, $\mathsf{split}_\wedge(\chi_1\land\chi_2) = \mathsf{split}_\wedge(\chi_1)\cup\mathsf{split}_\wedge(\chi_2)$, and any formula whose top-level operator is not a conjunction is kept as a single element. Progression is a homomorphism for conjunction, so the elements of $\Sigma_t$ may be progressed independently and re-collected, leaving the update above unchanged. 
+%Disjunctions, by contrast, are never split: a residual such as $b\lor F(a\land Xb)$ is a single element of $\Sigma_t$, because it records a correlation between an immediate requirement and a still-open eventuality that is destroyed if its two sides are carried separately.
+%
+The factorization is used to reduce the size of the system. If we carry the whole residual, the monitor needs one register per reachable residual, i.e. it has the size of $cl(\varphi)$. Let $\mathcal R_\varphi=\bigcup_{\rho\in cl(\varphi)}\mathsf{split}_\wedge(\rho)$ be the residual-root vocabulary. Carrying conjuncts instead gives a \emph{multi-hot} vector over $\mathcal R_\varphi$, and the gap can be exponential. For $\varphi = F a_1 \land \cdots \land F a_n$, the reachable residuals are all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas $|\mathcal R_\varphi|=n$.
+
+To summarize, the RuleRunner two-phase schema is repaired as follows:
+
+\begin{enumerate}
+    \item \textbf{Evaluation.}
+    The observation $\sigma_t$ is injected into $S_t$ and the evaluation rules $R_E$ are fired bottom-up, computing $[\psi]V$ for the syntactic closure of the residual roots. These values provide the end-of-trace decision for the current cell; ongoing state evolution is performed by the progression-based reactivation below.
+    \item \textbf{Reactivation.}
+    The residual is factorized and each active root is progressed independently. Each result is normalized and split into top-level conjuncts, and the emitted roots are unioned into the next recurrent state:
+    \[
+        \Sigma_{t+1}
+        = \bigcup_{\chi\in\Sigma_t}
+          \mathsf{split}_\wedge\!\left(
+             \mathsf{nf}(\mathsf{prog}(\chi,\sigma_t))
+          \right),
+        \qquad
+        \rho_{t+1}=\bigwedge_{\eta\in\Sigma_{t+1}}\eta.
+    \]
+\end{enumerate}
+
+This update is the structured progression network's reactivation phase.  A
+clause owned by $\chi$ tests only $R[\chi]$ and the observations relevant to
+$\chi$, and emits the corresponding $R[\eta]$ registers.  No transition clause
+recognizes the complete set $\Sigma_t$.  Cross-root simplifications need not be
+performed for correctness: for example, $\{a,\neg a\}$ already denotes the
+unsatisfiable conjunction even if it is not rewritten to $\{\bot\}$.  The
+reachable sets of roots are nevertheless enumerated at compilation time to
+label traps and accepting sinks exactly; this fixed global readout determines
+only the online verdict and does not drive recurrence.
+
+As described above, we normalize residual formulas after progression.  This is not required for semantic soundness, but raw syntax may then grow without bound. For instance, repeated failure of $\psi$ in $F\psi$ would produce $\bot\lor F\psi$, then $\bot\lor(\bot\lor F\psi)$, and so on. Normalization removes this irrelevant growth and makes the formula easier to read and interpret, %Typically, the normalization includes pushing negations through temporal and boolean operators, removes repetitions, simplifies subformulas including $\top$ and $\bot$, and so on.
+while exposing more top-level conjuncts to $\mathsf{split}_\wedge$. Note that this normal form is deliberately syntactic, since it does not perform a semantic equivalence check. Distinct residuals may therefore be collapsed furtherly, and the closure size is in general larger than the minimal-DFA size.
+
+Now, we can prove that the repaired construction of RuleRunner is sound and complete.
+
+\begin{theorem}
+\label{thm:rulerunner-progression-correct}
+Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite  trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
+\end{theorem}
+
+
+In the eager realization, these equivalences are decided exactly from the
+completed residual graph.  Let $F$ be the residual states that accept the empty
+suffix.  A state is an accepting sink precisely when no state outside $F$ is
+reachable from it, and it is a trap precisely when no state in $F$ is
+reachable from it.  Both sets are computed once by reverse reachability.  The
+lazy realization instead halts early only when progression exposes the
+literal constants $\top$ or $\bot$; this is sound but may return
+\textsc{undecided} longer than necessary.
+
+
+\paragraph{The cost of the repair.}
+One may wonder whether the new RuleRunner construction comes with a cost. Actually, it depends on how the monitor is realized. 
+
+In the \emph{eager} realization, the residual closure $cl(\varphi)$ and its syntactic closure $sub(cl(\varphi)) = \bigcup_{\chi\in cl(\varphi)}sub(\chi)$ are computed once, and all corresponding evaluation and progression rules are compiled into a fixed finite rule system. Using the CILP translation, we can then map it to a recurrent network using the same two-phase scheme as the original RuleRunner. The flat realization compiles whole-residual transitions, whereas the structured realization above compiles one transition module per residual root and combines their outputs.
+The price is paid on two axes. First, the recurrent register set is bounded by $|\mathcal R_\varphi|$, rather than by the syntactic subformulae of $\varphi$. Second, $\mathsf{prog}(\chi,\sigma_t)$ depends on the observation, so compiling a root's transition clauses may require expanding over $2^{|\mathcal P_\chi|}$ valuations of the atoms relevant to that root. Exact early verdicts additionally require the reachable aggregate root sets to be classified by the fixed global readout. Both the root vocabulary and this aggregate-state graph can be exponential in the worst case. The observation expansion is analogous to the alphabet axis of the dense DeepDFA tensor (see Sec.~\ref{sec:deepdfa}).
+
+In the \emph{lazy} realization, only the closure $sub(\rho_t)$ of the current residual is instantiated, one time point at a time. Neither axis is ever enumerated: the set of registers is bounded by the parse tree of $\rho_t$, that is $sub(\rho_t)$, and the progression is computed only for that particular residual against the current observation, not expanded over $2^{|\calP|}$. 
+The cost here is that we cannot encode the monitor as a recurrent network, since the rule set is no longer fixed, but dynamically generated. Conversely, we can use a \emph{sequence of distinct feedforward neural networks}, once per time step. This means that cross-trace batching is lost, since traces in a batch hold different residuals and share no weight matrix.
+
+\paragraph{The counterexample revisited.}
+Consider again the formula $\varphi_2 = F(a\land Xb)$ and the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$. The residual formulas before each time step are:
+
+\[
+\begin{array}{lllll}
+ & \rho_0 & \xrightarrow{\ \sigma_0\ } \rho_1 & \xrightarrow{\ \sigma_1\ } \rho_2 & \xrightarrow{\ \sigma_2\ } \rho_3 \\[0.5ex]
+\boldsymbol{\sigma}_A: & F(a \land Xb) & \xrightarrow{\ \{a\}\ } (b\land F\top) \lor F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{b\}\ } F(a \land Xb) \\
+\boldsymbol{\sigma}_B: & F(a \land Xb) & \xrightarrow{\ \emptyset\ } F(a \land Xb) & \xrightarrow{\ \{a\}\ } (b\land F\top) \lor F(a \land Xb) & \xrightarrow{\ \{b\}\ } \top
+\end{array}
+\]
+
+\noindent
+For trace $\boldsymbol{\sigma}_A$, the residual $(b\land F\top)\lor F(a \land Xb)$ appears after the first time step. The marker $F\top$ records that the pending $b$ obligation requires another cell. At the second time step, $b$ is false, so the disjunct disappears and the residual becomes $F(a \land Xb)$ again. After the last time step the same eventuality remains, and it is false on the empty suffix. Hence the verdict is \textsc{violate}, as expected.
+%
+For trace $\boldsymbol{\sigma}_B$, the residual $(b\land F\top)\lor F(a \land Xb)$ appears one step later, immediately before the time step containing $b$. At the last time step, $b$ holds and $F\top$ progresses to true because that cell exists. Hence the residual becomes $\top$ and the verdict is \textsc{satisfy}.
+
+This is exactly the information lost by the original construction. The repaired monitor does not try to store two incompatible truth evaluations in the single register $[Xb]$. Instead, it stores the residual formula $(b\land F\top)\lor F(a\land Xb)$, and it occurs at different time points in the two traces.

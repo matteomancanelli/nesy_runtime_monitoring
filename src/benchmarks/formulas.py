@@ -1,30 +1,48 @@
-"""Benchmark formula registry.
+"""Versioned benchmark-formula registry.
 
-Two suites:
+The registry records declared formula-family parameters explicitly. Compiler-
+derived quantities such as AST depth and minimal-DFA size belong to the
+characterization schema in :mod:`src.benchmarks.schema`; they are never hidden
+inside a generic ``n_leaves`` field.
 
-IJCNN_SUITE — reproduces and extends the scalability experiment from
-  Perotti et al. IJCNN 2014. Formula: F(V_{i=1}^{n-1} (a0 & ai)) for
-  n = 2, 4, 8, 16, 32 leaves (distinct atoms). IJCNN 2014 compared
-  only RuleRunner variants; we add the symbolic DFA and DeepDFA baselines.
-
-TRACE_LENGTH_SUITE — fixed formulas for the trace-length scaling
-  experiment. G(a -> F b) is preferred because it has no trap or
-  accepting sink, so it always runs to the end of the trace and
-  isolates per-step cost from early-termination frequency.
+``IJCNN_SUITE`` is the paper-faithful, explicitly balanced IJCNN 2014 family.
+``IJCNN_LEFTDEEP_SUITE`` denotes the same languages with a left-deep Boolean
+tree and exists only as a controlled syntax-shape ablation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from itertools import combinations
+from itertools import combinations, product
+from typing import TypeAlias
+
+ParameterValue: TypeAlias = bool | int | float | str
+
+
+def _parameters(**values: ParameterValue) -> tuple[tuple[str, ParameterValue], ...]:
+    """Return immutable, deterministically ordered family parameters."""
+    return tuple(sorted(values.items()))
 
 
 @dataclass(frozen=True)
 class BenchmarkFormula:
+    """One stable formula identity plus declared benchmark metadata.
+
+    ``parameters`` describe how the source family produced the formula (for
+    example ``n_atoms=16`` or ``deadline=8``). ``dfa_states`` is optional
+    characterization data filled by scripts that already compile the DFA; it is
+    never used to overwrite a source-family parameter.
+    """
+
     name: str
     formula: str
     atoms: tuple[str, ...]
-    n_leaves: int
+    family: str
+    source: str
+    parameters: tuple[tuple[str, ParameterValue], ...] = ()
+    tree_shape: str = "canonical"
+    roles: tuple[str, ...] = ()
+    dfa_states: int | None = None
     # Whether every DFA edge guard is read-once (each atom appears at most
     # once). This no longer marks where DeepDFA is exact: `exact_matrix` (the
     # default probabilistic path) is exact WMC for *any* guard. It marks where
@@ -35,10 +53,40 @@ class BenchmarkFormula:
     # IJCNN / response references are read-once.
     read_once: bool = True
 
+    @property
+    def formula_id(self) -> str:
+        """Stable identifier used by result/provenance records."""
+        return self.name
+
+    @property
+    def n_atoms(self) -> int:
+        return len(self.atoms)
+
+    def parameter(self, name: str) -> ParameterValue:
+        """Return one declared family parameter, raising on schema mistakes."""
+        for key, value in self.parameters:
+            if key == name:
+                return value
+        raise KeyError(f"formula {self.name!r} has no parameter {name!r}")
+
+    @property
+    def sweep_parameter(self) -> str | None:
+        """Primary family axis, when the formula declares exactly one."""
+        if len(self.parameters) == 1:
+            return self.parameters[0][0]
+        return None
+
+    @property
+    def sweep_value(self) -> ParameterValue | None:
+        if len(self.parameters) == 1:
+            return self.parameters[0][1]
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Atom naming: a–z for the first 26, then aa–af for 26–31
 # ---------------------------------------------------------------------------
+
 
 def _atom(i: int) -> str:
     if i < 26:
@@ -50,32 +98,68 @@ def _atom(i: int) -> str:
 # IJCNN 2014 formula family
 # ---------------------------------------------------------------------------
 
-IJCNN_LEAF_COUNTS: tuple[int, ...] = (2, 4, 8, 16, 32)
+IJCNN_ATOM_COUNTS: tuple[int, ...] = (2, 4, 8, 16, 32)
 
 
-def ijcnn_formula(n: int) -> BenchmarkFormula:
-    """Return the IJCNN 2014 benchmark formula with n leaves (atoms).
+def _balanced_binary(parts: list[str], operator: str) -> str:
+    """Parenthesize ``parts`` as a deterministic near-balanced binary tree."""
+    if not parts:
+        raise ValueError("cannot associate an empty expression")
+    if len(parts) == 1:
+        return parts[0]
+    midpoint = len(parts) // 2
+    left = _balanced_binary(parts[:midpoint], operator)
+    right = _balanced_binary(parts[midpoint:], operator)
+    return f"({left} {operator} {right})"
+
+
+def _left_deep_binary(parts: list[str], operator: str) -> str:
+    """Parenthesize ``parts`` as ``(((p0 op p1) op p2) ...)``."""
+    if not parts:
+        raise ValueError("cannot associate an empty expression")
+    expression = parts[0]
+    for part in parts[1:]:
+        expression = f"({expression} {operator} {part})"
+    return expression
+
+
+def ijcnn_formula(n: int, *, tree_shape: str = "balanced") -> BenchmarkFormula:
+    """Return an explicitly associated IJCNN 2014 benchmark formula.
 
     Formula: F( OR_{i=1}^{n-1} (a0 & ai) )
     Atoms are named a, b, c, ... alphabetically; for n > 26 the
-    overflow atoms are named aa, ab, ...
+    overflow atoms are named aa, ab, ... . ``balanced`` is the paper-faithful
+    shape; ``left_deep`` is a semantically equivalent syntax ablation.
     """
     if n < 2:
         raise ValueError(f"n must be >= 2, got {n}")
+    if tree_shape not in {"balanced", "left_deep"}:
+        raise ValueError(
+            f"tree_shape must be 'balanced' or 'left_deep', got {tree_shape!r}"
+        )
     atoms = tuple(_atom(i) for i in range(n))
     a0 = atoms[0]
     disjuncts = [f"({a0} & {ai})" for ai in atoms[1:]]
-    formula = "F(" + " | ".join(disjuncts) + ")"
+    associate = _balanced_binary if tree_shape == "balanced" else _left_deep_binary
+    formula = f"F({associate(disjuncts, '|')})"
     return BenchmarkFormula(
-        name=f"ijcnn_n{n}",
+        name=f"ijcnn_{tree_shape}_n{n}",
         formula=formula,
         atoms=atoms,
-        n_leaves=n,
+        family="ijcnn",
+        source="Perotti et al., IJCNN 2014",
+        parameters=_parameters(n_atoms=n),
+        tree_shape=tree_shape,
+        roles=("alphabet_scaling", "tree_shape"),
     )
 
 
 IJCNN_SUITE: tuple[BenchmarkFormula, ...] = tuple(
-    ijcnn_formula(n) for n in IJCNN_LEAF_COUNTS
+    ijcnn_formula(n, tree_shape="balanced") for n in IJCNN_ATOM_COUNTS
+)
+
+IJCNN_LEFTDEEP_SUITE: tuple[BenchmarkFormula, ...] = tuple(
+    ijcnn_formula(n, tree_shape="left_deep") for n in IJCNN_ATOM_COUNTS
 )
 
 
@@ -90,7 +174,9 @@ _RESPONSE = BenchmarkFormula(
     name="response",
     formula="G(a -> F b)",
     atoms=("a", "b"),
-    n_leaves=2,
+    family="declare",
+    source="Declare response template",
+    roles=("trace_length", "realistic_template"),
 )
 
 # Also include the simplest formulas for sanity / comparison.
@@ -98,14 +184,18 @@ _EVENTUALLY = BenchmarkFormula(
     name="eventually",
     formula="F a",
     atoms=("a",),
-    n_leaves=1,
+    family="sanity",
+    source="project control",
+    roles=("trace_length",),
 )
 
 _GLOBALLY = BenchmarkFormula(
     name="globally",
     formula="G a",
     atoms=("a",),
-    n_leaves=1,
+    family="sanity",
+    source="project control",
+    roles=("trace_length",),
 )
 
 TRACE_LENGTH_SUITE: tuple[BenchmarkFormula, ...] = (
@@ -133,7 +223,10 @@ _MAJORITY3 = BenchmarkFormula(
     name="majority3",
     formula="F((a & b) | (b & c) | (a & c))",
     atoms=("a", "b", "c"),
-    n_leaves=3,
+    family="threshold_guard",
+    source="project guard-complexity family",
+    parameters=_parameters(k=2, n_atoms=3),
+    roles=("guard_complexity",),
     read_once=False,
 )
 
@@ -184,7 +277,10 @@ def bounded_response(k: int) -> BenchmarkFormula:
         name=f"boundedresp_k{k}",
         formula=f"G(a -> ({consequent}))",
         atoms=("a", "b"),
-        n_leaves=k,  # deadline; Exp 6 overwrites this with the measured |Q|
+        family="bounded_response",
+        source="bounded-response template",
+        parameters=_parameters(deadline=k),
+        roles=("state_scaling", "bounded_horizon"),
     )
 
 
@@ -215,15 +311,56 @@ STATE_SCALING_SUITE: tuple[BenchmarkFormula, ...] = tuple(
 # realistic anchor of NON_READ_ONCE_SUITE below.
 
 DECLARE_SUITE: tuple[BenchmarkFormula, ...] = (
-    BenchmarkFormula("response", "G(a -> F(b))", ("a", "b"), 2),
-    BenchmarkFormula("chain_response", "G(a -> X(b))", ("a", "b"), 2),
-    BenchmarkFormula("precedence", "(!b) U a | G(!b)", ("a", "b"), 2),
+    _RESPONSE,
     BenchmarkFormula(
-        "alt_response", "G(a -> X(!a U b))", ("a", "b"), 2, read_once=False
+        "chain_response",
+        "G(a -> X(b))",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template", "bounded_horizon"),
     ),
-    BenchmarkFormula("resp_existence", "F(a) -> F(b)", ("a", "b"), 2),
-    BenchmarkFormula("not_coexistence", "!(F(a) & F(b))", ("a", "b"), 2),
-    BenchmarkFormula("chain_precedence", "G(X(b) -> a)", ("a", "b"), 2),
+    BenchmarkFormula(
+        "precedence",
+        "(!b) U a | G(!b)",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template",),
+    ),
+    BenchmarkFormula(
+        "alt_response",
+        "G(a -> X(!a U b))",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template", "guard_complexity"),
+        read_once=False,
+    ),
+    BenchmarkFormula(
+        "resp_existence",
+        "F(a) -> F(b)",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template",),
+    ),
+    BenchmarkFormula(
+        "not_coexistence",
+        "!(F(a) & F(b))",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template",),
+    ),
+    BenchmarkFormula(
+        "chain_precedence",
+        "G(X(b) -> a)",
+        ("a", "b"),
+        "declare",
+        "Declare template",
+        roles=("realistic_template", "bounded_horizon"),
+    ),
 )
 
 
@@ -249,7 +386,10 @@ def at_least_k_of_n(k: int, n: int) -> BenchmarkFormula:
         name=f"atleast{k}of{n}",
         formula="F(" + " | ".join(disjuncts) + ")",
         atoms=atoms,
-        n_leaves=n,
+        family="threshold_guard",
+        source="project guard-complexity family",
+        parameters=_parameters(k=k, n_atoms=n),
+        roles=("guard_complexity",),
         read_once=False,
     )
 
@@ -268,6 +408,57 @@ NON_READ_ONCE_SUITE: tuple[BenchmarkFormula, ...] = (
 )
 
 
+def guard_complexity_formula(kind: str, n: int) -> BenchmarkFormula:
+    """Return ``F(g_n)`` for a named, semantically distinct guard stratum."""
+    if n < 2:
+        raise ValueError("guard-complexity formulas require at least two atoms")
+    atoms = tuple(_atom(i) for i in range(n))
+    if kind == "read_once":
+        guard = " & ".join(atoms)
+        read_once = True
+    elif kind == "threshold":
+        k = (n + 1) // 2
+        guard = " | ".join(
+            "(" + " & ".join(atoms[i] for i in subset) + ")"
+            for subset in combinations(range(n), k)
+        )
+        read_once = False
+    elif kind == "parity":
+        terms = []
+        for values in product((False, True), repeat=n):
+            if sum(values) % 2:
+                terms.append(
+                    "("
+                    + " & ".join(
+                        atom if value else f"!{atom}"
+                        for atom, value in zip(atoms, values, strict=True)
+                    )
+                    + ")"
+                )
+        guard = " | ".join(terms)
+        read_once = False
+    else:
+        raise ValueError(f"unknown guard-complexity kind {kind!r}")
+    return BenchmarkFormula(
+        name=f"guard_{kind}_n{n}",
+        formula=f"F({guard})",
+        atoms=atoms,
+        family="guard_complexity",
+        source="project controlled guard-complexity family",
+        parameters=_parameters(guard_kind=kind, n_atoms=n),
+        roles=("guard_complexity", "alphabet_scaling"),
+        read_once=read_once,
+    )
+
+
+GUARD_COMPLEXITY_ATOM_COUNTS: tuple[int, ...] = (3, 4, 5)
+GUARD_COMPLEXITY_SUITE: tuple[BenchmarkFormula, ...] = tuple(
+    guard_complexity_formula(kind, n)
+    for n in GUARD_COMPLEXITY_ATOM_COUNTS
+    for kind in ("read_once", "threshold", "parity")
+)
+
+
 # --- (C) State-blowup family: exponential |Q|, tiny alphabet ---------------
 #
 # "a holds and b holds exactly k steps later" — F(a & X^k b). The minimal DFA
@@ -276,8 +467,8 @@ NON_READ_ONCE_SUITE: tuple[BenchmarkFormula, ...] = (
 # exponential* state blowup, distinct from STATE_SCALING_SUITE's bounded_response
 # (which is only LINEAR in k — a deadline knob). It exposes symbolic's storage /
 # compile wall AND DeepDFA-dense's |Q|^2 tensor wall simultaneously (a shared
-# weakness — good for the neutrality mandate). n_leaves is overwritten with the
-# measured |Q| by Exp 7, mirroring STATE_SCALING_SUITE.
+# weakness — good for the neutrality mandate). The temporal depth is declared
+# here; the measured `|Q|` is stored separately during characterization.
 
 STATE_BLOWUP_DEPTHS: tuple[int, ...] = (2, 4, 6, 8, 10)
 
@@ -291,7 +482,10 @@ def kth_from_last(k: int) -> BenchmarkFormula:
         name=f"kthlast_k{k}",
         formula=f"F(a & {consequent})",
         atoms=("a", "b"),
-        n_leaves=k,  # depth; Exp 7 overwrites this with the measured |Q|
+        family="kth_from_last",
+        source="project exponential-state family",
+        parameters=_parameters(temporal_depth=k),
+        roles=("state_blowup", "bounded_horizon"),
     )
 
 

@@ -1,22 +1,30 @@
 \begin{thebibliography}{10}
 
-\bibitem{t_ilr_2025}
-Riccardo Andreoni, Andrei Buliga, Alessandro Daniele, Chiara Ghidini, Marco
-  Montali, and Massimiliano Ronzani.
-\newblock {T-ILR}: a neurosymbolic integration for {LTLf}.
-\newblock In {\em Proceedings of the 19th International Conference on
-  Neurosymbolic Learning and Reasoning}, volume 284 of {\em Proceedings of
-  Machine Learning Research}, pages 252--265. PMLR, 2025.
+\bibitem{arafat2005runtime}
+Oliver Arafat, Andreas Bauer, Martin Leucker, and Christian Schallhart.
+\newblock Runtime verification revisited.
+\newblock 2005.
+
+\bibitem{bauer2006monitoring}
+Andreas Bauer, Martin Leucker, and Christian Schallhart.
+\newblock Monitoring of real-time properties.
+\newblock In {\em International Conference on Foundations of Software
+  Technology and Theoretical Computer Science}, pages 260--272. Springer, 2006.
 
 \bibitem{monitorability_LTL}
 Andreas Bauer, Martin Leucker, and Christian Schallhart.
 \newblock Runtime verification for {LTL} and {TLTL}.
 \newblock {\em {ACM} Trans. Softw. Eng. Methodol.}, 20(4):14:1--14:64, 2011.
 
-\bibitem{darwiche2002knowledge}
-Adnan Darwiche and Pierre Marquis.
-\newblock A knowledge compilation map.
-\newblock {\em Journal of Artificial Intelligence Research}, 17:229--264, 2002.
+\bibitem{CamachoBM19}
+Alberto Camacho, Meghyn Bienvenu, and Sheila~A. McIlraith.
+\newblock Towards a unified view of {AI} planning and reactive synthesis.
+\newblock In {\em {ICAPS}}, pages 58--67. {AAAI} Press, 2019.
+
+\bibitem{de2020pure}
+Giuseppe De~Giacomo, Antonio Di~Stasio, Francesco Fuggitti, Sasha Rubin, et~al.
+\newblock Pure-past linear temporal and dynamic logic on finite traces.
+\newblock In {\em IJCAI}, pages 4959--4965, 2020.
 
 \bibitem{LTLf}
 Giuseppe {De Giacomo} and Moshe~Y. Vardi.
@@ -25,17 +33,43 @@ Giuseppe {De Giacomo} and Moshe~Y. Vardi.
   23rd International Joint Conference on Artificial Intelligence, Beijing,
   China, August 3-9, 2013}, pages 854--860. {IJCAI/AAAI}, 2013.
 
-\bibitem{finkbeiner2009monitor}
-Bernd Finkbeiner and Lars Kuhtz.
-\newblock Monitor circuits for {LTL} with bounded and unbounded future.
-\newblock In {\em Runtime Verification, 9th International Workshop, {RV} 2009,
-  Grenoble, France, June 26--28, 2009, Selected Papers}, volume 5779 of {\em
-  Lecture Notes in Computer Science}, pages 60--75. Springer, 2009.
+\bibitem{de2013linear}
+Giuseppe De~Giacomo and Moshe~Y Vardi.
+\newblock Linear temporal logic and linear dynamic logic on finite traces.
+\newblock In {\em Ijcai}, volume~13, pages 854--860, 2013.
 
-\bibitem{fuggitti-ltlf2dfa}
-Francesco Fuggitti.
-\newblock Ltlf2dfa.
-\newblock {\em Zenodo}, 2019.
+\bibitem{GiacomoV15}
+Giuseppe De~Giacomo and Moshe~Y Vardi.
+\newblock Synthesis for {LTL} and {LDL} on finite traces.
+\newblock In {\em {IJCAI}}, pages 1558--1564. {AAAI} Press, 2015.
+
+\bibitem{eisner2003reasoning}
+Cindy Eisner, Dana Fisman, John Havlicek, Yoad Lustig, Anthony McIsaac, and
+  David Van~Campenhout.
+\newblock Reasoning with temporal logic on truncated paths.
+\newblock In {\em International conference on computer aided verification},
+  pages 27--39. Springer, 2003.
+
+\bibitem{fischer1979propositional}
+Michael~J Fischer and Richard~E Ladner.
+\newblock Propositional dynamic logic of regular programs.
+\newblock {\em Journal of computer and system sciences}, 18(2):194--211, 1979.
+
+\bibitem{geatti2022linear}
+Luca Geatti, Alessandro Gianola, Nicola Gigante, et~al.
+\newblock Linear temporal logic modulo theories over finite traces.
+\newblock In {\em IJCAI}, volume~22, pages 2641--2647, 2022.
+
+\bibitem{harel2000dynamic}
+David Harel, Dexter Kozen, and Jerzy Tiuryn.
+\newblock Dynamic logic.
+\newblock In {\em Handbook of philosophical logic}, pages 99--217. Springer,
+  2000.
+
+\bibitem{hopcroft2001introduction}
+John~E Hopcroft, Rajeev Motwani, and Jeffrey~D Ullman.
+\newblock Introduction to automata theory, languages, and computation.
+\newblock {\em Acm Sigact News}, 32(1):60--65, 2001.
 
 \bibitem{gumb_sftmx_1}
 Eric Jang, Shixiang Gu, and Ben Poole.
@@ -43,6 +77,11 @@ Eric Jang, Shixiang Gu, and Ben Poole.
 \newblock In {\em 5th International Conference on Learning Representations,
   {ICLR} 2017, Toulon, France, April 24-26, 2017, Conference Track
   Proceedings}. OpenReview.net, 2017.
+
+\bibitem{khoussainov2012automata}
+Bakhadyr Khoussainov and Anil Nerode.
+\newblock {\em Automata theory and its applications}.
+\newblock Springer Science \& Business Media, 2012.
 
 \bibitem{lichtenstein1985glory}
 Orna Lichtenstein, Amir Pnueli, and Lenore Zuck.
@@ -74,7 +113,7 @@ Zohar Manna and Amir Pnueli.
 Axel Mezini, Elena Umili, Ivan Donadello, Fabrizio~Maria Maggi, Matteo
   Mancanelli, and Fabio Patrizi.
 \newblock Neuro-symbolic predictive process monitoring.
-\newblock {\em arXiv preprint arXiv:2509.00834}, 2025.
+\newblock {\em Information Systems}, 141:102762, 2026.
 
 \bibitem{perotti2015runtime}
 Alan Perotti, Guido Boella, and Artur~d’Avila Garcez.
@@ -109,5 +148,11 @@ Elena Umili and Roberto Capobianco.
   Intelligence, 19-24 October 2024, Santiago de Compostela, Spain - Including
   13th Conference on Prestigious Applications of Intelligent Systems {(PAIS}
   2024)}, pages 1051--1058, 2024.
+
+\bibitem{vardi2011rise}
+Moshe~Y Vardi.
+\newblock The rise and fall of linear temporal logic.
+\newblock {\em Proceedings of the 2nd International Syposium on Games,
+  Automata, Logics, and Formal Verification (11)}, 2011.
 
 \end{thebibliography}

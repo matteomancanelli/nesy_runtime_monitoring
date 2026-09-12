@@ -1,57 +1,73 @@
-"""RuleRunner-style LTLf monitors (Paradigm 2).
+"""RuleRunner-style LTLf monitors (Paradigm 2), exposed lazily.
 
-Pipeline: LTLf parse tree -> RuleRunner rule system (eval + reactivation
-rules) -> CILP-encoded neural network -> monitor wrapper. Faithful to
-Perotti, Garcez, Boella, IJCNN 2014.  This package also exposes the exact
-product certifier and the bounded-event middle repair.  The complete
-progression repair lives in :mod:`src.monitors.progression`.  See
-``docs/rulerunner_status.md`` for the cross-version status.
+The lightweight initializer lets parser/rule-only code remain independent of
+Torch allocation. Public imports keep their historical names through
+``__getattr__``.
 """
 
-from src.monitors.rulerunner.bounded import (
-    BoundedEventPipeline,
-    BoundedIsland,
-    EventizedFormula,
-    bounded_horizon,
-    derive_event_cell,
-    derive_event_trace,
-    evaluate_bounded,
-    eventize_bounded_islands,
-)
-from src.monitors.rulerunner.bounded_cilp import (
-    BoundedEventRuleRunnerMonitor,
-    BoundedEventStructuredRuleRunnerMonitor,
-    UnsafeRuleRunnerSkeleton,
-)
-from src.monitors.rulerunner.bounded_extrapolation import (
-    BoundedExtrapolationCILP,
-    ExtrapolationLimitExceeded,
-)
-from src.monitors.rulerunner.equivalence import (
-    EquivalenceWitness,
-    RuleRunnerEquivalenceResult,
-    certify_rule_runner,
-)
-from src.monitors.rulerunner.monitor import RuleRunnerMonitor
-from src.monitors.rulerunner.structured import StructuredRuleRunnerMonitor
+from __future__ import annotations
 
-__all__ = [
-    "BoundedEventPipeline",
-    "BoundedEventRuleRunnerMonitor",
-    "BoundedEventStructuredRuleRunnerMonitor",
-    "BoundedExtrapolationCILP",
-    "BoundedIsland",
-    "EquivalenceWitness",
-    "EventizedFormula",
-    "ExtrapolationLimitExceeded",
-    "RuleRunnerEquivalenceResult",
-    "RuleRunnerMonitor",
-    "StructuredRuleRunnerMonitor",
-    "UnsafeRuleRunnerSkeleton",
-    "bounded_horizon",
-    "certify_rule_runner",
-    "derive_event_cell",
-    "derive_event_trace",
-    "evaluate_bounded",
-    "eventize_bounded_islands",
-]
+from importlib import import_module
+
+_EXPORTS = {
+    "BoundedEventPipeline": ("src.monitors.rulerunner.bounded", "BoundedEventPipeline"),
+    "BoundedIsland": ("src.monitors.rulerunner.bounded", "BoundedIsland"),
+    "EventizedFormula": ("src.monitors.rulerunner.bounded", "EventizedFormula"),
+    "bounded_horizon": ("src.monitors.rulerunner.bounded", "bounded_horizon"),
+    "derive_event_cell": ("src.monitors.rulerunner.bounded", "derive_event_cell"),
+    "derive_event_trace": ("src.monitors.rulerunner.bounded", "derive_event_trace"),
+    "evaluate_bounded": ("src.monitors.rulerunner.bounded", "evaluate_bounded"),
+    "eventize_bounded_islands": (
+        "src.monitors.rulerunner.bounded",
+        "eventize_bounded_islands",
+    ),
+    "BoundedEventRuleRunnerMonitor": (
+        "src.monitors.rulerunner.bounded_cilp",
+        "BoundedEventRuleRunnerMonitor",
+    ),
+    "BoundedEventStructuredRuleRunnerMonitor": (
+        "src.monitors.rulerunner.bounded_cilp",
+        "BoundedEventStructuredRuleRunnerMonitor",
+    ),
+    "UnsafeRuleRunnerSkeleton": (
+        "src.monitors.rulerunner.bounded_cilp",
+        "UnsafeRuleRunnerSkeleton",
+    ),
+    "BoundedExtrapolationCILP": (
+        "src.monitors.rulerunner.bounded_extrapolation",
+        "BoundedExtrapolationCILP",
+    ),
+    "ExtrapolationLimitExceeded": (
+        "src.monitors.rulerunner.bounded_extrapolation",
+        "ExtrapolationLimitExceeded",
+    ),
+    "EquivalenceWitness": (
+        "src.monitors.rulerunner.equivalence",
+        "EquivalenceWitness",
+    ),
+    "RuleRunnerEquivalenceResult": (
+        "src.monitors.rulerunner.equivalence",
+        "RuleRunnerEquivalenceResult",
+    ),
+    "certify_rule_runner": (
+        "src.monitors.rulerunner.equivalence",
+        "certify_rule_runner",
+    ),
+    "RuleRunnerMonitor": ("src.monitors.rulerunner.monitor", "RuleRunnerMonitor"),
+    "StructuredRuleRunnerMonitor": (
+        "src.monitors.rulerunner.structured",
+        "StructuredRuleRunnerMonitor",
+    ),
+}
+
+__all__ = list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    try:
+        module_name, attribute = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(name) from exc
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
