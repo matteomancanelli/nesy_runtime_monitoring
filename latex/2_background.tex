@@ -40,6 +40,9 @@ an \ltlf formula $\varphi$ is true at an instant $i$ (for $0 \leq i \leq last$),
 %
 \noindent
 We say that $\boldsymbol{\sigma}$ satisfies $\phi$, written $\boldsymbol{\sigma} \models \varphi$, if $\boldsymbol{\sigma}, 0 \models \varphi$. A formula $\varphi$ is satisfiable if it is true wrt some trace $\boldsymbol{\sigma}$, and is valid, if it is true wrt every trace $\boldsymbol{\sigma}$.
+%
+On the empty trace $\varepsilon$, Boolean connectives behave as usual, atoms are false, $U$ and $X$ are false, and $R$ and $W$ are true. Note that $F\top$ holds exactly on non-empty suffixes of a trace, and $G\bot$ exactly on the empty one.
+
 
 In the following, we will use $sub(\varphi)$ to denote the set of proper subformulas of $\varphi$, and we will refer to it as the syntactic closure of $\varphi$. Given a formula $\varphi$ and a propositional assignment $\sigma_t$ at time $t$, we are also interested in computing the residual formula, i.e the formula that has to be satisfied at time $t+1$. As explained in details in Sec. \ref{sec:rulerunner-progression}, a residual formula can be computed using formula progression \cite{}, which returns a positive Boolean formula on $sub(\varphi) \cup sub(F \top) \cup sub(G \bot)$. We will use $cl(\varphi)$ to denote the set of residual formulas, and we will refer to it as the residual closure of $\varphi$ .
 

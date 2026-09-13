@@ -257,13 +257,14 @@ Formula progression gives a principled account of what remains to be checked aft
 \[
 s\cdot\boldsymbol{\sigma}\models\varphi
 \quad\Longleftrightarrow\quad
-\boldsymbol{\sigma}\models\mathsf{prog}(\varphi,s),
+\boldsymbol{\sigma}\models\mathsf{prog}(\varphi,s)
 \]
 \noindent
 Formally, formula progression is defined recursively as follows:
 \[
 \begin{array}{rcl}
 \mathsf{prog}(a,s) &=& \top \text{ if } a\in s,\text{ and } \bot \text{ otherwise},\\
+\mathsf{prog}(\neg a,s) &=& \bot \text{ if } a\in s,\text{ and } \top \text{ otherwise},\\
 \mathsf{prog}(\varphi_1\land\varphi_2,s) &=&
     \mathsf{prog}(\varphi_1,s)\land\mathsf{prog}(\varphi_2,s),\\
 \mathsf{prog}(\varphi_1\lor\varphi_2,s) &=&
@@ -272,39 +273,53 @@ Formally, formula progression is defined recursively as follows:
 \mathsf{prog}(W\varphi,s) &=& \varphi \lor G \bot,\\
 \mathsf{prog}(\varphi_1U\varphi_2,s) &=&
     \mathsf{prog}(\varphi_2,s)\lor
-    \bigl(\mathsf{prog}(\varphi_1,s)\land(\varphi_1U\varphi_2)\bigr).
+    \bigl(\mathsf{prog}(\varphi_1,s)\land(\varphi_1U\varphi_2)\bigr),\\
+\mathsf{prog}(\varphi_1R\varphi_2,s) &=&
+    \mathsf{prog}(\varphi_2,s)\land
+    \bigl(\mathsf{prog}(\varphi_1,s)\lor(\varphi_1R\varphi_2)\bigr).
 \end{array}
 \]
 
 \noindent 
-We assume that every time $prog$ is computed, it is followed by a Boolean simplification. Derived operators are handled through their definitions.
-
-
-The repaired monitor carries a single \emph{residual formula} $\rho_t \in cl(\varphi)$, the formula that the remaining suffix must satisfy. It is initialized to $\rho_0 = \varphi$ and updated by progression
+The repaired monitor carries a \emph{residual formula} $\rho_t \in cl(\varphi)$, i.e. the formula that the remaining suffix starting at time $t$ must satisfy. It is initialized to $\rho_0 = \varphi$ and updated by progression:
 \[
     \rho_{t+1} = \mathsf{nf}\bigl(\mathsf{prog}(\rho_t,\sigma_t)\bigr)
 \]
-where $\mathsf{nf}$ is a semantics-preserving Boolean normalization discussed below. The verdict is read off the residual itself: $\rho_t \equiv \top$ means that every continuation satisfies $\varphi$, and the monitor halts with \textsc{satisfy}; $\rho_t \equiv \bot$ means that none does, and it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}.
+where $\mathsf{nf}$ is a semantics-preserving Boolean normalization discussed below. The verdict is read off the residual itself: $\rho_t \equiv \top$ every continuation satisfies $\varphi$, and the monitor halts with \textsc{satisfy}; $\rho_t \equiv \bot$ no continuation does, and it halts with \textsc{violate}; otherwise the verdict is \textsc{undecided}.
 %
-As in the original system, evaluating a formula at a time point is a bottom-up computation over a parsing tree, with the only difference that here we consider the subformulas of a residual instead of $\varphi$. In details, the RuleRunner state $S_t$ at time $t$ holds the observations of $\sigma_t$, the active rules $R[\psi]$, and the truth evaluations $[\psi]V$ for $\psi\in sub(\rho_t)$. 
-What is carried across time is the residual alone. Note that since only the residual is progressed, the undecided subformulas $[\psi]?$ of $\rho_t$ are not reactivated as before, but flushed as every other truth evaluation.
+%This is what removes the conflation of Section~\ref{sec:rulerunner-limitation}. A register associated with a residual does not depend on when it was installed, contrarly to what happens in the temporal operator's registers of the original construction.
+
+
+%In the eager realization, these equivalences are decided exactly from the
+%completed residual graph.  Let $F$ be the residual states that accept the empty
+%suffix.  A state is an accepting sink precisely when no state outside $F$ is
+%reachable from it, and it is a trap precisely when no state in $F$ is
+%reachable from it.  Both sets are computed once by reverse reachability.  The
+%lazy realization instead halts early only when progression exposes the
+%literal constants $\top$ or $\bot$; this is sound but may return
+%\textsc{undecided} longer than necessary.
+
+
+As in the original system, evaluating a formula at a time point is a bottom-up computation over a parse tree, with the only difference that here we consider the subformulas of the residual instead of $\varphi$. In detail, the RuleRunner state $S_t$ at time $t$ holds the observations of $\sigma_t$, the active rules $R[\psi]$, and the truth evaluations $[\psi]V$ for $\psi\in sub(\rho_t)\cup\{\rho_t\}$. What is carried across time is the residual alone. Note that the undecided subformulas $[\psi]?$ of $\rho_t$ are not reactivated as before, but flushed as every other truth evaluation: their pending contribution is already recorded in $\rho_{t+1}$.
 
 The residual is carried not as a monolithic formula but in \emph{factored} form, as the set of its top-level conjuncts:
 \[
     \Sigma_t = \mathsf{split}_\wedge(\rho_t)
-T\]
-where $\mathsf{split}_\wedge(\top)=\emptyset$, $\mathsf{split}_\wedge(\chi_1\land\chi_2) = \mathsf{split}_\wedge(\chi_1)\cup\mathsf{split}_\wedge(\chi_2)$, and any formula whose top-level operator is not a conjunction is kept as a single element. Progression is a homomorphism for conjunction, so the elements of $\Sigma_t$ may be progressed independently and re-collected, leaving the update above unchanged. 
-%Disjunctions, by contrast, are never split: a residual such as $b\lor F(a\land Xb)$ is a single element of $\Sigma_t$, because it records a correlation between an immediate requirement and a still-open eventuality that is destroyed if its two sides are carried separately.
+\]
+where $\mathsf{split}_\wedge(\top)=\emptyset$, $\mathsf{split}_\wedge(\chi_1\land\chi_2) = \mathsf{split}_\wedge(\chi_1)\cup\mathsf{split}_\wedge(\chi_2)$, and any formula whose top-level operator is not a conjunction is kept as a single element.
+We call \emph{roots} of a residual the elements in $\Sigma_t$.
 %
-The factorization is used to reduce the size of the system. If we carry the whole residual, the monitor needs one register per reachable residual, i.e. it has the size of $cl(\varphi)$. Let $\mathcal R_\varphi=\bigcup_{\rho\in cl(\varphi)}\mathsf{split}_\wedge(\rho)$ be the residual-root vocabulary. Carrying conjuncts instead gives a \emph{multi-hot} vector over $\mathcal R_\varphi$, and the gap can be exponential. For $\varphi = F a_1 \land \cdots \land F a_n$, the reachable residuals are all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas $|\mathcal R_\varphi|=n$.
+Since progression distributes over conjunction, the elements of $\Sigma_t$ can be progressed independently and the results re-collected if needed; the conjunction of the collected roots is equivalent to $\rho_{t+1}$ above. 
+%
+The factorization reduces the size of the recurrent state. If we carry the whole residual, the monitor needs one register per reachable residual, i.e., a one-hot vector over $cl(\varphi)$. Let $\mathcal R_\varphi=\bigcup_{\rho\in cl(\varphi)}\mathsf{split}_\wedge(\rho)$ be the residual-root vocabulary. Carrying conjuncts instead gives a \emph{multi-hot} vector over $\mathcal R_\varphi$, and the gap can be exponential. For $\varphi = F a_1 \land \cdots \land F a_n$, the reachable residuals are all subsets of still-pending conjuncts, so $|cl(\varphi)| = 2^n$, whereas $|\mathcal R_\varphi|=n$. Note that this saving concerns the recurrent state only: exact early verdicts still require the reachable sets of roots to be classified, as discussed below.
 
 To summarize, the RuleRunner two-phase schema is repaired as follows:
 
 \begin{enumerate}
     \item \textbf{Evaluation.}
-    The observation $\sigma_t$ is injected into $S_t$ and the evaluation rules $R_E$ are fired bottom-up, computing $[\psi]V$ for the syntactic closure of the residual roots. These values provide the end-of-trace decision for the current cell; ongoing state evolution is performed by the progression-based reactivation below.
+    A new observation $\sigma_t$ is added into $S_t$ and the evaluation rules $R_E$ are fired bottom-up, separately for every root $\chi\in\Sigma_t$, i.e., over $sub(\chi)\cup\{\chi\}$
     \item \textbf{Reactivation.}
-    The residual is factorized and each active root is progressed independently. Each result is normalized and split into top-level conjuncts, and the emitted roots are unioned into the next recurrent state:
+    Each active root is progressed independently against $\sigma_t$. Each result is normalized and split into top-level conjuncts, and the emitted roots are conjuncted into the next state:
     \[
         \Sigma_{t+1}
         = \bigcup_{\chi\in\Sigma_t}
@@ -312,41 +327,37 @@ To summarize, the RuleRunner two-phase schema is repaired as follows:
              \mathsf{nf}(\mathsf{prog}(\chi,\sigma_t))
           \right),
         \qquad
-        \rho_{t+1}=\bigwedge_{\eta\in\Sigma_{t+1}}\eta.
+        \rho_{t+1}=\bigwedge_{\chi\in\Sigma_{t+1}}\chi.
     \]
 \end{enumerate}
 
-This update is the structured progression network's reactivation phase.  A
-clause owned by $\chi$ tests only $R[\chi]$ and the observations relevant to
-$\chi$, and emits the corresponding $R[\eta]$ registers.  No transition clause
-recognizes the complete set $\Sigma_t$.  Cross-root simplifications need not be
-performed for correctness: for example, $\{a,\neg a\}$ already denotes the
-unsatisfiable conjunction even if it is not rewritten to $\{\bot\}$.  The
-reachable sets of roots are nevertheless enumerated at compilation time to
-label traps and accepting sinks exactly; this fixed global readout determines
-only the online verdict and does not drive recurrence.
+\noindent
+Note both phases can operate on the set of roots directly, without the need to reconstruct the residual $\rho_{t+1}$ at every step.
 
-As described above, we normalize residual formulas after progression.  This is not required for semantic soundness, but raw syntax may then grow without bound. For instance, repeated failure of $\psi$ in $F\psi$ would produce $\bot\lor F\psi$, then $\bot\lor(\bot\lor F\psi)$, and so on. Normalization removes this irrelevant growth and makes the formula easier to read and interpret, %Typically, the normalization includes pushing negations through temporal and boolean operators, removes repetitions, simplifies subformulas including $\top$ and $\bot$, and so on.
-while exposing more top-level conjuncts to $\mathsf{split}_\wedge$. Note that this normal form is deliberately syntactic, since it does not perform a semantic equivalence check. Distinct residuals may therefore be collapsed furtherly, and the closure size is in general larger than the minimal-DFA size.
+%Note that the reactivation phase is local to each root: the clauses of a root $\chi$ test only $R[\chi]$ and the atoms occurring in $\chi$, and emit $R[\eta]$ for every $\eta\in\mathsf{split}_\wedge(\mathsf{nf}(\mathsf{prog}(\chi,\sigma_t)))$. No clause needs to recognize the whole set $\Sigma_t$, nor to simplify across roots: for example, $\{a,\neg a\}$ already denotes an unsatisfiable conjunction even if it is not rewritten to $\{\bot\}$. The only global component is the verdict readout. To label traps and accepting sinks exactly, the reachable sets of roots are enumerated at compilation time and classified by reachability, as for DFAs (Sec.~\ref{...}). This readout determines the online verdict only, and does not feed back into the recurrence.
+
+Finally, the normalization $\mathsf{nf}$ is what keeps the construction finite. This is not required for semantic soundness, but, if we don't use it, raw syntax may grow without bound. For instance, repeated failure of $\psi$ in $F\psi$ would produce $\bot\lor F\psi$, then $\bot\lor(\bot\lor F\psi)$, and so on.. $\mathsf{nf}$ treats temporal subformulas as opaque atoms and simplifies the Boolean structure (e.g., flattening, removing repetitions, and absorbing $\top$ and $\bot$). Normalization removes this irrelevant growth and makes the formula easier to read and interpret; as a side effect, it also exposes more top-level conjuncts to $\mathsf{split}_\wedge$. Note that this normal form is deliberately syntactic, since it does not perform a semantic equivalence check. Language-equivalent residuals may therefore remain distinct, and $|cl(\varphi)|$ is in general larger than the number of states of the minimal DFA.
 
 Now, we can prove that the repaired construction of RuleRunner is sound and complete.
 
 \begin{theorem}
 \label{thm:rulerunner-progression-correct}
-Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the (eager) progression-based RuleRunner monitor constructed as above. Then, for every finite  trace $\boldsymbol{\sigma}$, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$, and it returns \textsc{violate} iff $\boldsymbol{\sigma}\not\models\varphi$. Moreover, any verdict returned before the last cell is sound for all finite continuations of the prefix read so far.
+Let $\varphi$ be an \ltlf formula and let $RR^{\mathsf{prog}}_\varphi$ be the progression-based RuleRunner monitor constructed as above. Then, the monitor returns \textsc{satisfy} iff $\boldsymbol{\sigma}\models\varphi$. Moreover, it is prefix-sound.
 \end{theorem}
 
 
-In the eager realization, these equivalences are decided exactly from the
-completed residual graph.  Let $F$ be the residual states that accept the empty
-suffix.  A state is an accepting sink precisely when no state outside $F$ is
-reachable from it, and it is a trap precisely when no state in $F$ is
-reachable from it.  Both sets are computed once by reverse reachability.  The
-lazy realization instead halts early only when progression exposes the
-literal constants $\top$ or $\bot$; this is sound but may return
-\textsc{undecided} longer than necessary.
+\paragraph{The cost of the repair.}
+One may wonder whether the new RuleRunner construction comes with a cost. It does, and where the cost is paid depends on how the monitor is realized.
+
+In the \emph{eager} realization, the root vocabulary $\mathcal R_\varphi$ and its syntactic closure $sub(\mathcal R_\varphi)=\bigcup_{\chi\in\mathcal R_\varphi}sub(\chi)$ are computed once, and all corresponding evaluation and progression rules are compiled into a fixed finite rule system. Using the CILP translation, we can then map it to a recurrent network like for the original RuleRunner, either as a single flat or a structured network.
+
+The price is paid mainly in the recurrent state: it has one register per root, i.e. $|\mathcal R_\varphi|$ registers instead of the $|sub(\varphi)|$ of the original construction, and $|\mathcal R_\varphi|$ can be exponential in the worst case. Reactivation rules are also no longer per-operator templates: since $\mathsf{prog}(\chi,\sigma_t)$ depends on the atoms $\calP_\chi$ occurring in $\chi$, the rules of a root encode a guarded transition over valuations of $\calP_\chi$, exactly as the edges of a symbolic automaton do (see\ Sec.~\ref{sec:deepdfa}). Finally, exact early verdicts require deciding $\rho_t\equiv\top$ and $\rho_t\equiv\bot$, and similarly to what happens in automata-based monitors, we can enumarate the reachable sets of roots at compilation time and classifying them by reachability. This is optional: without it the monitor halts we the whole trace is consumed, which is still sound, but may emit a verdict later than necessary.
+
+In the \emph{lazy} realization, only the closure $sub(\rho_t)$ of the current residual is instantiated, one time point at a time. None of the axes above is enumerated: the registers are those of the parse tree of $\rho_t$, and the progression is computed only for that particular residual against the current observation, not expanded over $2^{|\calP|}$. The cost per time step is therefore linear in the size of $\rho_t$, which, however, can be larger than $\varphi$. 
+The cost here is that we cannot encode the monitor as a fixed recurrent network, since the rule set is no longer fixed, but dynamically generated. Instead, we can use a sequence of distinct feedforward neural networks, one per time step. This means that cross-trace batching is lost, since traces in a batch hold different residuals and share no weight matrix.
 
 
+\begin{comment}
 \paragraph{The cost of the repair.}
 One may wonder whether the new RuleRunner construction comes with a cost. Actually, it depends on how the monitor is realized. 
 
@@ -355,6 +366,8 @@ The price is paid on two axes. First, the recurrent register set is bounded by $
 
 In the \emph{lazy} realization, only the closure $sub(\rho_t)$ of the current residual is instantiated, one time point at a time. Neither axis is ever enumerated: the set of registers is bounded by the parse tree of $\rho_t$, that is $sub(\rho_t)$, and the progression is computed only for that particular residual against the current observation, not expanded over $2^{|\calP|}$. 
 The cost here is that we cannot encode the monitor as a recurrent network, since the rule set is no longer fixed, but dynamically generated. Conversely, we can use a \emph{sequence of distinct feedforward neural networks}, once per time step. This means that cross-trace batching is lost, since traces in a batch hold different residuals and share no weight matrix.
+\end{comment}
+
 
 \paragraph{The counterexample revisited.}
 Consider again the formula $\varphi_2 = F(a\land Xb)$ and the two traces $\boldsymbol{\sigma}_A = (\{a\}, \emptyset, \{b\})$ and $\boldsymbol{\sigma}_B = (\emptyset, \{a\}, \{b\})$. The residual formulas before each time step are:
