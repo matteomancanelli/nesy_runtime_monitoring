@@ -1,7 +1,7 @@
 # RQ3 Structural Bottlenecks
 
 > ⚠ **Paper split, 2026-09-13.** This document is duplicated across the two papers and
-> has **not** been trimmed. Paper A keeps panels 1, 4 and 5; the other panels belong to the companion paper.
+> has **not** been trimmed. Paper B keeps panels 2 and 3; the other panels belong to the companion paper.
 
 **Schema:** `rq3.v1`  
 **Generator:** `python experiments/rq3_structural_scaling.py`  

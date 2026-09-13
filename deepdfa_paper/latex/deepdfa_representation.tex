@@ -1,0 +1,62 @@
+% MOVED from Paper A (latex/5_deepdfa.tex lines 87-142, pre-split commit 26dbaa9).
+% Representation and execution of the transition function: Paper B owns this.
+% Paper A retains only a one-paragraph statement of the alphabet axis.
+\section{Representing the Transition Function}
+\label{sec:representation}
+
+\subsection{The Alphabet Blow-up}
+\label{sec:deepdfa-alphabet}
+
+DeepDFA's structural cost is dual to those of the other two paradigms. The transition tensor is indexed by the full alphabet $2^\calP$, so a dense materialization is exponential in the number of atoms, $|T| = |Q|^2 \cdot 2^{|\calP|}$. One can avoid building the dense tensor by evaluating the per-edge guard probabilities on the fly --- the factored form underlying Equations~\eqref{eq:deepdfa-crisp}--\eqref{eq:deepdfa-soft}, which never explicitly materializes $T$ --- and this is what we use for specifications over many atoms. This does not guarantee a sub-exponential representation for every Boolean function: a guard may require exponentially many disjoint cubes. Read-once structure is one sufficient condition for linear evaluation, but it is not necessary; other guards can admit compact orthogonal covers or decision diagrams through repeated-subfunction sharing.
+
+Concretely, the monitor admits two representations of the transition function, and we evaluate both. The \emph{dense} representation materializes the full tensor $T$ and executes each step as a single (batched) matrix product indexing the observed symbol; it is the fastest option whenever the alphabet fits in memory and is the natural showcase for cross-trace batching, but it becomes infeasible past roughly a dozen atoms, where $2^{|\calP|}$ exhausts memory. The \emph{factored} representation, developed next, never builds $T$ and is what we use for specifications over many atoms.
+
+\subsection{The Factored Transition Representation}
+\label{sec:deepdfa-factored}
+
+The factored representation exploits the fact that the DFA edges produced by \textsc{mona} are labelled not by individual symbols but by \emph{symbolic Boolean guards} over the atoms (e.g.\ $a \land (b \lor c)$), each standing for the set of symbols that satisfy it. This is the same compact edge labelling that lets the symbolic walk sidestep the alphabet (Section~\ref{sec:symbolic}); the factored mode carries it into the tensorized setting while preserving exact crisp monitoring and a differentiable soft path. NeSyA \cite{NesyA} already gives the more general construction: symbolic-automaton guards are compiled, e.g.\ to d-DNNF, and evaluated by exact differentiable WMC before the same matrix forward recursion. We neither claim that semantics nor knowledge compilation as new. Our contribution here is a concrete specialization to DFAs compiled from \ltlf runtime specifications, using disjoint cubes as a simple tensor backend and placing its costs beside dense DeepDFA, symbolic monitoring, and RuleRunner. The cube construction uses standard Shannon expansion and disjoint sum-of-products \cite{darwiche2002knowledge}; unlike NeSyA's shared circuits, it provides no subfunction sharing.
+
+We keep two complementary views of each edge guard: an exact disjoint representation used by the monitor, and a recursive approximation retained for analysis.
+
+\paragraph{Exact path: disjoint cube cover.} At construction time each guard is expanded, by Shannon expansion, into a set of \emph{disjoint} (mutually exclusive) cubes --- partial assignments in which some atoms are required true, some required false, and the rest are don't-cares --- stored as a pair of require-true/require-false integer masks over the atoms. Given a per-atom value vector $\mathbf{p}$, each cube evaluates to $\prod_a \big[1 - \mathrm{rt}_a (1 - p_a) - \mathrm{rf}_a\, p_a\big]$ (which is $p_a$ for a required-true atom, $1 - p_a$ for a required-false atom, and $1$ for a don't-care), and the cubes of all edges are summed into the $|Q| \times |Q|$ transition matrix by a single vectorized reduction, at a cost proportional to the number of cubes rather than to $2^{|\calP|}$. On crisp $0/1$ inputs each cube is $0/1$, so this path reproduces the symbolic walk exactly. On fractional inputs each cube product is its probability under the independent-atom model; because the cubes are mutually exclusive, their sum is the exact guard probability for arbitrary Boolean guards and the resulting matrix remains row-stochastic. The same tensor operations are differentiable in $\mathbf p$. This is the path our monitoring experiments time and the default path exposed by the tensor-native probabilistic API.
+
+Crucially, the factored representation is \emph{not} an unconditional escape from the alphabet blow-up: Shannon expansion of a guard on $k$ atoms can produce up to $\Theta(2^k)$ disjoint cubes, so a guard with no compact orthogonal cover reinstates the exponential cost in the number of cubes. What the factored form buys is a shift of the blow-up from ``always $2^{|\calP|}$'' (the dense tensor) to ``structure-dependent'': a genuine and often large win on guards with compact covers, including the factored read-once families used in our breadth experiments, and no asymptotic improvement on adversarial ones.
+
+\paragraph{Recursive approximation.} Separately, each guard is compiled into a differentiable closure that applies the familiar independence identities recursively over its Boolean syntax, including $P(\psi_1\land\psi_2)=P(\psi_1)P(\psi_2)$ and $P(\psi_1\lor\psi_2)=1-(1-P(\psi_1))(1-P(\psi_2))$. This is exact for crisp inputs and for fractional inputs when the relevant subexpressions are independent, in particular for read-once guards. On non-read-once guards, however, shared atoms correlate the subexpressions and the recursion can double-count mass. We therefore retain it only as an explicitly selected diagnostic approximation; the probabilistic monitor defaults to the exact disjoint-cube calculation above.
+
+\paragraph{Implementation-level complexity.}
+Let $n=|\calP|$, $m=|Q|$, $B$ be the trace-batch size, $C$ the total number of stored disjoint cubes over all DFA edges, and $S$ the total number of Boolean-syntax nodes in the recursive guard closures. The bounds in Table~\ref{tab:deepdfa-complexity} describe the implemented tensor paths for one cell; they include constructing the $B\times m\times m$ transition matrices and applying them to the state batch.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{@{}llll@{}}
+    \toprule
+    Representation & Static transition storage & Per-cell time & Fractional input \\
+    \midrule
+    Dense tensor
+      & $\Theta(m^2 2^n)$
+      & $\Theta(Bm^2)$
+      & not exposed \\
+    Disjoint cubes
+      & $\Theta(Cn)$
+      & $\Theta\!\left(B(Cn+m^2)\right)$
+      & exact \\
+    Recursive closures
+      & $\Theta(S)$
+      & $\Theta\!\left(B(S+m^2)\right)$
+      & exact for read-once guards \\
+    \bottomrule
+  \end{tabular}
+  \caption{Complexity of the implemented DeepDFA transition paths. The cube implementation stores dense require-true/require-false masks of length $n$, hence $\Theta(Cn)$ rather than the number of mentioned literals.}
+  \label{tab:deepdfa-complexity}
+\end{table}
+
+These are post-compilation bounds; the cost of symbolic simplification during Shannon expansion depends on the compiler. The emitted representation alone can have $\Theta(2^n)$ cubes for one guard and $C=\Theta(m2^n)$ cubes over a complete DFA in the worst case. The cube path therefore changes an unconditional alphabet tensor into a structure-dependent compilation; it does not improve the worst case. Its per-cell temporary storage is $\Theta(B(Cn+m^2))$. The implemented dense backend selects a complete crisp valuation in $\Theta(Bm^2)$ time. An exact dense calculation from independent per-atom probabilities would instead mix all $2^n$ symbol matrices and cost $\Theta(Bm^2 2^n)$ per cell; this interface is not implemented because the factored path computes the same marginal without unconditional alphabet enumeration.
+
+For a length-$L$ batch, the sequential recurrence multiplies the corresponding per-cell time by $L$. For $L\geq 2$, the optional Hillis--Steele prefix scan instead stores $\Theta(LBm^2)$ matrices and uses $\Theta(\log L)$ parallel stages of matrix--matrix products, for $\Theta(BLm^3\log L)$ total arithmetic work. It reduces sequential launch depth rather than asymptotic work, which is why we treat it as a hardware-dependent variant rather than a complexity improvement.
+
+\paragraph{Artifact interface.}
+The released monitor exposes dense, cube-factored, and prefix-scan variants through separate classes. Its tensor-native probabilistic entry point accepts either an $L\times n$ trace or a padded $B\times L\times n$ batch with explicit lengths, preserves autograd to the input probabilities, and defaults to exact cube WMC; the recursive approximation requires an explicit option. The API rejects non-finite values and values outside $[0,1]$. Each compiled monitor also exposes a serializable diagnostics record containing $n$, $m$, the alphabet size, transition count, cube count where applicable, and the actual tensor element and byte counts used by the selected representation. These fields make the representation-size claims independently auditable without relying on private implementation state.
+
+Our scalability experiments plot the dense and factored paths side by side --- the dense curve walling out at the $2^{|\calP|}$ memory bound while the factored curve stays flat on the read-once families --- which separates the alphabet blow-up as a \emph{memory} wall from the residual per-step \emph{compute} cost.

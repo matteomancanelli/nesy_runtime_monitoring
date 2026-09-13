@@ -1,0 +1,42 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{geometry}
+
+\title{Tensorized Automaton Representations for Temporal Specifications\\
+\large (Paper B --- working skeleton, not a submission draft)}
+\author{Author name}
+\date{Date}
+
+\input{preamble}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\textcolor{red}{TODO. Paper B's claim: the representation and evaluation of a compiled
+transition function, from \ltlf-derived DFAs to Golog program graphs, is a single
+design space with two axes (states, symbols); program graphs occupy a point on it
+that the \ltlf route reaches only at doubly exponential cost.}
+\end{abstract}
+
+\input{inherited_stubs}
+
+% Inherited from Paper A. Kept here so this skeleton compiles standalone and so the
+% correctness statement that every representation must preserve is stated locally.
+\input{deepdfa_semantics}
+
+% Paper B's own material, moved out of Paper A.
+\input{deepdfa_representation}
+\input{representation_duality}
+
+% TODO (Paper B, does not exist yet):
+%   - Golog program graphs as explicit-state / symbolic-transition objects (KR 2026).
+%   - The Level-1 ladder: program -> program graph -> tensor, no domain cross-product.
+%   - Decision-diagram guard representations as the shared representation with KR 2026
+%     (NOT as a novel GPU circuit evaluator -- NeSyA owns compiled-circuit WMC).
+%   - Experiments: the RQ3 guard-complexity and prefix-scan panels, plus program-graph
+%     representation size against the \ltlf route.
+
+\bibliographystyle{plain}
+\bibliography{citations}
+\end{document}

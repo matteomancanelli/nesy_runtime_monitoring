@@ -309,7 +309,7 @@ What would be needed to support that claim:
 ## 9. Pointers
 
 - Signpost paragraph (inert): `latex/8_conclusion.tex` (remove `\iffalse`/`\fi` to promote).
-- Factored representation it upgrades: `latex/4_deepdfa.tex` §4.4, `src/monitors/deep_dfa.py`
+- Factored representation it upgrades: `latex/deepdfa_representation.tex` (was `latex/5_deepdfa.tex` §Factored, pre-split), `src/monitors/deep_dfa.py`
   (`_guard_cubes` / `_shannon_cubes` / `exact_matrix` / `recursive_matrix`).
 - Calibration harness to extend (moved to the future-work fork): `artur_future_work/src/benchmarks/calibration.py`, `artur_future_work/experiments/exp_uncertainty.py`.
 - Bib keys added for this: `lydiasyft2025`, `darwiche2002knowledge`, `t_ilr_2025`
