@@ -46,6 +46,24 @@ On the empty trace $\varepsilon$, Boolean connectives behave as usual, atoms are
 
 In the following, we will use $sub(\varphi)$ to denote the set of proper subformulas of $\varphi$, and we will refer to it as the syntactic closure of $\varphi$. Given a formula $\varphi$ and a propositional assignment $\sigma_t$ at time $t$, we are also interested in computing the residual formula, i.e the formula that has to be satisfied at time $t+1$. As explained in details in Sec. \ref{sec:rulerunner-progression}, a residual formula can be computed using formula progression \cite{}, which returns a positive Boolean formula on $sub(\varphi) \cup sub(F \top) \cup sub(G \bot)$. We will use $cl(\varphi)$ to denote the set of residual formulas, and we will refer to it as the residual closure of $\varphi$ .
 
+
+\subsection{An Overview of Temporal Logics over Finite Traces}
+\label{sec:overview}
+
+The necessity and advantage of adapting \ltl from infinite to finite traces have been studied since a long time \cite{lichtenstein1985glory,manna1995temporal}. This led to a prolific development of several logic languages capable to express temporally extended properties over a finite sequence of time steps. Here, we mention some of these languages that have been used for monitoring tasks.
+
+The original RuleRunner system \cite{perotti2015runtime} refers to FLTL as a finite-trace variant of \ltl. As already mentioned, in the last decade \ltlf \cite{de2013linear,GiacomoV15,CamachoBM19} has established as one the standard language for modeling finite traces of executions. Notably, FLTL and \ltlf share essentially the same syntax and semantics, offering two next operators, with a strong next operator $X$ which is always false at the last position of the trace since no successor exists, and a weak next operator $W$ which is always true at the last position (see Sec. \ref{sec:ltlf} for details).
+Note that FLTL makes explicit use of an $\textit{END}$ symbol for signaling the last element of the trace, but this can be easily expressed with the Weak Next operator by $\textit{END} \equiv W  \bot$.
+
+In general, standard FLTL (and \ltlf) is not defined for the empty trace. \cite{eisner2003reasoning} proposed LTL$^\mp$, a formalism composed by two versions of LTL: in the weak view (LTL$^-$), every formula is satisfied by the empty word, while in the strong view (LTL$^+$), the empty word does not satisfy any formula. This means that the same formula can have a different truth value in the two views. Using this approach, one needs the strong and weak view to be entwined to establish a sound meaning in the context of negation. 
+
+Another way of looking at finite traces is to consider them as prefixes of unknown infinite traces. Building on this idea, \cite{arafat2005runtime,bauer2006monitoring} proposed LTL$_3$, which uses the same syntax of \ltlf but a different semantics, evaluating each formula to one of the truth values $\{ \top, \bot, ? \}$, with $\top$ and $\bot$ being complementary to each other and $?$ being complementary to itself. Specifically if every infinite trace with prefix $\boldsymbol{\sigma}$ evaluates $\varphi$ to the same truth value $\top$ or $\bot$, then LTL$_3$ also evaluates $\varphi$ to this truth value, otherwise it evaluates to $?$. In contrast with the other formalisms described in this section, the semantics of LTL$_3$ cannot be defined inductively on the structure of the formula.
+
+Some temporal logics have been proposed as direct extentions or modification of \ltlf. LDL$_f$ (Linear Dynamic Logic over finite traces) \cite{de2013linear,GiacomoV15} is an extension of \ltlf to increase the expressivity to regular languages, built as a finite-trace adaptation of the infinite-trace language LDL (Linear Dynamic Logic) \cite{vardi2011rise} and inspired by  Propositional Dynamic Logic \cite{fischer1979propositional,harel2000dynamic}. It has a "dynamic operator" $\langle \rho \rangle \varphi$, which intuitively states that, from the current instant, there exists an execution satisfying the RE$_f$ (Regular Expression over finite traces) \cite{hopcroft2001introduction,khoussainov2012automata} $\rho$ such that its last instant satisfies $\varphi$. Other formalisms are PPLTL$_f$ (Pure-Past \ltlf) \cite{de2020pure}, to refer to past events instead of future ones, and LTL$_f^{MT}$ (\ltlf Modulo Theory) \cite{geatti2022linear}, where proposition letters are replaced with first-order formulas interpreted over arbitrary theories.
+
+\noindent
+\textcolor{red}{TODO: Mention RVLTL, RLTL, TRLTL.}
+
 \subsection{Symbolic Monitoring}
 \label{sec:symbolic}
 

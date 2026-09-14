@@ -22,13 +22,10 @@ Let $\sigma_{1:t}=\sigma_1\cdots\sigma_t$ be a crisp prefix and let $\mathbf q_t
 where $e_q$ is the indicator vector of state $q$. Consequently the fixed DeepDFA monitor and the symbolic DFA visit the same state after every prefix and return identical early and final verdicts.
 \end{proposition}
 
-\begin{proof}
-At $t=0$, $\mathbf q_0=e_{q_0}$. If $\mathbf q_{t-1}=e_q$, the compiled row $T[q,\sigma_t,\cdot]$ has its unique one at $\delta(q,\sigma_t)$, hence $\mathbf q_t=e_qT_{\sigma_t}=e_{\delta(q,\sigma_t)}$. Induction proves the invariant. Trap, accepting-sink, and final-state membership are functions of this same reached state, so the verdicts coincide.
-\end{proof}
-
 \subsection{Soft Observations and Differentiability}
 \label{sec:deepdfa-soft}
 
+\begin{comment}
 Beyond crisp monitoring, the tensorization admits probabilistic observations. For $\mathbf p\in[0,1]^{\calP}$ and valuation $\sigma\subseteq\calP$, define the independent-Bernoulli weight
 \begin{equation}
   w_{\mathbf p}(\sigma)
@@ -83,10 +80,16 @@ which is exactly the $q'$ component of Equation~\eqref{eq:deepdfa-soft}. Summing
 \end{proof}
 
 Because the cube weights are smooth, the fixed monitor is differentiable with respect to its observations: a verdict loss can flow through it into an upstream perceptor without changing the specification. Making the specification itself learnable is a separate construction requiring parameterized transitions or guards, an adaptation objective, and a discrete extraction policy; we defer that problem to Section~\ref{sec:conclusion}. In this paper all evaluated traces are crisp, where $M(\mathbf p_t)$ collapses to $T_{\sigma_t}$ and Proposition~\ref{prop:deepdfa-crisp-equivalence} applies.
+\end{comment}
+
+\textcolor{red}{TODO}
 
 \subsection{The Alphabet Axis}
 \label{sec:deepdfa-alphabet}
 
+\textcolor{red}{TODO}
+
+\begin{comment}
 One structural cost of the tensorization must be recorded here because it is a capability
 limit of the paradigm, not merely an implementation detail: the transition tensor is
 indexed by the full alphabet $2^\calP$, so a dense materialization is exponential in the
@@ -99,6 +102,5 @@ blow-up shifts from unconditional to structure-dependent. Read-once structure is
 sufficient condition for compact evaluation, not a necessary one. Nothing in this paper's
 argument depends on which representation is used --- by
 Proposition~\ref{prop:deepdfa-crisp-equivalence} they compute the same verdicts --- so we
-state the axis, place it in the comparison of Section~\ref{sec:theory-cmp}, and defer the
-representations themselves, their complexity accounting, and their scaling measurements to
-a companion paper \paperB{}.
+state the axis, place it in the comparison of Section~\ref{sec:theory-cmp}.
+\end{comment}

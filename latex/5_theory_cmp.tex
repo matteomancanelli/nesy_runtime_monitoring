@@ -1,0 +1,179 @@
+\section{Theoretical Comparison}
+\label{sec:theory-cmp}
+
+%\subsection{Three Achilles Heels}
+%\label{sec:theory-heels}
+
+\subsection{The RuleRunner Ladder}
+\label{sec:rulerunner-ladder}
+
+Each monitoring paradigm has some structural weaknesses, so that no one paradigm dominates over the others:
+%
+\begin{itemize}
+    \item \textbf{Symbolic DFA: state-space blow-up.} The \ltlf-to-DFA translation is doubly exponential in the worst case, so the compiled automaton (and hence the compile-time cost and memory) can explode.
+    \item \textbf{DeepDFA: explicit transition cost.} The transition tensor is indexed by the full alphabet $2^{|\calP|}$. A factored backend can replace that unconditional tensor by disjoint guard cubes, which is often compact but remains exponential in the worst case, and every realization retains the $|Q|^2$ matrix update (see Section~\ref{sec:deepdfa-alphabet}).
+    \item \textbf{RuleRunner: temporal-instance conflation.} The one-register-per-subformula state can merge evaluations of the same subformula originating at different temporal offsets, so it can return wrong verdicts (Section~\ref{sec:rulerunner-limitation}). Bounded-future instances admit a fixed pipeline repair (Section~\ref{sec:rulerunner-bounded}), and full \ltlf completeness is recovered through the residual vocabulary of progression (Section~\ref{sec:rulerunner-progression}).
+\end{itemize}
+%
+Note that the state-space blow-up is not exclusive to the symbolic paradigm: DeepDFA is compiled from the \emph{same} minimal DFA, so it inherits $|Q|$, and suffers the same doubly-exponential worst case. Second, the symbolic and automata-based heels are duals: a DFA transition function is a table with $|Q| \cdot 2^{|\calP|}$ entries, and each paradigm compresses a different axis of it, paying on the axis it leaves explicit. The symbolic monitor compresses the symbol axis with Boolean guards and keeps an explicit state, so its cost driver is $|Q|$ and it can never suffer an alphabet blow-up; dense DeepDFA compresses the state axis into a uniform batchable matrix product and therefore needs one matrix per symbol. Neither weakness can be swapped onto the other paradigm without discarding the representational choice that defines it.
+
+%One further symmetry is worth stating explicitly, because it is easy to present as an advantage of one paradigm. Exact \emph{three-valued timing} --- announcing \textsc{satisfy} or \textsc{violate} at the first prefix after which the verdict is permanent --- is a property of the continuation language, not of any local state. Every paradigm therefore pays for it with a global reachability analysis: the symbolic monitor and DeepDFA precompute traps and accepting sinks on the compiled DFA, the eager progression monitor classifies its reachable residual graph, and the bounded-event monitor classifies its reachable composite states. Each of these is a fixed label head, computed once and read out per cell; none of them drives the recurrence. What distinguishes the paradigms is the size of the graph that must be classified, not whether such a graph is needed at all, and a monitor that skips the analysis pays in latency rather than in soundness.
+
+The three different constructions of RuleRunner we identified should not be seen as competing alternatives, but as a ordered ladder. Each one is admitted by an explicit decidable test, builds a strictly larger compile-time object than the one below it, and buys a strictly larger guarantee. The rule system of the original construction is obtained by instantiating per-operator templates over $sub(\varphi)$ and is therefore linear in the size of the formula, the bounded-event pipeline adds a fixed window transducer and event circuit, and the eager progression construction enumerates residual roots rather than automaton states. Each \ltlf formula is admitted by one of the three rungs, and the ladder can be climbed until a rung is found that admits it. The procedure is summarized in Figure~\ref{fig:ladder}.
+
+As already mentioned, the original construction and the bounded-event one pay a cost that is linear in the size of the formula and of the window, while the progression construction enumerates residual roots and may be exponential in the worst case. The automata-based monitors are doubly exponential in $|\varphi|$ in the worst case. Intuitively, it is therefore preferable to rely on RuleRunner, with the automata route being preferred only when the compile-time cost is amortized over a long-lived stream. 
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[node distance=12mm and 14mm,
+                    rung/.append style={font=\scriptsize},
+                    autorung/.append style={font=\scriptsize}]
+  \node[font=\small] (phi) {$\varphi$};
+  \node[rung, right=of phi]  (rr) {Original\\RuleRunner};
+  \node[rung, right=of rr]   (be) {Bounded-event\\RuleRunner};
+  \node[rung, right=of be]   (pr) {Progression\\RuleRunner};
+  \node[right=of pr, font=\scriptsize, align=center] (out) {complete\\ \ltlf monitor};
+
+  \draw[flow] (phi) -- (rr);
+  \draw[flow] (rr) -- node[gate, above] {$\varphi\notin\F_{RR}$} (be);
+  \draw[flow] (be) -- node[gate, above] {$\varphi\notin\F_{BE}$} (pr);
+  \draw[flow] (pr) -- (out);
+
+  \node[autorung, below=8mm of be, text width=46mm]
+        (dfa) {Automata route:\\symbolic DFA, DeepDFA...};
+  \draw[flow, dashed] (phi) |- (dfa);
+  \draw[flow, dashed] (dfa) -| (out);
+\end{tikzpicture}
+\caption{The construction ladder. A formula enters at the cheapest rung; a failed admission test moves it up.}
+\label{fig:ladder}
+\end{figure}
+
+\begin{comment}
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}p{0.135\textwidth}p{0.155\textwidth}p{0.225\textwidth}p{0.155\textwidth}p{0.07\textwidth}p{0.15\textwidth}@{}}
+\toprule
+Construction & Admission test & Compile-time construction & Recurrent state
+  & Final verdict & Online verdict \\
+\midrule
+Original
+  & $\varphi\in\C_{RR}$, decidable; sufficient: $\varphi\in\F_{RR}$
+  & operator templates over $sub(\varphi)$; \emph{no automaton}
+  & one three-valued register per $\psi\in sub(\varphi)$
+  & exact
+  & prefix-sound \\
+Bounded-event, default
+  & $\varphi\in\F_{BE}$
+  & skeleton rules, window buffer and event circuit, $O(|sk(\varphi)|+|\calP|H)$; \emph{no automaton}
+  & skeleton registers and $|\calP|\cdot H$ buffer units
+  & exact
+  & sound, may be late \\
+Bounded-event, exact-online
+  & $\varphi\in\F_{BE}$
+  & as above, plus a reachable composite-state head
+  & as above, plus one unit per composite state
+  & exact
+  & exact \\
+Progression, lazy
+  & all \ltlf
+  & none; rules are generated per time point
+  & $sub(\rho_t)$, generated at run time
+  & exact
+  & sound, may be late \\
+Progression, eager
+  & all \ltlf
+  & root vocabulary $\mathcal R_\varphi$ with guarded transitions over $2^{|\calP_\chi|}$; \emph{no DFA translation}
+  & multi-hot over $\mathcal R_\varphi$
+  & exact
+  & exact, with the aggregate head \\
+\midrule
+\emph{Automata route}
+  & all \ltlf
+  & minimal DFA $A_\varphi$; doubly exponential in $|\varphi|$
+  & $q\in Q$, resp.\ $\mathbf q\in[0,1]^{|Q|}$
+  & exact
+  & exact \\
+\bottomrule
+\end{tabular}
+\caption{The construction ladder. Rungs are ordered by the size of the object built at
+compile time. The automata route is listed for reference and is not a rung: it is the
+semantic baseline against which the admission tests of the rungs above are decided.}
+\label{tab:ladder}
+\end{table}
+\end{comment}
+
+\subsection{Capability Matrix}
+\label{sec:theory-matrix}
+
+The heels above say where each paradigm breaks down. Table~\ref{tab:capability} states the
+complementary question: what each construction can do at all. Two readings of it matter for
+the rest of the paper. First, on crisp traces the exactness columns are almost uniformly
+filled, which is the interchangeability result restated: the choice between these monitors
+is not a choice about correctness, but about the cost of obtaining them and about the
+capabilities they expose beyond a crisp verdict. Second, the two groups of columns separate
+cleanly. Everything the rule-based lineage offers that the automata route does not concerns
+\emph{compilation and state addressing}; everything the tensorized route offers that the
+rule-based lineage does not concerns \emph{the type of the input and the differentiability
+of the computation}.
+
+As monitors of crisp traces, the completeness-restored RuleRunner and fixed DeepDFA are the same semantically: the progression construction and the minimal DFA recognize the same \ltlf language (see Section~\ref{sec:rulerunner-progression}). The reason to keep both lineages is what each could expose beyond crisp monitoring: a future learned DeepDFA would parameterize transitions between opaque automaton states, while a future rule-based learner could attach parameters to syntactically-indexed rules. These are two hypotheses for the gradient-based specification adaptation deferred to future work (Section~\ref{sec:conclusion}), not capabilities evaluated here.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{0.19\textwidth}cccccccc@{}}
+\toprule
+& \multicolumn{3}{c}{Semantics} & \multicolumn{2}{c}{Compilation}
+& \multicolumn{3}{c}{Neuro-symbolic affordances} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+Construction
+ & \shortstack{\scriptsize All\\\scriptsize\ltlf}
+ & \shortstack{\scriptsize Exact\\\scriptsize final}
+ & \shortstack{\scriptsize Exact\\\scriptsize online}
+ & \shortstack{\scriptsize No\\\scriptsize automaton}
+ & \shortstack{\scriptsize Fixed\\\scriptsize network}
+ & \shortstack{\scriptsize Soft\\\scriptsize inputs}
+ & \shortstack{\scriptsize Differ-\\\scriptsize entiable}
+ & \shortstack{\scriptsize Syntax-\\\scriptsize indexed} \\
+\midrule
+Symbolic DFA
+ & \cmy & \cmy & \cmy & \cmn & \cmn & \cmn & \cmn & \cmn \\
+DeepDFA
+ & \cmy & \cmy & \cmy & \cmn & \cmy & \cmy & \cmy & \cmn \\
+\midrule
+RuleRunner
+ & \cmn & \cmc{a} & \cmc{a} & \cmy & \cmy & \cmn & \cmy & \cmy \\
+Bounded-event
+ & \cmn & \cmc{b} & \cmn & \cmy & \cmy & \cmn & \cmy & \cmy \\
+Bounded-event, exact-online
+ & \cmn & \cmc{b} & \cmy & \cmy & \cmy & \cmn & \cmy & \cmy \\
+Progression, eager
+ & \cmy & \cmy & \cmy & \cmc{c} & \cmy & \cmn & \cmy & \cmc{d} \\
+Progression, lazy
+ & \cmy & \cmy & \cmn & \cmy & \cmn & \cmn & \cmy & \cmc{d} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize
+\begin{tabular}{@{}p{0.04\textwidth}p{0.92\textwidth}@{}}
+\textsuperscript{a} & On the admitted class $\F_{RR}$ only. \\
+%\textsuperscript{b} & The CILP translation is realized here with a sign activation, so the
+%  network is exact but not differentiable as instantiated. A differentiable
+%  reparameterization with recomputed thresholds is possible; we do not carry it out. \\
+\textsuperscript{b} & On the admitted class $\F_{BE}$ only. \\
+\textsuperscript{c} & It does not build an automaton, but still builds all possible residual formulas by progression. \\
+\textsuperscript{d} & Indexed by residual formulas rather than by subformulas of $\varphi$.
+\end{tabular}}
+
+\caption{Features matrix. ``Fixed network'' means the compiled monitor is a single recurrent
+network with weights independent of the trace, which is what makes cross-trace batching
+possible; ``syntax-indexed'' means a register of the recurrent state names the
+subformula whose obligation it carries, so a verdict exhibits a witness.}
+\label{tab:capability}
+\end{table}

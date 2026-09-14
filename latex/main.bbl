@@ -97,13 +97,6 @@ Chris~J. Maddison, Andriy Mnih, and Yee~Whye Teh.
   {ICLR} 2017, Toulon, France, April 24-26, 2017, Conference Track
   Proceedings}. OpenReview.net, 2017.
 
-\bibitem{NesyA}
-Nikolaos Manginas, George Paliouras, and Luc~De Raedt.
-\newblock Nesya: Neurosymbolic automata.
-\newblock In {\em Proceedings of the Thirty-Fourth International Joint
-  Conference on Artificial Intelligence, {IJCAI} 2025, Montreal, Canada, August
-  16-22, 2025}, pages 5950--5958. ijcai.org, 2025.
-
 \bibitem{manna1995temporal}
 Zohar Manna and Amir Pnueli.
 \newblock {\em Temporal Verification of Reactive Systems}, volume~1.
