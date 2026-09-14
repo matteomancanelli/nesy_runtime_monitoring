@@ -5,13 +5,6 @@
 **Status:** active design and execution document  
 **Last updated:** 2026-08-25
 
-> ⚠ **Paper split, 2026-09-13.** The project is now two papers. This plan belongs to
-> **Paper A** (monitor semantics and the price of completeness). **RQ3 panels 2 (guard/cube
-> complexity) and 3 (prefix scan) now belong to Paper B** — see
-> [`deepdfa_paper/`](../deepdfa_paper/) and its `NOTES.md`. Paper A keeps RQ1, RQ2, RQ3 panels
-> 1/4/5, RQ4 and RQ5. Neither this plan nor `RQ3_STRUCTURAL_SCALING.md` has been trimmed yet;
-> do that when each paper's experiment section is written.
-
 This document is the authoritative plan for the benchmark, experiment, and
 results phase of the current paper. It records the decisions behind the
 experimental design, tracks progress, and prevents stale measurements or old

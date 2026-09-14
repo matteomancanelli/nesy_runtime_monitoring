@@ -1,0 +1,12 @@
+.claude/
+*__pycache__/
+.pytest_cache/
+.ruff_cache/
+.vscode/
+*.egg-info/
+
+# NOTE: the parent repo gitignores its own root CLAUDE.md. This folder's CLAUDE.md
+# must stay tracked, so no /CLAUDE.md rule here.
+
+# Windows "downloaded-from-internet" metadata (from Colab CSV downloads)
+*Zone.Identifier

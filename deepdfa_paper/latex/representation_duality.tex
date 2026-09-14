@@ -1,0 +1,32 @@
+% MOVED from Paper A (latex/6_theory_cmp.tex, the dual-axis compression passage of
+% the "Three Achilles Heels" discussion, pre-split commit 26dbaa9).
+% Paper A keeps a compressed two-sentence version because the alphabet axis is one
+% of its three capability heels; the full treatment below is Paper B's material.
+
+\section{The Two Axes of a Transition Table}
+\label{sec:duality}
+
+A DFA transition function is a table with $|Q| \cdot 2^{|\calP|}$ entries, and each
+representation compresses a different axis of it to obtain its advantage, paying on the
+axis it leaves explicit. The symbolic monitor compresses the $2^\calP$ axis with symbolic
+guards --- keeping an explicit current state, so its cost driver is $|Q|$ --- and this is
+exactly why it cannot suffer an alphabet blow-up: it never enumerates symbols. Dense
+DeepDFA compresses the state axis into a uniform, differentiable, batchable matrix
+product --- which requires one explicit transition matrix per symbol, so its cost driver
+is $2^{|\calP|}$. Neither weakness can be swapped onto the other representation without
+discarding the very representational choice that defines it. The factored representation
+(Section~\ref{sec:deepdfa-factored}) attempts to compress \emph{both} axes at once, and
+recovers flat-in-$|\calP|$ scaling whenever the guards admit compact disjoint covers.
+Read-once structure is one sufficient case, not a necessary boundary.
+
+State blow-up is not exclusive to the symbolic paradigm: DeepDFA is compiled from the
+\emph{same} minimal DFA, so it inherits $|Q|$ (its tensor is $|Q|^2 \cdot 2^{|\calP|}$)
+and suffers the same doubly-exponential worst case. The \emph{additional},
+representation-specific cost that the symbolic monitor escapes is the alphabet axis.
+
+% TODO (Paper B): this section is the bridge to the program-graph route. A Golog program
+% graph is already an explicit-state / symbolic-transition object, i.e. it sits on the
+% same point of this two-axis picture as the factored representation, reached from a
+% different direction. State the separation carefully: the program graph is polynomial in
+% the *program*, the DFA doubly exponential in the *formula*. A genuine separation theorem
+% needs a family in which the same specification is written both ways.

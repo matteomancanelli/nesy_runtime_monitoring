@@ -11,15 +11,97 @@ Each paradigm is exact and efficient on a large class of specifications, and eac
 \begin{itemize}
     \item \textbf{Symbolic DFA --- state-space blow-up.} The \ltlf-to-DFA translation is doubly exponential in the worst case, so the compiled automaton (and hence the compile-time cost and memory) can explode even when the runtime visits only a handful of states.
     \item \textbf{RuleRunner --- temporal-instance conflation.} The one-register-per-subformula state can merge evaluations of the same subformula originating at different temporal offsets, so it returns wrong verdicts when that merged register is not a sufficient semantic summary (Section~\ref{sec:rulerunner-limitation}).  The exact safe class is decidable per formula, bounded-future instances admit a fixed pipeline repair (Section~\ref{sec:rulerunner-bounded}), and full \ltlf completeness is recovered through the residual vocabulary of progression (Section~\ref{sec:rulerunner-progression}).
-    \item \textbf{DeepDFA --- explicit transition cost.} The dense transition tensor indexes all $2^{|\calP|}$ valuations, while our factored backend replaces that unconditional tensor by $C$ disjoint guard cubes. This is often compact but remains exponential in the worst case, and both realizations retain the $|Q|^2$ matrix update (Section~\ref{sec:deepdfa-alphabet}, Table~\ref{tab:deepdfa-complexity}).
+    \item \textbf{DeepDFA --- explicit transition cost.} The transition tensor is indexed by the full alphabet $2^{|\calP|}$. A factored backend can replace that unconditional tensor by disjoint guard cubes, which is often compact but remains exponential in the worst case, and every realization retains the $|Q|^2$ matrix update (Section~\ref{sec:deepdfa-alphabet}). The representations themselves and their measured scaling are the subject of a companion paper \paperB{}.
 \end{itemize}
 %
-Two clarifications keep this comparison honest. First, the state-space blow-up is not exclusive to the symbolic paradigm: DeepDFA is compiled from the \emph{same} minimal DFA, so it inherits $|Q|$ (its tensor is $|Q|^2 \cdot 2^{|\calP|}$) and suffers the same doubly-exponential worst case. We list state blow-up under the symbolic monitor because it is that monitor's \emph{only} structural weakness, whereas for DeepDFA the \emph{additional}, representation-specific cost that the symbolic monitor escapes is the alphabet axis. Second, the two neuro-symbolic-versus-symbolic heels are duals in a precise sense: a DFA transition function is a table with $|Q| \cdot 2^{|\calP|}$ entries, and each paradigm compresses a different axis of it to obtain its advantage, paying on the axis it leaves explicit. The symbolic monitor compresses the $2^\calP$ axis with symbolic guards --- keeping an explicit current state, so its cost driver is $|Q|$ --- and this is exactly why it cannot suffer an alphabet blow-up: it never enumerates symbols. DeepDFA (dense) compresses the state axis into a uniform, differentiable, batchable matrix product --- which requires one explicit transition matrix per symbol, so its cost driver is $2^{|\calP|}$. Neither weakness can be swapped onto the other paradigm without discarding the very representational choice that defines it; the factored representation (Section~\ref{sec:deepdfa-factored}) attempts to compress \emph{both} axes at once, and recovers flat-in-$|\calP|$ scaling whenever the guards admit compact disjoint covers. Read-once structure is one sufficient case, not a necessary boundary.
+Two clarifications keep this comparison honest. First, the state-space blow-up is not exclusive to the symbolic paradigm: DeepDFA is compiled from the \emph{same} minimal DFA, so it inherits $|Q|$ (its tensor is $|Q|^2 \cdot 2^{|\calP|}$) and suffers the same doubly-exponential worst case. We list state blow-up under the symbolic monitor because it is that monitor's \emph{only} structural weakness, whereas for DeepDFA the \emph{additional}, representation-specific cost that the symbolic monitor escapes is the alphabet axis. Second, the symbolic and automata-based heels are duals: a DFA transition function is a table with $|Q| \cdot 2^{|\calP|}$ entries, and each paradigm compresses a different axis of it, paying on the axis it leaves explicit. The symbolic monitor compresses the symbol axis with Boolean guards and keeps an explicit state, so its cost driver is $|Q|$ and it can never suffer an alphabet blow-up; dense DeepDFA compresses the state axis into a uniform batchable matrix product and therefore needs one matrix per symbol. Neither weakness can be swapped onto the other paradigm without discarding the representational choice that defines it. We use this duality only to place the three heels; the representation design space it opens is developed in a companion paper \paperB{}.
 
 One further symmetry is worth stating explicitly, because it is easy to present as an advantage of one paradigm. Exact \emph{three-valued timing} --- announcing \textsc{satisfy} or \textsc{violate} at the first prefix after which the verdict is permanent --- is a property of the continuation language, not of any local state. Every paradigm therefore pays for it with a global reachability analysis: the symbolic monitor and DeepDFA precompute traps and accepting sinks on the compiled DFA, the eager progression monitor classifies its reachable residual graph, and the bounded-event monitor classifies its reachable composite states. Each of these is a fixed label head, computed once and read out per cell; none of them drives the recurrence. What distinguishes the paradigms is the size of the graph that must be classified, not whether such a graph is needed at all, and a monitor that skips the analysis pays in latency rather than in soundness.
 
 As monitors of crisp traces, the completeness-restored RuleRunner and fixed DeepDFA are semantically interchangeable: the progression construction and the minimal DFA recognize the same \ltlf language (Section~\ref{sec:rulerunner-progression}), although the reachable residual graph need not itself be minimal. The reason to keep both lineages is what each could expose beyond crisp monitoring: a future learned DeepDFA would parameterize transitions between opaque automaton states, while a future rule-based learner could attach parameters to syntactically-indexed rules. These are two hypotheses for the gradient-based specification adaptation deferred to future work (Section~\ref{sec:conclusion}), not capabilities evaluated here.
 
-\textcolor{red}{TODO: capability matrix summarizing exactness, soft-input support, differentiability, and the three heels across the three paradigms.}
+\subsection{Capability Matrix}
+\label{sec:theory-matrix}
+
+The heels above say where each paradigm breaks down. Table~\ref{tab:capability} states the
+complementary question: what each construction can do at all. Two readings of it matter for
+the rest of the paper. First, on crisp traces the exactness columns are almost uniformly
+filled, which is the interchangeability result restated: the choice between these monitors
+is not a choice about correctness, but about the cost of obtaining them and about the
+capabilities they expose beyond a crisp verdict. Second, the two groups of columns separate
+cleanly. Everything the rule-based lineage offers that the automata route does not concerns
+\emph{compilation and state addressing}; everything the tensorized route offers that the
+rule-based lineage does not concerns \emph{the type of the input and the differentiability
+of the computation}. No construction currently occupies both corners.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{0.19\textwidth}cccccccc@{}}
+\toprule
+& \multicolumn{3}{c}{Semantics} & \multicolumn{2}{c}{Compilation}
+& \multicolumn{3}{c}{Neuro-symbolic affordances} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+Construction
+ & \shortstack{\scriptsize All\\\scriptsize\ltlf}
+ & \shortstack{\scriptsize Exact\\\scriptsize final}
+ & \shortstack{\scriptsize Exact\\\scriptsize online}
+ & \shortstack{\scriptsize No\\\scriptsize automaton}
+ & \shortstack{\scriptsize Fixed\\\scriptsize network}
+ & \shortstack{\scriptsize Soft\\\scriptsize inputs}
+ & \shortstack{\scriptsize Differ-\\\scriptsize entiable}
+ & \shortstack{\scriptsize Syntax-\\\scriptsize indexed} \\
+\midrule
+Symbolic DFA
+ & \cmy & \cmy & \cmy & \cmn & \cmn & \cmn & \cmn & \cmn \\
+DeepDFA (fixed)
+ & \cmy & \cmy & \cmy & \cmn & \cmy & \cmy & \cmy & \cmn \\
+\midrule
+Original RuleRunner
+ & \cmn & \cmc{a} & \cmc{a} & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Bounded-event, default
+ & \cmn & \cmc{c} & \cmn & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Bounded-event, exact-online
+ & \cmn & \cmc{c} & \cmy & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Progression, eager
+ & \cmy & \cmy & \cmy & \cmc{d} & \cmy & \cmn & \cmc{b} & \cmc{e} \\
+Progression, lazy
+ & \cmy & \cmy & \cmn & \cmy & \cmn & \cmn & \cmc{b} & \cmc{e} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize
+\begin{tabular}{@{}p{0.04\textwidth}p{0.92\textwidth}@{}}
+\textsuperscript{a} & On the admitted class $\C_{RR}$ only; membership is decided
+  per formula (Section~\ref{sec:rulerunner-limitation}). \\
+\textsuperscript{b} & The CILP translation is realized here with a sign activation, so the
+  network is exact but not differentiable as instantiated. A differentiable
+  reparameterization with recomputed thresholds is possible; we do not carry it out. \\
+\textsuperscript{c} & On the admitted class $\F_{BE}$ only
+  (Corollary~\ref{cor:rulerunner-bounded-fragment}). \\
+\textsuperscript{d} & The \ltlf-to-DFA translation is never invoked, but the eager
+  realization enumerates a residual graph, so it is not automaton-free in the sense of the
+  two rungs above it. \\
+\textsuperscript{e} & Indexed by residual formulas rather than by subformulas of
+  $\varphi$; still syntactic, but the vocabulary is generated at compile time rather than
+  read off the parse tree. \\
+\end{tabular}}
+
+\caption{What each construction can do. ``No automaton'' means the construction never
+builds $A_\varphi$; ``fixed network'' means the compiled monitor is a single recurrent
+network with weights independent of the trace, which is what makes cross-trace batching
+possible; ``syntax-indexed'' means a register of the recurrent state names the
+subformula whose obligation it carries, so a verdict exhibits a witness.}
+\label{tab:capability}
+\end{table}
+
+The empty corner is the honest statement of what this paper leaves open. A monitor that
+both avoids the automaton and admits soft, differentiable inputs would require attaching
+parameters to syntactically-indexed rules rather than to transitions between opaque
+automaton states; note~\textsuperscript{b} marks the one step that separates the rule-based
+constructions from that corner, and Section~\ref{sec:conclusion} returns to it.
 
 \textcolor{red}{TODO: cite Bacchus--Kabanza progression and the LTLf 2EXP bound as primary sources.}

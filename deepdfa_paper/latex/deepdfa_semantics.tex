@@ -1,3 +1,7 @@
+% DUPLICATED from Paper A (latex/5_deepdfa.tex, pre-split commit 26dbaa9).
+% Semantics: shared by both papers. Keep the two copies in sync, or cite Paper A.
+% Paper B needs the crisp-equivalence and soft-semantics propositions as the
+% correctness statement its representations must preserve.
 \section{Automata-based Neuro-Symbolic Monitoring: DeepDFA}
 \label{sec:deepdfa}
 
@@ -83,22 +87,3 @@ which is exactly the $q'$ component of Equation~\eqref{eq:deepdfa-soft}. Summing
 \end{proof}
 
 Because the cube weights are smooth, the fixed monitor is differentiable with respect to its observations: a verdict loss can flow through it into an upstream perceptor without changing the specification. Making the specification itself learnable is a separate construction requiring parameterized transitions or guards, an adaptation objective, and a discrete extraction policy; we defer that problem to Section~\ref{sec:conclusion}. In this paper all evaluated traces are crisp, where $M(\mathbf p_t)$ collapses to $T_{\sigma_t}$ and Proposition~\ref{prop:deepdfa-crisp-equivalence} applies.
-
-\subsection{The Alphabet Axis}
-\label{sec:deepdfa-alphabet}
-
-One structural cost of the tensorization must be recorded here because it is a capability
-limit of the paradigm, not merely an implementation detail: the transition tensor is
-indexed by the full alphabet $2^\calP$, so a dense materialization is exponential in the
-number of atoms, $|T| = |Q|^2 \cdot 2^{|\calP|}$. The dense tensor can be avoided by
-evaluating the per-edge guards on the fly --- the factored form already underlying
-Equations~\eqref{eq:deepdfa-crisp}--\eqref{eq:deepdfa-soft}, which never materializes $T$
---- and that is the path our monitor uses for specifications over many atoms. This is not
-an unconditional escape: a guard may require exponentially many disjoint cubes, so the
-blow-up shifts from unconditional to structure-dependent. Read-once structure is one
-sufficient condition for compact evaluation, not a necessary one. Nothing in this paper's
-argument depends on which representation is used --- by
-Proposition~\ref{prop:deepdfa-crisp-equivalence} they compute the same verdicts --- so we
-state the axis, place it in the comparison of Section~\ref{sec:theory-cmp}, and defer the
-representations themselves, their complexity accounting, and their scaling measurements to
-a companion paper \paperB{}.
