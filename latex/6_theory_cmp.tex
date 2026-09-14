@@ -20,6 +20,88 @@ One further symmetry is worth stating explicitly, because it is easy to present 
 
 As monitors of crisp traces, the completeness-restored RuleRunner and fixed DeepDFA are semantically interchangeable: the progression construction and the minimal DFA recognize the same \ltlf language (Section~\ref{sec:rulerunner-progression}), although the reachable residual graph need not itself be minimal. The reason to keep both lineages is what each could expose beyond crisp monitoring: a future learned DeepDFA would parameterize transitions between opaque automaton states, while a future rule-based learner could attach parameters to syntactically-indexed rules. These are two hypotheses for the gradient-based specification adaptation deferred to future work (Section~\ref{sec:conclusion}), not capabilities evaluated here.
 
-\textcolor{red}{TODO: capability matrix summarizing exactness, soft-input support, differentiability, and the three heels across the three paradigms.}
+\subsection{Capability Matrix}
+\label{sec:theory-matrix}
+
+The heels above say where each paradigm breaks down. Table~\ref{tab:capability} states the
+complementary question: what each construction can do at all. Two readings of it matter for
+the rest of the paper. First, on crisp traces the exactness columns are almost uniformly
+filled, which is the interchangeability result restated: the choice between these monitors
+is not a choice about correctness, but about the cost of obtaining them and about the
+capabilities they expose beyond a crisp verdict. Second, the two groups of columns separate
+cleanly. Everything the rule-based lineage offers that the automata route does not concerns
+\emph{compilation and state addressing}; everything the tensorized route offers that the
+rule-based lineage does not concerns \emph{the type of the input and the differentiability
+of the computation}. No construction currently occupies both corners.
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}p{0.19\textwidth}cccccccc@{}}
+\toprule
+& \multicolumn{3}{c}{Semantics} & \multicolumn{2}{c}{Compilation}
+& \multicolumn{3}{c}{Neuro-symbolic affordances} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-6}\cmidrule(lr){7-9}
+Construction
+ & \shortstack{\scriptsize All\\\scriptsize\ltlf}
+ & \shortstack{\scriptsize Exact\\\scriptsize final}
+ & \shortstack{\scriptsize Exact\\\scriptsize online}
+ & \shortstack{\scriptsize No\\\scriptsize automaton}
+ & \shortstack{\scriptsize Fixed\\\scriptsize network}
+ & \shortstack{\scriptsize Soft\\\scriptsize inputs}
+ & \shortstack{\scriptsize Differ-\\\scriptsize entiable}
+ & \shortstack{\scriptsize Syntax-\\\scriptsize indexed} \\
+\midrule
+Symbolic DFA
+ & \cmy & \cmy & \cmy & \cmn & \cmn & \cmn & \cmn & \cmn \\
+DeepDFA (fixed)
+ & \cmy & \cmy & \cmy & \cmn & \cmy & \cmy & \cmy & \cmn \\
+\midrule
+Original RuleRunner
+ & \cmn & \cmc{a} & \cmc{a} & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Bounded-event, default
+ & \cmn & \cmc{c} & \cmn & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Bounded-event, exact-online
+ & \cmn & \cmc{c} & \cmy & \cmy & \cmy & \cmn & \cmc{b} & \cmy \\
+Progression, eager
+ & \cmy & \cmy & \cmy & \cmc{d} & \cmy & \cmn & \cmc{b} & \cmc{e} \\
+Progression, lazy
+ & \cmy & \cmy & \cmn & \cmy & \cmn & \cmn & \cmc{b} & \cmc{e} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+{\footnotesize
+\begin{tabular}{@{}p{0.04\textwidth}p{0.92\textwidth}@{}}
+\textsuperscript{a} & On the admitted class $\C_{RR}$ only; membership is decided
+  per formula (Section~\ref{sec:rulerunner-limitation}). \\
+\textsuperscript{b} & The CILP translation is realized here with a sign activation, so the
+  network is exact but not differentiable as instantiated. A differentiable
+  reparameterization with recomputed thresholds is possible; we do not carry it out. \\
+\textsuperscript{c} & On the admitted class $\F_{BE}$ only
+  (Corollary~\ref{cor:rulerunner-bounded-fragment}). \\
+\textsuperscript{d} & The \ltlf-to-DFA translation is never invoked, but the eager
+  realization enumerates a residual graph, so it is not automaton-free in the sense of the
+  two rungs above it. \\
+\textsuperscript{e} & Indexed by residual formulas rather than by subformulas of
+  $\varphi$; still syntactic, but the vocabulary is generated at compile time rather than
+  read off the parse tree. \\
+\end{tabular}}
+
+\caption{What each construction can do. ``No automaton'' means the construction never
+builds $A_\varphi$; ``fixed network'' means the compiled monitor is a single recurrent
+network with weights independent of the trace, which is what makes cross-trace batching
+possible; ``syntax-indexed'' means a register of the recurrent state names the
+subformula whose obligation it carries, so a verdict exhibits a witness.}
+\label{tab:capability}
+\end{table}
+
+The empty corner is the honest statement of what this paper leaves open. A monitor that
+both avoids the automaton and admits soft, differentiable inputs would require attaching
+parameters to syntactically-indexed rules rather than to transitions between opaque
+automaton states; note~\textsuperscript{b} marks the one step that separates the rule-based
+constructions from that corner, and Section~\ref{sec:conclusion} returns to it.
 
 \textcolor{red}{TODO: cite Bacchus--Kabanza progression and the LTLf 2EXP bound as primary sources.}

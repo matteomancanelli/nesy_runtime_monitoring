@@ -34,6 +34,49 @@ RuleRunner's defining design choice is to maintain \emph{a single shared state, 
 
 Consider the two formulas $\varphi_1 = F(a \land b)$ and $\varphi_2 = F(a \land Xb)$, which differ only by a single next operator, monitored over the same trace $\boldsymbol{\sigma} = (\{a\}, \emptyset, \{b\})$. Neither formula is satisfied: $\varphi_1$ would require a time point where $a$ and $b$ hold \emph{together} (but $a$ occurs only at $t = 0$ and $b$ only at $t = 2$), and $\varphi_2$ would require a time point $t$ with $a \in \sigma_t$ and $b \in \sigma_{t+1}$ (but the only $a$ is at $t = 0$, and is not followed by a $b$ at $t = 1$). The correct verdict in both cases is therefore \textsc{violate}, but RuleRunner can provide the correct answer only for the first formula.
 
+\begin{figure}[t]
+\centering
+\begin{minipage}[b]{0.38\textwidth}
+\centering
+\begin{tikzpicture}[shorten >=1pt, node distance=22mm, auto, font=\footnotesize,
+                    every state/.style={minimum size=7mm, inner sep=1pt}]
+  \node[state, initial, initial text={}]      (p1) {$1$};
+  \node[state, accepting, right=of p1]        (p2) {$2$};
+  \path[->]
+    (p1) edge                 node {$a\land b$}            (p2)
+    (p1) edge[loop above]     node {$\neg a\lor\neg b$}    ()
+    (p2) edge[loop above]     node {$\top$}                ();
+\end{tikzpicture}\\[4pt]
+{\footnotesize (a) $\varphi_1 = F(a\land b)$}
+\end{minipage}
+\hfill
+\begin{minipage}[b]{0.58\textwidth}
+\centering
+\begin{tikzpicture}[shorten >=1pt, node distance=20mm, auto, font=\footnotesize,
+                    every state/.style={minimum size=7mm, inner sep=1pt}]
+  \node[state, initial, initial text={}]      (q1) {$1$};
+  \node[state, right=of q1]                   (q2) {$2$};
+  \node[state, accepting, right=of q2]        (q3) {$3$};
+  \path[->]
+    (q1) edge[bend left=15]   node {$a$}                   (q2)
+    (q2) edge[bend left=15]   node {$\neg a\land\neg b$}   (q1)
+    (q2) edge                 node {$b$}                   (q3)
+    (q1) edge[loop above]     node {$\neg a$}              ()
+    (q2) edge[loop above]     node {$a\land\neg b$}        ()
+    (q3) edge[loop above]     node {$\top$}                ();
+\end{tikzpicture}\\[4pt]
+{\footnotesize (b) $\varphi_2 = F(a\land Xb)$}
+\end{minipage}
+\caption{Minimal DFAs for the two formulas. The single $X$ costs the automaton one extra
+state: in (b), state~$2$ records that an $a$ has just been read and that a $b$ in the
+\emph{next} cell would satisfy the eventuality, while state~$1$ records that no such
+obligation is pending. That distinction is exactly what the automaton keeps and what the
+one-register-per-subformula state of RuleRunner cannot, as the two runs below show. Both
+automata are exact on both traces; the difficulty is not in the specification.}
+\label{fig:counterexample-dfas}
+\end{figure}
+
+
 To look at how the computation proceeds, first consider $\varphi_1$. The run is:
 %
 \noindent
@@ -386,3 +429,148 @@ For trace $\boldsymbol{\sigma}_A$, the residual $(b\land F\top)\lor F(a \land Xb
 For trace $\boldsymbol{\sigma}_B$, the residual $(b\land F\top)\lor F(a \land Xb)$ appears one step later, immediately before the time step containing $b$. At the last time step, $b$ holds and $F\top$ progresses to true because that cell exists. Hence the residual becomes $\top$ and the verdict is \textsc{satisfy}.
 
 This is exactly the information lost by the original construction. The repaired monitor does not try to store two incompatible truth evaluations in the single register $[Xb]$. Instead, it stores the residual formula $(b\land F\top)\lor F(a\land Xb)$, and it occurs at different time points in the two traces.
+
+
+\subsection{The Construction Ladder}
+\label{sec:rulerunner-ladder}
+
+The three constructions of this section are not competing alternatives: they form an
+ordered \emph{ladder}. Each rung is admitted by an explicit test, builds a strictly larger
+compile-time object than the one below it, and buys a strictly larger guarantee. The
+decisive structural property, shared by every rung, is that none of them invokes the
+\ltlf-to-DFA translation: the rule system of the original construction is obtained by
+instantiating per-operator templates over $sub(\varphi)$ and is therefore linear in the
+size of the formula, the bounded-event pipeline adds a fixed window transducer and event
+circuit, and the eager progression construction enumerates residual roots rather than
+automaton states. The automata-based monitors of Sections~\ref{sec:symbolic}
+and~\ref{sec:deepdfa} sit outside the ladder: they apply to all of \ltlf unconditionally,
+but they pay for that generality at compile time, since the translation is doubly
+exponential in the worst case.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[node distance=7mm and 9mm,
+                    rung/.append style={font=\scriptsize},
+                    autorung/.append style={font=\scriptsize}]
+  \node[font=\small] (phi) {$\varphi$};
+  \node[rung, right=of phi]  (rr) {Original\\RuleRunner};
+  \node[rung, right=of rr]   (be) {Bounded-event\\RuleRunner};
+  \node[rung, right=of be]   (pr) {Progression\\RuleRunner};
+  \node[right=of pr, font=\scriptsize, align=center] (out) {exact\\monitor};
+
+  \draw[flow] (phi) -- (rr);
+  \draw[flow] (rr) -- node[gate, above] {$\varphi\notin\C_{RR}$} (be);
+  \draw[flow] (be) -- node[gate, above] {$\varphi\notin\F_{BE}$} (pr);
+  \draw[flow] (pr) -- (out);
+
+  \draw[|-|] ([yshift=-5mm]rr.south west) -- ([yshift=-5mm]pr.south east)
+        node[midway, below, gate] {no \ltlf-to-DFA translation};
+
+  \node[autorung, below=17mm of be, text width=46mm]
+        (dfa) {Automata route: symbolic DFA, DeepDFA\\[1pt]
+               compiles $A_\varphi$, doubly exponential};
+  \draw[flow, dashed] (phi) |- (dfa);
+  \draw[flow, dashed] (dfa) -| (out);
+\end{tikzpicture}
+\caption{The construction ladder. A formula enters at the cheapest rung; a failed
+admission test moves it up. Every rung of the ladder produces a monitor whose final
+verdict is exact for the formulas it admits, and none of them constructs an automaton.
+The automata route (dashed) is unconditionally applicable and is the baseline against
+which each rung is certified.}
+\label{fig:ladder}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\small
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}p{0.135\textwidth}p{0.155\textwidth}p{0.225\textwidth}p{0.155\textwidth}p{0.07\textwidth}p{0.15\textwidth}@{}}
+\toprule
+Construction & Admission test & Compile-time construction & Recurrent state
+  & Final verdict & Online verdict \\
+\midrule
+Original
+  & $\varphi\in\C_{RR}$, decidable; sufficient: $\varphi\in\F_{RR}$
+  & operator templates over $sub(\varphi)$; \emph{no automaton}
+  & one three-valued register per $\psi\in sub(\varphi)$
+  & exact
+  & prefix-sound \\
+Bounded-event, default
+  & $\varphi\in\F_{BE}$
+  & skeleton rules, window buffer and event circuit, $O(|sk(\varphi)|+|\calP|H)$; \emph{no automaton}
+  & skeleton registers and $|\calP|\cdot H$ buffer units
+  & exact
+  & sound, may be late \\
+Bounded-event, exact-online
+  & $\varphi\in\F_{BE}$
+  & as above, plus a reachable composite-state head
+  & as above, plus one unit per composite state
+  & exact
+  & exact \\
+Progression, lazy
+  & all \ltlf
+  & none; rules are generated per time point
+  & $sub(\rho_t)$, generated at run time
+  & exact
+  & sound, may be late \\
+Progression, eager
+  & all \ltlf
+  & root vocabulary $\mathcal R_\varphi$ with guarded transitions over $2^{|\calP_\chi|}$; \emph{no DFA translation}
+  & multi-hot over $\mathcal R_\varphi$
+  & exact
+  & exact, with the aggregate head \\
+\midrule
+\emph{Automata route}
+  & all \ltlf
+  & minimal DFA $A_\varphi$; doubly exponential in $|\varphi|$
+  & $q\in Q$, resp.\ $\mathbf q\in[0,1]^{|Q|}$
+  & exact
+  & exact \\
+\bottomrule
+\end{tabular}
+\caption{The construction ladder. Rungs are ordered by the size of the object built at
+compile time. The automata route is listed for reference and is not a rung: it is the
+semantic baseline against which the admission tests of the rungs above are decided.}
+\label{tab:ladder}
+\end{table}
+
+Because every admission test is decidable and the last rung is complete, the ladder can be
+traversed mechanically.
+
+\begin{proposition}[Ladder strategy]
+\label{prop:ladder}
+Let $\varphi$ be an \ltlf formula, and consider the procedure that returns the original
+construction if $\varphi\in\C_{RR}$; otherwise the bounded-event construction if
+$\varphi\in\F_{BE}$; and otherwise the progression construction. The procedure terminates,
+each of its tests is decidable, and the monitor it returns reports \textsc{satisfy} exactly
+when $\boldsymbol{\sigma}\models\varphi$. Whenever it stops at one of the first two rungs,
+no automaton is constructed.
+\end{proposition}
+
+\begin{proof}
+Membership in $\C_{RR}$ is decided by the finite product search of
+Section~\ref{sec:rulerunner-limitation}, and membership in $\F_{BE}$ is decided by
+computing $h(\varphi)$ and testing $sk(\varphi)$ by the same search, so both tests
+terminate. Exactness on the first rung is Theorem~\ref{thm:rulerunner-correct} together
+with the definition of $\C_{RR}$, on the second
+Corollary~\ref{cor:rulerunner-bounded-fragment}, and on the third
+Theorem~\ref{thm:rulerunner-progression-correct}, which applies to every \ltlf formula and
+therefore makes the procedure total. The first two constructions are defined entirely by
+template instantiation over $sub(\varphi)$ and over the fixed window, so neither refers to
+$A_\varphi$.
+\end{proof}
+
+\paragraph{When a lower rung is preferable.}
+Since all rungs are exact on the formulas they admit, the reason to prefer a lower one is
+never the verdict: it is the cost of obtaining the monitor in the first place. The
+automata route pays a compile-time cost governed by $|Q|$, doubly exponential in
+$|\varphi|$ in the worst case; the first two rungs pay a cost linear in the size of the
+formula and of the window. Whenever compilation lies on the critical path the ordering
+therefore matters: specifications that arrive at run time, monitors instantiated per case
+or per episode, deployments that monitor many short traces against many small constraints
+rather than one long trace against one constraint, and settings in which an external
+automaton toolchain cannot be shipped at all. In the opposite regime --- one specification
+compiled once and run over a long-lived stream --- the compile-time term amortizes and the
+automata route is preferable. The two regimes are separated empirically in
+Section~\ref{sec:experiments}.

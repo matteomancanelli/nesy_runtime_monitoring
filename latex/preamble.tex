@@ -21,7 +21,7 @@
 \usepackage{multirow}
 
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning}
+\usetikzlibrary{arrows.meta, positioning, automata}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Font modes & definitions
@@ -198,3 +198,20 @@
 % "(under submission)", "arXiv:XXXX", or a real \cite.
 \newcommand{\paperB}{[companion paper, under submission]}
 \newcommand{\paperA}{[companion paper, under submission]}
+
+% --- Capability-matrix marks (Sec. Theoretical Comparison) ---
+% \cmy full support, \cmn none, \cmc conditional (always carries a table note).
+\newcommand{\cmy}{\ensuremath{\checkmark}}
+\newcommand{\cmn}{\textendash}
+\newcommand{\cmc}[1]{\ensuremath{\checkmark}\textsuperscript{#1}}
+
+% --- Shared TikZ styles for the construction-ladder and automaton figures ---
+\tikzset{
+  rung/.style     = {draw, rounded corners=2pt, align=center, inner sep=4pt,
+                     font=\small, minimum height=9mm},
+  autorung/.style = {draw, dashed, rounded corners=2pt, align=center,
+                     inner sep=4pt, font=\small, minimum height=9mm},
+  gate/.style     = {font=\scriptsize, align=center, inner sep=2pt},
+  flow/.style     = {-{Stealth[length=2mm]}, thick},
+}
+
