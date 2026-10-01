@@ -1,5 +1,7 @@
 \section{Proofs}
 
+\textcolor{red}{Need another pass}
+
 \noindent
 \textbf{Theorem~\ref{thm:rulerunner-correct}.}
 Let $\theta$ be a formula in $\F_{RR}$ and $\boldsymbol{\sigma}$ a non-empty
@@ -209,20 +211,23 @@ three-valued label identical to that of the canonical DFA for the original
 formula.
 
 \begin{proof}
-By Theorem~\ref{thm:rulerunner-bounded-correct},
-$\calL(P_\varphi)=\calL(A_\varphi)$. In a deterministic automaton, the state
-reached after a prefix $\boldsymbol{u}$ is an accepting sink if and only if
-every continuation of $\boldsymbol{u}$ belongs to the recognised language, and a
-trap if and only if no continuation does; both conditions depend only on
-$\boldsymbol{u}$ and on the language, not on the automaton recognising it. Since
-$P_\varphi$ and $A_\varphi$ recognise the same language and read the same
-alphabet, the state reached by $P_\varphi$ after $\boldsymbol{u}$ is an
-accepting sink, respectively a trap, exactly when the state reached by
-$A_\varphi$ is. The extrapolated monitor returns the label of the former and the
-symbolic monitor of Section~\ref{sec:symbolic} returns the label of the latter,
-so the two labels coincide.
+Fix a non-empty prefix $\boldsymbol{u}$ and let $z$ be the state the pipeline
+reaches after reading it, which is unique because the pipeline is
+deterministic. Since $z$ records every component the pipeline carries, the
+states reachable from $z$ are exactly the states reached by the prefixes
+$\boldsymbol{u}\boldsymbol{v}$, for every continuation $\boldsymbol{v}$, the
+empty one included. Stopping the trace is what the accepting marking of a state
+evaluates, so by Theorem~\ref{thm:rulerunner-bounded-correct} the state reached
+by $\boldsymbol{u}\boldsymbol{v}$ is accepting if and only if
+$\boldsymbol{u}\boldsymbol{v}\models\varphi$. Hence no non-accepting state is
+reachable from $z$ exactly when every continuation of $\boldsymbol{u}$ satisfies
+$\varphi$, and no accepting state is reachable from $z$ exactly when none of
+them does. These are the conditions under which $A_\varphi$ is, after
+$\boldsymbol{u}$, in an accepting sink and in a trap respectively, and the
+three-valued label of Section~\ref{sec:symbolic} is determined by them. The
+extrapolated monitor returns the label of $z$, which therefore coincides with
+the one of $A_\varphi$.
 \end{proof}
-
 
 
 \noindent
